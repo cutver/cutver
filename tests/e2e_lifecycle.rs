@@ -621,3 +621,61 @@ post_bump = "echo bun-lock >> bun.lock && echo uv-lock >> uv.lock && echo pdm-lo
         "commit_files should contain pdm.lock: {commit_files:?}"
     );
 }
+
+#[test]
+fn post_bump_and_publish_commands_with_minijinja_interpolation() {
+    assert!(
+        git_available(),
+        "git CLI is required for e2e tests but was not found in PATH"
+    );
+    let guard = FixtureGuard::new("lifecycle-minijinja-interp");
+    let fixture = guard.fixture();
+
+    let toml = r#"[version]
+current_source = "package.json"
+
+[[manifest]]
+path = "package.json"
+kind = "json"
+field = "version"
+
+[hooks]
+post_bump = "echo \"bump={{ bump_level }} tag={{ tag }} branch={{ branch }}\" > hook_out.txt"
+
+[publish]
+push = false
+commands = [
+    "echo \"published {{ version }} (tag {{ tag }}) [forge: {{ forge }} repo: {{ repo }} owner: {{ owner }}] env: {{ env('CARGO_PKG_NAME', 'cutver-default') }}\" > publish_out.txt"
+]
+"#;
+    fixture.write("package.json", PACKAGE_JSON);
+    fixture.write("cutver.toml", toml);
+    init_git_repo(fixture);
+    run_git_ok(&fixture.dir, &["checkout", "-B", "main"]);
+    initial_commit(fixture);
+    run_git_ok(
+        &fixture.dir,
+        &["remote", "add", "origin", "https://github.com/test-owner/test-repo.git"],
+    );
+
+    let cfg = config::load("cutver.toml").unwrap();
+
+    let summary = bump_run(&cfg, Bump::Minor, false, &[]).unwrap();
+    assert_eq!(summary.next.to_string(), "1.3.0");
+    assert_eq!(
+        summary.post_bump.as_deref(),
+        Some("echo \"bump=minor tag=v1.3.0 branch=main\" > hook_out.txt")
+    );
+    assert_eq!(fixture.read("hook_out.txt").trim(), "bump=minor tag=v1.3.0 branch=main");
+
+    assert_eq!(summary.publish_commands.len(), 1);
+    assert_eq!(
+        summary.publish_commands[0],
+        "echo \"published 1.3.0 (tag v1.3.0) [forge: github repo: test-repo owner: test-owner] env: cutver\" > publish_out.txt"
+    );
+    assert!(fixture.dir.join("publish_out.txt").exists());
+    assert_eq!(
+        fixture.read("publish_out.txt").trim(),
+        "published 1.3.0 (tag v1.3.0) [forge: github repo: test-repo owner: test-owner] env: cutver"
+    );
+}

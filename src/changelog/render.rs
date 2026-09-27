@@ -1,5 +1,5 @@
 use super::Error;
-use super::context::ReleaseContext;
+use super::context::{InterpolationContext, ReleaseContext};
 use crate::config::Changelog;
 use crate::conventional::ConventionalCommit;
 use std::fs;
@@ -13,6 +13,76 @@ pub fn create_environment() -> minijinja::Environment<'static> {
         std::env::var(var_name).unwrap_or_else(|_| default.unwrap_or("").to_string())
     });
     env
+}
+
+/// Helper to normalize legacy `{version}` and `{tag}` tokens to MiniJinja syntax `{{ version }}` and `{{ tag }}`.
+///
+/// Only standalone single braces are converted: occurrences of `{{` or `}}` are preserved intact.
+pub fn normalize_legacy_tokens(template: &str) -> String {
+    let mut result = String::with_capacity(template.len() + 16);
+    let chars: Vec<char> = template.chars().collect();
+    let len = chars.len();
+    let mut i = 0;
+
+    while i < len {
+        if chars[i] == '{' {
+            if i + 1 < len && chars[i + 1] == '{' {
+                // Double opening brace `{{`, preserve as-is
+                result.push('{');
+                result.push('{');
+                i += 2;
+                continue;
+            }
+
+            // Check if this is `{version}`
+            let remaining: String = chars[i..].iter().collect();
+            if remaining.starts_with("{version}") {
+                result.push_str("{{ version }}");
+                i += "{version}".len();
+                continue;
+            } else if remaining.starts_with("{tag}") {
+                result.push_str("{{ tag }}");
+                i += "{tag}".len();
+                continue;
+            } else {
+                result.push(chars[i]);
+                i += 1;
+            }
+        } else {
+            result.push(chars[i]);
+            i += 1;
+        }
+    }
+
+    result
+}
+
+/// Interpolate a string using MiniJinja with an `InterpolationContext`.
+///
+/// Supports backward compatibility with `{version}` and `{tag}` tokens, converting them
+/// automatically. If MiniJinja template rendering fails, falls back gracefully to a simple
+/// legacy token replacement so execution is robust.
+pub fn interpolate_string(template: &str, context: &InterpolationContext) -> Result<String, Error> {
+    let normalized = normalize_legacy_tokens(template);
+    let env = create_environment();
+    let val = minijinja::Value::from_serialize(context);
+    match env.render_str(&normalized, val) {
+        Ok(rendered) => Ok(rendered),
+        Err(e) => {
+            // Attempt fallback replacing legacy {version} and {tag} on the original template
+            let fallback = template
+                .replace("{version}", &context.version)
+                .replace("{tag}", &context.tag);
+            // If the template contained MiniJinja syntax, return the error
+            if template.contains("{{") || template.contains("{%") {
+                Err(Error::TemplateRender {
+                    detail: format!("{e:#}"),
+                })
+            } else {
+                Ok(fallback)
+            }
+        }
+    }
 }
 
 /// Render release notes using a MiniJinja template string and release context.
@@ -403,5 +473,57 @@ mod tests {
         let res = render_template(env_tpl, &ctx).unwrap();
         assert!(!res.is_empty());
         assert_ne!(res, "fallback");
+    }
+
+    #[test]
+    fn test_normalize_legacy_tokens() {
+        assert_eq!(
+            normalize_legacy_tokens("chore(release): v{version}"),
+            "chore(release): v{{ version }}"
+        );
+        assert_eq!(
+            normalize_legacy_tokens("release {tag} ({version})"),
+            "release {{ tag }} ({{ version }})"
+        );
+        assert_eq!(
+            normalize_legacy_tokens("chore(release): v{{ version }}"),
+            "chore(release): v{{ version }}"
+        );
+        assert_eq!(
+            normalize_legacy_tokens("{other} stay intact: {version}"),
+            "{other} stay intact: {{ version }}"
+        );
+    }
+
+    #[test]
+    fn test_interpolate_string_with_legacy_and_minijinja() {
+        let ctx = InterpolationContext::build(
+            "1.2.3-rc.1",
+            Some("1.2.2"),
+            "v1.2.3-rc.1",
+            Some("v1.2.2"),
+            "minor",
+            "2026-03-30",
+            Some("main"),
+            Some("https://github.com/my-org/my-repo"),
+        );
+
+        // Legacy single brace
+        let legacy = "chore: v{version} tag {tag}";
+        assert_eq!(
+            interpolate_string(legacy, &ctx).unwrap(),
+            "chore: v1.2.3-rc.1 tag v1.2.3-rc.1"
+        );
+
+        // Modern MiniJinja variables, forge, semver parts, env
+        let modern = "release: {{ tag }} (prev: {{ previous_tag }}) [{{ repo }} by {{ owner }}] on {{ branch }} - bump: {{ bump_level }} - major: {{ major }}, minor: {{ minor }}, patch: {{ patch }}{% if is_prerelease %} (pre: {{ prerelease }}){% endif %}";
+        assert_eq!(
+            interpolate_string(modern, &ctx).unwrap(),
+            "release: v1.2.3-rc.1 (prev: v1.2.2) [my-repo by my-org] on main - bump: minor - major: 1, minor: 2, patch: 3 (pre: rc.1)"
+        );
+
+        // Env function in interpolation
+        let env_str = "dir: {{ env('CARGO_MANIFEST_DIR', 'fallback') }}";
+        assert!(!interpolate_string(env_str, &ctx).unwrap().contains("fallback"));
     }
 }

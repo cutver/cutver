@@ -665,3 +665,71 @@ require_clean_tree = true
     let latest = cutver::git::latest_tag(&fixture.dir, Some("v")).unwrap();
     assert_eq!(latest, Some("v1.1.0".to_string()));
 }
+
+#[test]
+fn bump_evaluates_commit_message_with_minijinja_expression() {
+    assert!(
+        git_available(),
+        "git CLI is required for e2e tests but was not found in PATH"
+    );
+    let guard = FixtureGuard::new("bump-commit-message-minijinja");
+    let fixture = guard.fixture();
+    let package_json = r#"{
+  "name": "my-minijinja-commit-pkg",
+  "version": "1.0.0"
+}
+"#;
+    let cutver_toml = r#"[[manifest]]
+path = "package.json"
+kind = "json"
+field = "version"
+
+[git]
+commit_message = "chore(release): v{{ version }} [bump: {{ bump_level }}]{% if is_prerelease %} (pre){% endif %}"
+require_clean_tree = false
+"#;
+    fixture.write("package.json", package_json);
+    fixture.write("cutver.toml", cutver_toml);
+    init_git_repo(fixture);
+    initial_commit(fixture);
+
+    let cfg = config::load("cutver.toml").unwrap();
+    let summary = cutver::bump::run(&cfg, cutver::cli::BumpLevel::Minor, false, &[]).unwrap();
+    assert_eq!(summary.next.to_string(), "1.1.0");
+    assert_eq!(summary.commit_message, "chore(release): v1.1.0 [bump: minor]");
+    assert_eq!(head_commit_message(fixture), "chore(release): v1.1.0 [bump: minor]");
+}
+
+#[test]
+fn bump_evaluates_commit_message_with_legacy_token() {
+    assert!(
+        git_available(),
+        "git CLI is required for e2e tests but was not found in PATH"
+    );
+    let guard = FixtureGuard::new("bump-commit-message-legacy");
+    let fixture = guard.fixture();
+    let package_json = r#"{
+  "name": "my-legacy-commit-pkg",
+  "version": "1.0.0"
+}
+"#;
+    let cutver_toml = r#"[[manifest]]
+path = "package.json"
+kind = "json"
+field = "version"
+
+[git]
+commit_message = "chore(release): v{version} [skip ci]"
+require_clean_tree = false
+"#;
+    fixture.write("package.json", package_json);
+    fixture.write("cutver.toml", cutver_toml);
+    init_git_repo(fixture);
+    initial_commit(fixture);
+
+    let cfg = config::load("cutver.toml").unwrap();
+    let summary = cutver::bump::run(&cfg, cutver::cli::BumpLevel::Patch, false, &[]).unwrap();
+    assert_eq!(summary.next.to_string(), "1.0.1");
+    assert_eq!(summary.commit_message, "chore(release): v1.0.1 [skip ci]");
+    assert_eq!(head_commit_message(fixture), "chore(release): v1.0.1 [skip ci]");
+}

@@ -42,6 +42,11 @@ pub fn run_with_first_release(
     let (source_entry, _editor, current) = current_source(config)?;
     let bump_level = bump_kind.into();
     let mut auto_commits = None;
+    let previous_tag = if first_release {
+        None
+    } else {
+        git::latest_tag(repo, Some(&config.git.tag_prefix))?
+    };
     let next = if first_release {
         current.clone()
     } else {
@@ -50,8 +55,7 @@ pub fn run_with_first_release(
             BumpLevel::Minor => Bump::Minor,
             BumpLevel::Major => Bump::Major,
             BumpLevel::Auto => {
-                let tag = git::latest_tag(repo, Some(&config.git.tag_prefix))?;
-                let commits = git::commits_since(repo, tag.as_deref())?;
+                let commits = git::commits_since(repo, previous_tag.as_deref())?;
                 let (deduced, parsed) = conventional::parse_and_deduce_bump(&commits);
                 auto_commits = Some(parsed);
                 deduced
@@ -59,8 +63,33 @@ pub fn run_with_first_release(
         };
         semver_bump::bump(&current, bump_semver)
     };
-    let commit_message = git::commit_message(&config.git.commit_message, &next.to_string());
     let tag = git::tag_name(&config.git.tag_prefix, &next.to_string());
+    let current_branch = git::current_branch(repo).ok();
+    let repo_url = git::remote_url(repo);
+    let today = changelog::format_date(std::time::SystemTime::now());
+    let bump_level_str = if first_release {
+        "initial"
+    } else {
+        match bump_level {
+            BumpLevel::Patch => "patch",
+            BumpLevel::Minor => "minor",
+            BumpLevel::Major => "major",
+            BumpLevel::Auto => "auto",
+        }
+    };
+    let previous_version = if first_release { None } else { Some(current.to_string()) };
+    let interp_ctx = changelog::InterpolationContext::build(
+        &next.to_string(),
+        previous_version.as_deref(),
+        &tag,
+        previous_tag.as_deref(),
+        bump_level_str,
+        &today,
+        current_branch.as_deref(),
+        repo_url.as_deref(),
+    );
+    let commit_message = changelog::interpolate_string(&config.git.commit_message, &interp_ctx)
+        .unwrap_or_else(|_| git::commit_message(&config.git.commit_message, &next.to_string()));
 
     // Abort before any mutation whenever the target tag already exists. HEAD
     // moves during the run, so "points at HEAD" is not stable here: a tag at
@@ -169,7 +198,7 @@ pub fn run_with_first_release(
     };
 
     let summary_post_bump = if let Some(raw_post_bump) = &config.hooks.post_bump {
-        let cmd = format_command(raw_post_bump, &next.to_string(), &tag);
+        let cmd = format_command(raw_post_bump, &interp_ctx);
         if !dry_run {
             let (shell, flag) = if cfg!(windows) { ("cmd", "/C") } else { ("sh", "-c") };
             let status = std::process::Command::new(shell)
@@ -265,7 +294,7 @@ pub fn run_with_first_release(
 
     let mut publish_commands = Vec::new();
     for cmd in &config.publish.commands {
-        let formatted = format_command(cmd, &next.to_string(), &tag);
+        let formatted = format_command(cmd, &interp_ctx);
         if !dry_run {
             run_publish_command(&formatted, &config.root_dir, config.publish.default_timeout)?;
         }
@@ -291,8 +320,12 @@ pub fn run_with_first_release(
     })
 }
 
-fn format_command(template: &str, version: &str, tag: &str) -> String {
-    template.replace("{version}", version).replace("{tag}", tag)
+fn format_command(template: &str, context: &changelog::InterpolationContext) -> String {
+    changelog::interpolate_string(template, context).unwrap_or_else(|_| {
+        template
+            .replace("{version}", &context.version)
+            .replace("{tag}", &context.tag)
+    })
 }
 
 /// Single source of truth for mapping `config.version.current_source` to its

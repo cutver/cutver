@@ -444,6 +444,203 @@ impl serde::Serialize for ReleaseContext {
     }
 }
 
+/// Simplified context for universal string interpolation in `commit_message`, `post_bump`, and `publish.commands`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InterpolationContext {
+    pub version: String,
+    pub previous_version: Option<String>,
+    pub tag: String,
+    pub previous_tag: Option<String>,
+    pub bump_level: String,
+    pub is_prerelease: bool,
+    pub prerelease: Option<String>,
+    pub build: Option<String>,
+    pub major: u64,
+    pub minor: u64,
+    pub patch: u64,
+    pub date: String,
+    pub branch: Option<String>,
+    pub repo_owner: Option<String>,
+    pub repo_name: Option<String>,
+    pub forge: Option<String>,
+}
+
+impl serde::Serialize for InterpolationContext {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(Some(18))?;
+        map.serialize_entry("version", &self.version)?;
+        map.serialize_entry("previous_version", &self.previous_version)?;
+        map.serialize_entry("tag", &self.tag)?;
+        map.serialize_entry("previous_tag", &self.previous_tag)?;
+        map.serialize_entry("bump_level", &self.bump_level)?;
+        map.serialize_entry("is_prerelease", &self.is_prerelease)?;
+        map.serialize_entry("prerelease", &self.prerelease)?;
+        map.serialize_entry("build", &self.build)?;
+        map.serialize_entry("major", &self.major)?;
+        map.serialize_entry("minor", &self.minor)?;
+        map.serialize_entry("patch", &self.patch)?;
+        map.serialize_entry("date", &self.date)?;
+        map.serialize_entry("branch", &self.branch)?;
+        map.serialize_entry("repo_owner", &self.repo_owner)?;
+        map.serialize_entry("owner", &self.repo_owner)?;
+        map.serialize_entry("repo_name", &self.repo_name)?;
+        map.serialize_entry("repo", &self.repo_name)?;
+        map.serialize_entry("forge", &self.forge)?;
+        map.end()
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for InterpolationContext {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(serde::Deserialize)]
+        struct Helper {
+            version: String,
+            #[serde(default)]
+            previous_version: Option<String>,
+            tag: String,
+            #[serde(default)]
+            previous_tag: Option<String>,
+            #[serde(default)]
+            bump_level: String,
+            #[serde(default)]
+            is_prerelease: Option<bool>,
+            #[serde(default)]
+            prerelease: Option<String>,
+            #[serde(default)]
+            build: Option<String>,
+            #[serde(default)]
+            major: Option<u64>,
+            #[serde(default)]
+            minor: Option<u64>,
+            #[serde(default)]
+            patch: Option<u64>,
+            #[serde(default)]
+            date: String,
+            #[serde(default)]
+            branch: Option<String>,
+            #[serde(default, alias = "owner")]
+            repo_owner: Option<String>,
+            #[serde(default, alias = "repo")]
+            repo_name: Option<String>,
+            #[serde(default)]
+            forge: Option<String>,
+        }
+
+        let h = Helper::deserialize(deserializer)?;
+        let parsed_semver = semver::Version::parse(&h.version).ok();
+        let major = h.major.or_else(|| parsed_semver.as_ref().map(|v| v.major)).unwrap_or(0);
+        let minor = h.minor.or_else(|| parsed_semver.as_ref().map(|v| v.minor)).unwrap_or(0);
+        let patch = h.patch.or_else(|| parsed_semver.as_ref().map(|v| v.patch)).unwrap_or(0);
+        let is_prerelease = h
+            .is_prerelease
+            .or_else(|| parsed_semver.as_ref().map(|v| !v.pre.is_empty()))
+            .unwrap_or(false);
+        let prerelease = h.prerelease.or_else(|| {
+            parsed_semver.as_ref().and_then(|v| {
+                if v.pre.is_empty() {
+                    None
+                } else {
+                    Some(v.pre.as_str().to_string())
+                }
+            })
+        });
+        let build = h.build.or_else(|| {
+            parsed_semver.as_ref().and_then(|v| {
+                if v.build.is_empty() {
+                    None
+                } else {
+                    Some(v.build.as_str().to_string())
+                }
+            })
+        });
+
+        Ok(InterpolationContext {
+            version: h.version,
+            previous_version: h.previous_version,
+            tag: h.tag,
+            previous_tag: h.previous_tag,
+            bump_level: h.bump_level,
+            is_prerelease,
+            prerelease,
+            build,
+            major,
+            minor,
+            patch,
+            date: h.date,
+            branch: h.branch,
+            repo_owner: h.repo_owner,
+            repo_name: h.repo_name,
+            forge: h.forge,
+        })
+    }
+}
+
+impl InterpolationContext {
+    /// Build an `InterpolationContext` from release parameters and optional repository information.
+    #[allow(clippy::too_many_arguments)]
+    pub fn build(
+        version: &str,
+        previous_version: Option<&str>,
+        tag: &str,
+        previous_tag: Option<&str>,
+        bump_level: &str,
+        date: &str,
+        branch: Option<&str>,
+        repository: Option<&str>,
+    ) -> Self {
+        let parsed_semver = semver::Version::parse(version).ok();
+        let major = parsed_semver.as_ref().map(|v| v.major).unwrap_or(0);
+        let minor = parsed_semver.as_ref().map(|v| v.minor).unwrap_or(0);
+        let patch = parsed_semver.as_ref().map(|v| v.patch).unwrap_or(0);
+        let is_prerelease = parsed_semver.as_ref().map(|v| !v.pre.is_empty()).unwrap_or(false);
+        let prerelease = parsed_semver.as_ref().and_then(|v| {
+            if v.pre.is_empty() {
+                None
+            } else {
+                Some(v.pre.as_str().to_string())
+            }
+        });
+        let build = parsed_semver.as_ref().and_then(|v| {
+            if v.build.is_empty() {
+                None
+            } else {
+                Some(v.build.as_str().to_string())
+            }
+        });
+
+        let forge_meta = repository.map(parse_repo_forge);
+        let repo_owner = forge_meta.as_ref().and_then(|f| f.owner.clone());
+        let repo_name = forge_meta.as_ref().and_then(|f| f.repo.clone());
+        let forge = forge_meta.as_ref().and_then(|f| f.forge.clone());
+
+        InterpolationContext {
+            version: version.to_string(),
+            previous_version: previous_version.map(String::from),
+            tag: tag.to_string(),
+            previous_tag: previous_tag.map(String::from),
+            bump_level: bump_level.to_string(),
+            is_prerelease,
+            prerelease,
+            build,
+            major,
+            minor,
+            patch,
+            date: date.to_string(),
+            branch: branch.map(String::from),
+            repo_owner,
+            repo_name,
+            forge,
+        }
+    }
+}
+
 impl<'de> serde::Deserialize<'de> for ReleaseContext {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -1322,5 +1519,47 @@ mod tests {
         assert_eq!(deserialized.repo_owner.as_deref(), Some("custom-owner"));
         assert_eq!(deserialized.repo_name.as_deref(), Some("custom-repo"));
         assert_eq!(deserialized.forge.as_deref(), Some("custom-forge"));
+    }
+
+    #[test]
+    fn test_interpolation_context_build_and_serialization() {
+        let ctx = InterpolationContext::build(
+            "1.2.3-rc.1+build.123",
+            Some("1.2.2"),
+            "v1.2.3-rc.1+build.123",
+            Some("v1.2.2"),
+            "minor",
+            "2026-03-30",
+            Some("main"),
+            Some("https://github.com/my-org/my-pkg.git"),
+        );
+
+        assert_eq!(ctx.version, "1.2.3-rc.1+build.123");
+        assert_eq!(ctx.previous_version.as_deref(), Some("1.2.2"));
+        assert_eq!(ctx.tag, "v1.2.3-rc.1+build.123");
+        assert_eq!(ctx.previous_tag.as_deref(), Some("v1.2.2"));
+        assert_eq!(ctx.bump_level, "minor");
+        assert!(ctx.is_prerelease);
+        assert_eq!(ctx.prerelease.as_deref(), Some("rc.1"));
+        assert_eq!(ctx.build.as_deref(), Some("build.123"));
+        assert_eq!(ctx.major, 1);
+        assert_eq!(ctx.minor, 2);
+        assert_eq!(ctx.patch, 3);
+        assert_eq!(ctx.date, "2026-03-30");
+        assert_eq!(ctx.branch.as_deref(), Some("main"));
+        assert_eq!(ctx.repo_owner.as_deref(), Some("my-org"));
+        assert_eq!(ctx.repo_name.as_deref(), Some("my-pkg"));
+        assert_eq!(ctx.forge.as_deref(), Some("github"));
+
+        let json = serde_json::to_string(&ctx).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(value["owner"], "my-org");
+        assert_eq!(value["repo_owner"], "my-org");
+        assert_eq!(value["repo"], "my-pkg");
+        assert_eq!(value["repo_name"], "my-pkg");
+        assert_eq!(value["forge"], "github");
+        assert_eq!(value["branch"], "main");
+        assert_eq!(value["bump_level"], "minor");
+        assert_eq!(value["is_prerelease"], true);
     }
 }

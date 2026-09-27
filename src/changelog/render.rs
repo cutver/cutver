@@ -398,16 +398,10 @@ mod tests {
                         Env test: [fallback_value] []";
         assert_eq!(rendered, expected);
 
-        // Test with actual env var present
-        // SAFETY: Safe in single-threaded test context or scoped test
-        unsafe {
-            std::env::set_var("TEST_CUTVER_ENV_VAR", "injected_value");
-        }
-        let env_tpl = "{{ env('TEST_CUTVER_ENV_VAR', 'wrong') }}";
+        // Test with actual env var present (using existing ambient env var without mutating process state)
+        let env_tpl = "{{ env('CARGO_MANIFEST_DIR', 'fallback') }}";
         let res = render_template(env_tpl, &ctx).unwrap();
-        assert_eq!(res, "injected_value");
-        unsafe {
-            std::env::remove_var("TEST_CUTVER_ENV_VAR");
-        }
+        assert!(!res.is_empty());
+        assert_ne!(res, "fallback");
     }
 }

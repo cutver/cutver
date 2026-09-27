@@ -129,6 +129,10 @@ cutver bump auto --dry-run
 cutver bump auto
 ```
 
+<p align="center">
+  <img src="assets/cutver_bump_showcase.png" alt="cutver bump auto simulation release plan" width="850">
+</p>
+
 For first/initial releases where manifests are already at `0.1.0` (or `1.0.0`) and should not be incremented:
 ```bash
 # Initial release: tags current version, gathers all initial commits into changelog
@@ -241,6 +245,10 @@ cutver changelog show v0.5.0 --include-header
 cutver changelog latest --template .github/templates/cutver/RELEASE.md
 ```
 
+<p align="center">
+  <img src="assets/cutver_changelog_latest_showcase.png" alt="cutver changelog latest formatted output" width="850">
+</p>
+
 ---
 
 ## AI Coding Agent Skills
@@ -324,6 +332,10 @@ Check for version divergence across your declared manifests before cutting a rel
 ```bash
 cutver doctor
 ```
+
+<p align="center">
+  <img src="assets/cutver_doctor_showcase.png" alt="cutver doctor configuration and manifest verification" width="750">
+</p>
 
 - **Exit 0**: Configuration is valid and all manifests are synchronized.
 - **Exit 1**: Invalid configuration or manifest read error.

@@ -1,7 +1,9 @@
 use std::path::{Path, PathBuf};
 
 use crate::bump::{self, Summary};
+use crate::changelog::ReleaseContext;
 use crate::cli::args::{BumpLevel, ChangelogCommands, Cli, Commands};
+use crate::cli::changelog::{self, ChangelogFormat};
 use crate::cli::style::Theme;
 use crate::config;
 
@@ -223,236 +225,281 @@ fn resolve_release_tag_and_prefix(
     (clean_ver.to_string(), String::new())
 }
 
+struct ReleaseTargetInfo {
+    version: String,
+    prev_version: Option<String>,
+    commits: Vec<String>,
+}
+
+fn resolve_latest_target_info(
+    content: &str,
+    target_path: &Path,
+    root_dir: &Path,
+    cfg: Option<&config::Config>,
+) -> Result<ReleaseTargetInfo, i32> {
+    let mut versions = crate::changelog::list_versions(content);
+    if versions.is_empty() {
+        print_error(format!(
+            "no release section found in changelog '{}'",
+            target_path.display()
+        ));
+        return Err(1);
+    }
+
+    let prev_ver = versions.get(1).cloned();
+    let prev_tag = prev_ver
+        .as_deref()
+        .map(|pv| resolve_release_tag_and_prefix(cfg, root_dir, content, pv).0);
+    let commits = crate::git::commits_since(root_dir, prev_tag.as_deref()).unwrap_or_default();
+    let latest_ver = versions.remove(0);
+
+    Ok(ReleaseTargetInfo {
+        version: latest_ver,
+        prev_version: prev_ver,
+        commits,
+    })
+}
+
+fn resolve_show_target_info(
+    content: &str,
+    requested_version: &str,
+    target_path: &Path,
+    root_dir: &Path,
+    cfg: Option<&config::Config>,
+) -> Result<ReleaseTargetInfo, i32> {
+    let target_norm = requested_version.trim_start_matches(['v', 'V']);
+    let versions = crate::changelog::list_versions(content);
+    let Some(idx) = versions
+        .iter()
+        .position(|v| v.trim_start_matches(['v', 'V']) == target_norm)
+    else {
+        print_error(format!(
+            "version '{requested_version}' not found in changelog '{}'",
+            target_path.display()
+        ));
+        return Err(1);
+    };
+
+    let matched_ver = versions[idx].clone();
+    let prev_ver = versions.get(idx + 1).cloned();
+    let (tag, _) = resolve_release_tag_and_prefix(cfg, root_dir, content, &matched_ver);
+    let prev_tag = prev_ver
+        .as_deref()
+        .map(|pv| resolve_release_tag_and_prefix(cfg, root_dir, content, pv).0);
+    let commits = crate::git::commits_between(root_dir, prev_tag.as_deref(), &tag).unwrap_or_default();
+
+    Ok(ReleaseTargetInfo {
+        version: matched_ver,
+        prev_version: prev_ver,
+        commits,
+    })
+}
+
+fn resolve_changelog_context(
+    config_override: Option<&Path>,
+    target_path: &Path,
+    content: &str,
+    target: ReleaseTargetInfo,
+) -> ReleaseContext {
+    let cfg = config_override
+        .and_then(|p| config::load(p).ok())
+        .or_else(|| std::env::current_dir().ok().and_then(|d| config::discover(d).ok()));
+
+    let include_scopes = cfg.as_ref().map(|c| c.changelog.include_scopes).unwrap_or(true);
+    let fallback_entry = cfg
+        .as_ref()
+        .map(|c| c.changelog.fallback_entry.as_str())
+        .unwrap_or("Maintenance and updates.");
+    let dummy_root = PathBuf::from(".");
+    let root_dir = cfg
+        .as_ref()
+        .map(|c| c.root_dir.as_path())
+        .or_else(|| target_path.parent())
+        .unwrap_or(&dummy_root);
+
+    let (tag, _) = resolve_release_tag_and_prefix(cfg.as_ref(), root_dir, content, &target.version);
+    let prev_tag = target
+        .prev_version
+        .as_deref()
+        .map(|pv| resolve_release_tag_and_prefix(cfg.as_ref(), root_dir, content, pv).0);
+
+    let (_bump, parsed_commits) = crate::conventional::parse_and_deduce_bump(&target.commits);
+    let contributors = crate::git::list_authors_between(root_dir, prev_tag.as_deref(), &tag).unwrap_or_default();
+    let repository = crate::git::remote_url(root_dir);
+    let date_str = extract_heading_date(content, &target.version)
+        .unwrap_or_else(|| crate::changelog::format_date(std::time::SystemTime::now()));
+
+    let mut ctx = crate::changelog::build_context(
+        &target.version,
+        target.prev_version.as_deref(),
+        &tag,
+        prev_tag.as_deref(),
+        &date_str,
+        repository,
+        &parsed_commits,
+        contributors,
+        include_scopes,
+        fallback_entry,
+    );
+
+    if parsed_commits.is_empty()
+        && let Some(body) = crate::changelog::extract_version(content, &target.version, false)
+        && !body.is_empty()
+    {
+        ctx.all_changes = body;
+    }
+
+    ctx
+}
+
+fn execute_changelog_output(
+    config_override: Option<&Path>,
+    format: ChangelogFormat,
+    context_supplier: impl FnOnce() -> Result<ReleaseContext, i32>,
+    markdown_supplier: impl FnOnce(bool) -> Result<String, crate::changelog::Error>,
+) -> i32 {
+    match format {
+        ChangelogFormat::Json => {
+            let ctx = match context_supplier() {
+                Ok(c) => c,
+                Err(code) => return code,
+            };
+            if let Err(e) = changelog::print_release_context_json(&ctx) {
+                print_error(e);
+                return 1;
+            }
+            0
+        }
+        ChangelogFormat::Template(ref t_path) => {
+            let template_str = match load_template_file(config_override, t_path) {
+                Ok(s) => s,
+                Err(e) => {
+                    print_error(e);
+                    return 1;
+                }
+            };
+            let ctx = match context_supplier() {
+                Ok(c) => c,
+                Err(code) => return code,
+            };
+            match crate::changelog::render_template(&template_str, &ctx) {
+                Ok(rendered) => {
+                    changelog::print_changelog_output(&rendered, &Theme::stdout());
+                    0
+                }
+                Err(e) => {
+                    print_error(e);
+                    1
+                }
+            }
+        }
+        ChangelogFormat::Markdown { include_header } => match markdown_supplier(include_header) {
+            Ok(output) => {
+                changelog::print_changelog_output(&output, &Theme::stdout());
+                0
+            }
+            Err(e) => {
+                print_error(e);
+                1
+            }
+        },
+    }
+}
+
 pub fn run_changelog(config_override: Option<&Path>, command: ChangelogCommands) -> i32 {
     match command {
         ChangelogCommands::Latest {
             include_header,
             path,
             template,
+            json,
         } => {
             let target_path = match resolve_changelog_path(config_override, path) {
                 Ok(p) => p,
                 Err(code) => return code,
             };
-
-            if let Some(ref t_path) = template {
-                let template_str = match load_template_file(config_override, t_path) {
-                    Ok(s) => s,
-                    Err(e) => {
-                        print_error(e);
-                        return 1;
-                    }
-                };
-
-                let content = match std::fs::read_to_string(&target_path) {
-                    Ok(c) => c,
-                    Err(e) => {
-                        print_error(format!("failed to read changelog '{}': {e}", target_path.display()));
-                        return 1;
-                    }
-                };
-
-                let versions = crate::changelog::list_versions(&content);
-                if versions.is_empty() {
-                    print_error(format!(
-                        "no release section found in changelog '{}'",
-                        target_path.display()
-                    ));
-                    return 1;
-                }
-
-                let latest_ver = &versions[0];
-                let prev_ver = versions.get(1).map(String::as_str);
-
-                let cfg = config_override
-                    .and_then(|p| config::load(p).ok())
-                    .or_else(|| std::env::current_dir().ok().and_then(|d| config::discover(d).ok()));
-
-                let include_scopes = cfg.as_ref().map(|c| c.changelog.include_scopes).unwrap_or(true);
-                let fallback_entry = cfg
-                    .as_ref()
-                    .map(|c| c.changelog.fallback_entry.as_str())
-                    .unwrap_or("Maintenance and updates.");
-                let dummy_root = std::path::PathBuf::from(".");
-                let root_dir = cfg
-                    .as_ref()
-                    .map(|c| c.root_dir.as_path())
-                    .or_else(|| target_path.parent())
-                    .unwrap_or(&dummy_root);
-
-                let (tag, _) = resolve_release_tag_and_prefix(cfg.as_ref(), root_dir, &content, latest_ver);
-                let prev_tag =
-                    prev_ver.map(|pv| resolve_release_tag_and_prefix(cfg.as_ref(), root_dir, &content, pv).0);
-
-                let commits_raw = crate::git::commits_since(root_dir, prev_tag.as_deref()).unwrap_or_default();
-                let (_bump, parsed_commits) = crate::conventional::parse_and_deduce_bump(&commits_raw);
-                let contributors = crate::git::list_authors_since(root_dir, prev_tag.as_deref()).unwrap_or_default();
-                let repository = crate::git::remote_url(root_dir);
-                let date_str = extract_heading_date(&content, latest_ver)
-                    .unwrap_or_else(|| crate::changelog::format_date(std::time::SystemTime::now()));
-
-                let mut ctx = crate::changelog::build_context(
-                    latest_ver,
-                    prev_ver,
-                    &tag,
-                    prev_tag.as_deref(),
-                    &date_str,
-                    repository,
-                    &parsed_commits,
-                    contributors,
-                    include_scopes,
-                    fallback_entry,
-                );
-
-                if parsed_commits.is_empty()
-                    && let Some(body) = crate::changelog::extract_latest(&content, false)
-                    && !body.is_empty()
-                {
-                    ctx.all_changes = body;
-                }
-
-                match crate::changelog::render_template(&template_str, &ctx) {
-                    Ok(rendered) => {
-                        crate::cli::changelog::print_changelog_output(&rendered, &Theme::stdout());
-                        0
-                    }
-                    Err(e) => {
-                        print_error(e);
-                        1
-                    }
-                }
-            } else {
-                match crate::changelog::read_latest(&target_path, include_header) {
-                    Ok(output) => {
-                        crate::cli::changelog::print_changelog_output(&output, &Theme::stdout());
-                        0
-                    }
-                    Err(e) => {
-                        print_error(e);
-                        1
-                    }
-                }
-            }
+            let format = ChangelogFormat::from_options(json, template, include_header);
+            run_changelog_latest(config_override, &target_path, format)
         }
         ChangelogCommands::Show {
             version,
             include_header,
             path,
             template,
+            json,
         } => {
             let target_path = match resolve_changelog_path(config_override, path) {
                 Ok(p) => p,
                 Err(code) => return code,
             };
-
-            if let Some(ref t_path) = template {
-                let template_str = match load_template_file(config_override, t_path) {
-                    Ok(s) => s,
-                    Err(e) => {
-                        print_error(e);
-                        return 1;
-                    }
-                };
-
-                let content = match std::fs::read_to_string(&target_path) {
-                    Ok(c) => c,
-                    Err(e) => {
-                        print_error(format!("failed to read changelog '{}': {e}", target_path.display()));
-                        return 1;
-                    }
-                };
-
-                let target_norm = version.trim_start_matches(['v', 'V']);
-                let versions = crate::changelog::list_versions(&content);
-                let pos = versions
-                    .iter()
-                    .position(|v| v.trim_start_matches(['v', 'V']) == target_norm);
-                let idx = match pos {
-                    Some(i) => i,
-                    None => {
-                        print_error(format!(
-                            "version '{version}' not found in changelog '{}'",
-                            target_path.display()
-                        ));
-                        return 1;
-                    }
-                };
-
-                let matched_ver = &versions[idx];
-                let prev_ver = versions.get(idx + 1).map(String::as_str);
-
-                let cfg = config_override
-                    .and_then(|p| config::load(p).ok())
-                    .or_else(|| std::env::current_dir().ok().and_then(|d| config::discover(d).ok()));
-
-                let include_scopes = cfg.as_ref().map(|c| c.changelog.include_scopes).unwrap_or(true);
-                let fallback_entry = cfg
-                    .as_ref()
-                    .map(|c| c.changelog.fallback_entry.as_str())
-                    .unwrap_or("Maintenance and updates.");
-                let dummy_root = std::path::PathBuf::from(".");
-                let root_dir = cfg
-                    .as_ref()
-                    .map(|c| c.root_dir.as_path())
-                    .or_else(|| target_path.parent())
-                    .unwrap_or(&dummy_root);
-
-                let (tag, _) = resolve_release_tag_and_prefix(cfg.as_ref(), root_dir, &content, matched_ver);
-                let prev_tag =
-                    prev_ver.map(|pv| resolve_release_tag_and_prefix(cfg.as_ref(), root_dir, &content, pv).0);
-
-                let commits_raw = crate::git::commits_between(root_dir, prev_tag.as_deref(), &tag).unwrap_or_default();
-                let (_bump, parsed_commits) = crate::conventional::parse_and_deduce_bump(&commits_raw);
-                let contributors =
-                    crate::git::list_authors_between(root_dir, prev_tag.as_deref(), &tag).unwrap_or_default();
-                let repository = crate::git::remote_url(root_dir);
-                let date_str = extract_heading_date(&content, matched_ver)
-                    .unwrap_or_else(|| crate::changelog::format_date(std::time::SystemTime::now()));
-
-                let mut ctx = crate::changelog::build_context(
-                    matched_ver,
-                    prev_ver,
-                    &tag,
-                    prev_tag.as_deref(),
-                    &date_str,
-                    repository,
-                    &parsed_commits,
-                    contributors,
-                    include_scopes,
-                    fallback_entry,
-                );
-
-                if parsed_commits.is_empty()
-                    && let Some(body) = crate::changelog::extract_version(&content, &version, false)
-                    && !body.is_empty()
-                {
-                    ctx.all_changes = body;
-                }
-
-                match crate::changelog::render_template(&template_str, &ctx) {
-                    Ok(rendered) => {
-                        crate::cli::changelog::print_changelog_output(&rendered, &Theme::stdout());
-                        0
-                    }
-                    Err(e) => {
-                        print_error(e);
-                        1
-                    }
-                }
-            } else {
-                match crate::changelog::read_version(&target_path, &version, include_header) {
-                    Ok(output) => {
-                        crate::cli::changelog::print_changelog_output(&output, &Theme::stdout());
-                        0
-                    }
-                    Err(e) => {
-                        print_error(e);
-                        1
-                    }
-                }
-            }
+            let format = ChangelogFormat::from_options(json, template, include_header);
+            run_changelog_show(config_override, &target_path, &version, format)
         }
     }
+}
+
+fn read_file_content(path: &Path) -> Result<String, i32> {
+    std::fs::read_to_string(path).map_err(|e| {
+        print_error(format!("failed to read changelog '{}': {e}", path.display()));
+        1
+    })
+}
+
+fn run_changelog_latest(config_override: Option<&Path>, target_path: &Path, format: ChangelogFormat) -> i32 {
+    let context_supplier = || {
+        let content = read_file_content(target_path)?;
+        let cfg = config_override
+            .and_then(|p| config::load(p).ok())
+            .or_else(|| std::env::current_dir().ok().and_then(|d| config::discover(d).ok()));
+        let dummy_root = PathBuf::from(".");
+        let root_dir = cfg
+            .as_ref()
+            .map(|c| c.root_dir.as_path())
+            .or_else(|| target_path.parent())
+            .unwrap_or(&dummy_root);
+        let target = resolve_latest_target_info(&content, target_path, root_dir, cfg.as_ref())?;
+        Ok(resolve_changelog_context(
+            config_override,
+            target_path,
+            &content,
+            target,
+        ))
+    };
+
+    let markdown_supplier = |include_header| crate::changelog::read_latest(target_path, include_header);
+
+    execute_changelog_output(config_override, format, context_supplier, markdown_supplier)
+}
+
+fn run_changelog_show(
+    config_override: Option<&Path>,
+    target_path: &Path,
+    version: &str,
+    format: ChangelogFormat,
+) -> i32 {
+    let context_supplier = || {
+        let content = read_file_content(target_path)?;
+        let cfg = config_override
+            .and_then(|p| config::load(p).ok())
+            .or_else(|| std::env::current_dir().ok().and_then(|d| config::discover(d).ok()));
+        let dummy_root = PathBuf::from(".");
+        let root_dir = cfg
+            .as_ref()
+            .map(|c| c.root_dir.as_path())
+            .or_else(|| target_path.parent())
+            .unwrap_or(&dummy_root);
+        let target = resolve_show_target_info(&content, version, target_path, root_dir, cfg.as_ref())?;
+        Ok(resolve_changelog_context(
+            config_override,
+            target_path,
+            &content,
+            target,
+        ))
+    };
+
+    let markdown_supplier = |include_header| crate::changelog::read_version(target_path, version, include_header);
+
+    execute_changelog_output(config_override, format, context_supplier, markdown_supplier)
 }
 
 pub fn run_bump(
@@ -1052,6 +1099,7 @@ field = "version"
             include_header: false,
             path: Some(cl),
             template: None,
+            json: false,
         };
         assert_eq!(run_changelog(None, cmd), 0);
     }
@@ -1114,6 +1162,7 @@ field = "version"
             include_header: false,
             path: Some(cl),
             template: None,
+            json: false,
         };
         assert_eq!(run_changelog(None, cmd), 0);
     }

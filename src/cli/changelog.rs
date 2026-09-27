@@ -1,4 +1,36 @@
+use std::path::PathBuf;
+
+use crate::changelog::ReleaseContext;
 use crate::cli::style::Theme;
+
+/// Output format for changelog query operations.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ChangelogFormat {
+    Json,
+    Template(PathBuf),
+    Markdown { include_header: bool },
+}
+
+impl ChangelogFormat {
+    /// Resolves output format from CLI options.
+    pub fn from_options(json: bool, template: Option<PathBuf>, include_header: bool) -> Self {
+        if json {
+            Self::Json
+        } else if let Some(path) = template {
+            Self::Template(path)
+        } else {
+            Self::Markdown { include_header }
+        }
+    }
+}
+
+/// Emits the release context serialized as pretty JSON directly to stdout.
+pub fn print_release_context_json(ctx: &ReleaseContext) -> Result<(), String> {
+    let json_str =
+        serde_json::to_string_pretty(ctx).map_err(|e| format!("failed to serialize release context to JSON: {e}"))?;
+    println!("{json_str}");
+    Ok(())
+}
 
 /// Formats and prints changelog output.
 ///
@@ -139,5 +171,26 @@ mod tests {
         let line = "- simple change without scope";
         let styled = style_markdown_line(line, &theme);
         assert!(styled.contains("simple change without scope"));
+    }
+
+    #[test]
+    fn test_changelog_format_from_options() {
+        assert_eq!(ChangelogFormat::from_options(true, None, false), ChangelogFormat::Json);
+        assert_eq!(
+            ChangelogFormat::from_options(true, Some(PathBuf::from("tpl.j2")), true),
+            ChangelogFormat::Json
+        );
+        assert_eq!(
+            ChangelogFormat::from_options(false, Some(PathBuf::from("tpl.j2")), false),
+            ChangelogFormat::Template(PathBuf::from("tpl.j2"))
+        );
+        assert_eq!(
+            ChangelogFormat::from_options(false, None, true),
+            ChangelogFormat::Markdown { include_header: true }
+        );
+        assert_eq!(
+            ChangelogFormat::from_options(false, None, false),
+            ChangelogFormat::Markdown { include_header: false }
+        );
     }
 }

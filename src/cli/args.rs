@@ -70,6 +70,9 @@ pub enum ChangelogCommands {
         /// Optional path to an arbitrary MiniJinja template file to format the output
         #[arg(long, value_name = "PATH")]
         template: Option<PathBuf>,
+        /// Output release context as structured JSON directly to stdout
+        #[arg(long)]
+        json: bool,
     },
     /// Extract release notes for a specific version from the changelog
     Show {
@@ -85,6 +88,9 @@ pub enum ChangelogCommands {
         /// Optional path to an arbitrary MiniJinja template file to format the output
         #[arg(long, value_name = "PATH")]
         template: Option<PathBuf>,
+        /// Output release context as structured JSON directly to stdout
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -245,6 +251,7 @@ mod tests {
                     include_header,
                     path,
                     template,
+                    json,
                 },
         } = cli.command
         else {
@@ -253,6 +260,7 @@ mod tests {
         assert!(!include_header);
         assert!(path.is_none());
         assert!(template.is_none());
+        assert!(!json);
     }
 
     #[test]
@@ -277,6 +285,7 @@ mod tests {
                 include_header: true,
                 path: Some(PathBuf::from("docs/HISTORY.md")),
                 template: Some(PathBuf::from("release.j2")),
+                json: false,
             }
         );
 
@@ -290,6 +299,21 @@ mod tests {
                 include_header: true,
                 path: Some(PathBuf::from("custom.md")),
                 template: None,
+                json: false,
+            }
+        );
+
+        let cli_json = Cli::try_parse_from(["cutver", "changelog", "latest", "--json"]).unwrap();
+        let Commands::Changelog { command: command_json } = cli_json.command else {
+            panic!("expected changelog");
+        };
+        assert_eq!(
+            command_json,
+            ChangelogCommands::Latest {
+                include_header: false,
+                path: None,
+                template: None,
+                json: true,
             }
         );
     }
@@ -304,6 +328,7 @@ mod tests {
                     include_header,
                     path,
                     template,
+                    json,
                 },
         } = cli.command
         else {
@@ -313,6 +338,7 @@ mod tests {
         assert!(!include_header);
         assert!(path.is_none());
         assert!(template.is_none());
+        assert!(!json);
     }
 
     #[test]
@@ -339,6 +365,7 @@ mod tests {
                 include_header: true,
                 path: Some(PathBuf::from("docs/HISTORY.md")),
                 template: Some(PathBuf::from("notes.j2")),
+                json: false,
             }
         );
 
@@ -353,6 +380,32 @@ mod tests {
                 include_header: true,
                 path: Some(PathBuf::from("custom.md")),
                 template: None,
+                json: false,
+            }
+        );
+
+        let cli_json = Cli::try_parse_from(["cutver", "changelog", "show", "1.5.0", "--json"]).unwrap();
+        let Commands::Changelog { command: command_json } = cli_json.command else {
+            panic!("expected changelog");
+        };
+        assert_eq!(
+            command_json,
+            ChangelogCommands::Show {
+                version: "1.5.0".to_string(),
+                include_header: false,
+                path: None,
+                template: None,
+                json: true,
+            }
+        );
+        assert_eq!(
+            command_short,
+            ChangelogCommands::Show {
+                version: "0.3.1".to_string(),
+                include_header: true,
+                path: Some(PathBuf::from("custom.md")),
+                template: None,
+                json: false,
             }
         );
     }

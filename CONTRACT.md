@@ -95,3 +95,32 @@ Every error surfaced to the user must answer three questions:
 - Changes should be broken down into atomic, reviewable work-unit commits (`feat:`, `fix:`, `refactor:`, `test:`, `docs:`).
 - Code, tests, and documentation must accompany the behavior within the same commit.
 - Pull requests must strive to remain under 300–400 lines of effective code to protect human review focus.
+
+---
+
+## 🏛️ Pillar V: Structural Purity & Complexity Control
+
+### 1. Flat Hierarchy & Maximum 2-Level Nesting
+- **Maximum nesting depth**: Code blocks must never exceed two (2) levels of indentation inside any function.
+- **Guard Clauses & Bouncer Pattern**: Handle edge cases, errors, and validation exits immediately at the top of functions using `let-else` (`let Some(val) = opt else { return ... };`), the `?` operator, and early returns.
+- Deeply nested `if { if { match { ... } } }` structures are strictly forbidden. The happy path must always run flat along the left margin.
+
+### 2. Elimination of Procedural Branching (Anti-`if-else`)
+- **Prohibition of `if/else` ladders**: Procedural `if / else if / else` chains are forbidden across domain boundaries.
+- **Exhaustive Matching**: State dispatch must use exhaustive `match` expressions.
+- **No Lazy Wildcards**: Using catch-all wildcards (`_ => ...`) in `match` over domain enums (`BumpLevel`, `ManifestKind`, `Drift`) is forbidden. Every variant must be explicitly handled so that new additions trigger compile-time errors.
+- **Railway-Oriented Combinators**: Error handling and optional values must be composed via standard combinators (`map`, `and_then`, `unwrap_or_else`) rather than procedural conditions.
+
+### 3. Polymorphic Validation over Conditionals
+- Business rules, manifest synchronization, and hook validations must rely on polymorphic dispatch (via Rust traits such as `ManifestEditor`, `Validator`, or typed enum dispatch), never on ad-hoc conditional branches.
+- Components must validate themselves upon parsing (*Parse, Don't Validate*).
+
+### 4. Atomic Primitives & Strict Single Responsibility
+- **Function Budget**: Functions must not exceed 35-40 lines of effective code. A function does exactly one thing: compute, parse, validate, or perform boundary I/O. Mixing responsibilities is forbidden.
+- **Module Budget**: Files must remain under 250-300 lines. When a module approaches this threshold, it must be decomposed into focused submodules.
+- Functions must be pure, deterministic, and composable without hidden side-effects.
+
+### 5. Invariants by Construction (Type-State & No Primitive Obsession)
+- Critical workflows must represent valid states through the type system (Type-State pattern: `UnverifiedPlan -> ValidatedPlan -> StagedPlan`), making invalid transitions unrepresentable at compile time.
+- Primitive Obsession is forbidden: Domain-significant concepts (e.g., Git tags, commit hashes, paths) must use typed *Newtypes* rather than bare `String` primitives.
+

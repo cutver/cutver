@@ -151,3 +151,87 @@ fn test_style_error_output_with_clicolor_force_and_no_color() {
     );
     assert!(stderr.contains("Error: ") || stderr.contains("Error loading config: "));
 }
+
+#[test]
+fn test_style_changelog_commands_with_clicolor_force_and_no_color() {
+    let guard = FixtureGuard::new("style-changelog");
+    let fixture = guard.fixture();
+    let cutver_toml = r#"[version]
+current_source = "package.json"
+
+[[manifest]]
+path = "package.json"
+kind = "json"
+field = "version"
+
+[changelog]
+path = "CHANGELOG.md"
+"#;
+    fixture.write("cutver.toml", cutver_toml);
+    fixture.write("package.json", r#"{"version": "1.2.0"}"#);
+    let changelog_content = r#"# Changelog
+
+## [1.2.0] - 2026-03-01
+
+### Features
+- **cli**: add changelog styling (#72)
+"#;
+    fixture.write("CHANGELOG.md", changelog_content);
+
+    // 1. With CLICOLOR_FORCE=1 -> ANSI escape sequences emitted
+    let output = Command::new(env!("CARGO_BIN_EXE_cutver"))
+        .current_dir(&fixture.dir)
+        .env("CLICOLOR_FORCE", "1")
+        .args(["changelog", "latest", "-H"])
+        .output()
+        .expect("failed to execute cutver binary");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("\x1b["),
+        "stdout expected ANSI escape sequences under CLICOLOR_FORCE=1: {stdout}"
+    );
+    // Cyan bold version heading
+    assert!(stdout.contains("\x1b[36m\x1b[1m[1.2.0] - 2026-03-01\x1b[0m\x1b[0m"));
+    // Bold category heading
+    assert!(stdout.contains("\x1b[1mFeatures\x1b[0m"));
+    // Styled scope and dimmed issue ref
+    assert!(stdout.contains("\x1b[36m\x1b[1mcli\x1b[0m\x1b[0m"));
+    assert!(stdout.contains("\x1b[90m(#72)\x1b[0m"));
+
+    // 2. With NO_COLOR=1 -> Zero ANSI escape codes, pristine raw Markdown
+    let output = Command::new(env!("CARGO_BIN_EXE_cutver"))
+        .current_dir(&fixture.dir)
+        .env("NO_COLOR", "1")
+        .args(["changelog", "latest", "-H"])
+        .output()
+        .expect("failed to execute cutver binary");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.contains("\x1b["),
+        "stdout contains ANSI escape sequences under NO_COLOR=1: {stdout}"
+    );
+    assert!(stdout.contains("## [1.2.0] - 2026-03-01"));
+    assert!(stdout.contains("### Features"));
+    assert!(stdout.contains("- **cli**: add changelog styling (#72)"));
+
+    // 3. Default piped output without CLICOLOR_FORCE -> Zero ANSI escape codes
+    let output = Command::new(env!("CARGO_BIN_EXE_cutver"))
+        .current_dir(&fixture.dir)
+        .args(["changelog", "latest", "-H"])
+        .output()
+        .expect("failed to execute cutver binary");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.contains("\x1b["),
+        "piped stdout contains ANSI escape sequences without TTY or CLICOLOR_FORCE: {stdout}"
+    );
+    assert!(stdout.contains("## [1.2.0] - 2026-03-01"));
+    assert!(stdout.contains("### Features"));
+    assert!(stdout.contains("- **cli**: add changelog styling (#72)"));
+}

@@ -2,7 +2,13 @@ use std::path::{Path, PathBuf};
 
 use crate::bump::{self, Drift, Summary};
 use crate::cli::args::{BumpLevel, ChangelogCommands, Cli, Commands};
+use crate::cli::style::Theme;
 use crate::config;
+
+pub fn print_error(msg: impl std::fmt::Display) {
+    let theme = Theme::stderr();
+    eprintln!("{} {}", theme.error("Error:"), msg);
+}
 
 pub fn run(args: Cli) -> i32 {
     match args.command {
@@ -14,7 +20,7 @@ pub fn run(args: Cli) -> i32 {
         } => match crate::init::run_init(path, update, force, no_template) {
             Ok(()) => 0,
             Err(e) => {
-                eprintln!("Error: {e}");
+                print_error(e);
                 1
             }
         },
@@ -48,7 +54,7 @@ pub fn load_config(config_path: Option<PathBuf>) -> Result<config::Config, i32> 
             let start_dir = match std::env::current_dir() {
                 Ok(d) => d,
                 Err(e) => {
-                    eprintln!("Error: unable to determine current directory: {e}");
+                    print_error(format!("unable to determine current directory: {e}"));
                     return Err(1);
                 }
             };
@@ -56,7 +62,8 @@ pub fn load_config(config_path: Option<PathBuf>) -> Result<config::Config, i32> 
         }
     };
     config.map_err(|e| {
-        eprintln!("Error loading config: {e}");
+        let theme = Theme::stderr();
+        eprintln!("{} {e}", theme.error("Error loading config:"));
         1
     })
 }
@@ -71,7 +78,7 @@ pub fn resolve_changelog_path(config_override: Option<&Path>, path: Option<PathB
         None => match std::env::current_dir() {
             Ok(dir) => config::discover(dir),
             Err(e) => {
-                eprintln!("Error: unable to determine current directory: {e}");
+                print_error(format!("unable to determine current directory: {e}"));
                 return Err(1);
             }
         },
@@ -95,7 +102,7 @@ pub fn resolve_changelog_path(config_override: Option<&Path>, path: Option<PathB
                     if fallback.exists() {
                         Ok(fallback)
                     } else {
-                        eprintln!("Error: no changelog path configured and CHANGELOG.md not found");
+                        print_error("no changelog path configured and CHANGELOG.md not found");
                         Err(1)
                     }
                 }
@@ -106,7 +113,7 @@ pub fn resolve_changelog_path(config_override: Option<&Path>, path: Option<PathB
             if fallback.exists() {
                 Ok(fallback)
             } else {
-                eprintln!("Error: {e}");
+                print_error(e);
                 Err(1)
             }
         }
@@ -232,7 +239,7 @@ pub fn run_changelog(config_override: Option<&Path>, command: ChangelogCommands)
                 let template_str = match load_template_file(config_override, t_path) {
                     Ok(s) => s,
                     Err(e) => {
-                        eprintln!("Error: {e}");
+                        print_error(e);
                         return 1;
                     }
                 };
@@ -240,17 +247,17 @@ pub fn run_changelog(config_override: Option<&Path>, command: ChangelogCommands)
                 let content = match std::fs::read_to_string(&target_path) {
                     Ok(c) => c,
                     Err(e) => {
-                        eprintln!("Error: failed to read changelog '{}': {e}", target_path.display());
+                        print_error(format!("failed to read changelog '{}': {e}", target_path.display()));
                         return 1;
                     }
                 };
 
                 let versions = crate::changelog::list_versions(&content);
                 if versions.is_empty() {
-                    eprintln!(
-                        "Error: no release section found in changelog '{}'",
+                    print_error(format!(
+                        "no release section found in changelog '{}'",
                         target_path.display()
-                    );
+                    ));
                     return 1;
                 }
 
@@ -310,7 +317,7 @@ pub fn run_changelog(config_override: Option<&Path>, command: ChangelogCommands)
                         0
                     }
                     Err(e) => {
-                        eprintln!("Error: {e}");
+                        print_error(e);
                         1
                     }
                 }
@@ -321,7 +328,7 @@ pub fn run_changelog(config_override: Option<&Path>, command: ChangelogCommands)
                         0
                     }
                     Err(e) => {
-                        eprintln!("Error: {e}");
+                        print_error(e);
                         1
                     }
                 }
@@ -342,7 +349,7 @@ pub fn run_changelog(config_override: Option<&Path>, command: ChangelogCommands)
                 let template_str = match load_template_file(config_override, t_path) {
                     Ok(s) => s,
                     Err(e) => {
-                        eprintln!("Error: {e}");
+                        print_error(e);
                         return 1;
                     }
                 };
@@ -350,7 +357,7 @@ pub fn run_changelog(config_override: Option<&Path>, command: ChangelogCommands)
                 let content = match std::fs::read_to_string(&target_path) {
                     Ok(c) => c,
                     Err(e) => {
-                        eprintln!("Error: failed to read changelog '{}': {e}", target_path.display());
+                        print_error(format!("failed to read changelog '{}': {e}", target_path.display()));
                         return 1;
                     }
                 };
@@ -363,10 +370,10 @@ pub fn run_changelog(config_override: Option<&Path>, command: ChangelogCommands)
                 let idx = match pos {
                     Some(i) => i,
                     None => {
-                        eprintln!(
-                            "Error: version '{version}' not found in changelog '{}'",
+                        print_error(format!(
+                            "version '{version}' not found in changelog '{}'",
                             target_path.display()
-                        );
+                        ));
                         return 1;
                     }
                 };
@@ -428,7 +435,7 @@ pub fn run_changelog(config_override: Option<&Path>, command: ChangelogCommands)
                         0
                     }
                     Err(e) => {
-                        eprintln!("Error: {e}");
+                        print_error(e);
                         1
                     }
                 }
@@ -439,7 +446,7 @@ pub fn run_changelog(config_override: Option<&Path>, command: ChangelogCommands)
                         0
                     }
                     Err(e) => {
-                        eprintln!("Error: {e}");
+                        print_error(e);
                         1
                     }
                 }
@@ -461,7 +468,7 @@ pub fn run_bump(
             0
         }
         Err(e) => {
-            eprintln!("Error: {e}");
+            print_error(e);
             1
         }
     }
@@ -469,22 +476,35 @@ pub fn run_bump(
 
 pub fn run_doctor(config: &config::Config, check_changelog: bool) -> i32 {
     let mut has_drift = false;
+    let err_theme = Theme::stderr();
+    let out_theme = Theme::stdout();
 
     match bump::doctor(config) {
         Ok(drifts) => {
             if !drifts.is_empty() {
-                eprintln!("✖ Version drift detected ({} manifest(s) out of sync):", drifts.len());
+                eprintln!(
+                    "{} Version drift detected ({} manifest(s) out of sync):",
+                    err_theme.error_icon(),
+                    drifts.len()
+                );
                 for Drift { path, expected, actual } in drifts {
-                    eprintln!("  • {path}: expected {expected}, found {actual}");
+                    eprintln!("  {} {path}: expected {expected}, found {actual}", err_theme.bullet());
                 }
                 eprintln!("\nSuggested fix:");
-                eprintln!("  • Align version numbers manually across all files.");
-                eprintln!("  • Or run 'cutver bump patch' to synchronize all manifests in one step.");
+                eprintln!(
+                    "  {} Align version numbers manually across all files.",
+                    err_theme.bullet()
+                );
+                eprintln!(
+                    "  {} Or run '{}' to synchronize all manifests in one step.",
+                    err_theme.bullet(),
+                    err_theme.accent("cutver bump patch")
+                );
                 has_drift = true;
             }
         }
         Err(e) => {
-            eprintln!("Error: {e}");
+            print_error(e);
             return 1;
         }
     }
@@ -493,29 +513,35 @@ pub fn run_doctor(config: &config::Config, check_changelog: bool) -> i32 {
         match bump::doctor_changelog(config) {
             Ok(cl_drift) => {
                 if !cl_drift.is_empty() {
-                    eprintln!("✖ Changelog drift detected:");
+                    eprintln!("{} Changelog drift detected:", err_theme.error_icon());
                     if !cl_drift.missing_in_changelog.is_empty() {
                         eprintln!("\n  Missing in changelog (Git tag exists):");
                         for tag in &cl_drift.missing_in_changelog {
-                            eprintln!("    • {tag}");
+                            eprintln!("    {} {tag}", err_theme.bullet());
                         }
                     }
                     if !cl_drift.orphan_sections.is_empty() {
                         eprintln!("\n  Orphan changelog sections (no Git tag exists):");
                         for sec in &cl_drift.orphan_sections {
-                            eprintln!("    • {sec}");
+                            eprintln!("    {} {sec}", err_theme.bullet());
                         }
                     }
                     eprintln!("\nSuggested next steps:");
                     eprintln!(
-                        "  • Add missing release sections to CHANGELOG.md or query with 'cutver changelog show <version>'."
+                        "  {} Add missing release sections to CHANGELOG.md or query with '{}'.",
+                        err_theme.bullet(),
+                        err_theme.accent("cutver changelog show <version>")
                     );
-                    eprintln!("  • Check if orphan versions were tagged with a different prefix or not yet pushed.");
+                    eprintln!(
+                        "  {} Check if orphan versions were tagged with a different prefix or not yet pushed.",
+                        err_theme.bullet()
+                    );
                     has_drift = true;
                 }
             }
             Err(e) => {
-                eprintln!("Error checking changelog: {e}");
+                let theme = Theme::stderr();
+                eprintln!("{} {e}", theme.error("Error checking changelog:"));
                 return 1;
             }
         }
@@ -530,7 +556,7 @@ pub fn run_doctor(config: &config::Config, check_changelog: bool) -> i32 {
     } else {
         "cutver.toml"
     };
-    println!("✔ {filename} is valid.");
+    println!("{} {filename} is valid.", out_theme.success_icon());
     println!("  manifests: {}", config.manifest.len());
     println!("  preflight steps: {}", config.preflight.len());
     println!("  current source: {}", config.version.current_source);
@@ -541,24 +567,40 @@ pub fn run_doctor(config: &config::Config, check_changelog: bool) -> i32 {
 }
 
 pub fn print_bump_summary(summary: &Summary) {
+    let theme = Theme::stdout();
     if summary.dry_run {
-        println!("ℹ Running in simulation mode (--dry-run). No files, commits, or tags will be modified.\n");
+        println!(
+            "{} Running in {} (--dry-run). No files, commits, or tags will be modified.\n",
+            theme.info_icon(),
+            theme.bold("simulation mode")
+        );
         println!("Release Plan:");
     } else {
-        println!("✔ Release Plan:");
+        println!("{} Release Plan:", theme.success_icon());
     }
     println!("  source: {}", summary.source);
     println!("  current version: {}", summary.current);
-    println!("  next version: {}", summary.next);
+    println!("  next version: {}", theme.accent(&summary.next));
     println!("  dry run: {}", summary.dry_run);
     println!("  preflight commands:");
     for step in &summary.preflight {
-        let marker = if step.skipped { " [SKIPPED]" } else { "" };
-        println!("    • {}: {}{}", step.name, step.command, marker);
+        let marker = if step.skipped {
+            format!(" {}", theme.muted("[SKIPPED]"))
+        } else {
+            String::new()
+        };
+        println!("    {} {}: {}{}", theme.bullet(), step.name, step.command, marker);
     }
     println!("  manifests:");
     for t in &summary.touched {
-        println!("    • {}: {} -> {}", t.path, t.old, t.new);
+        println!(
+            "    {} {}: {} {} {}",
+            theme.bullet(),
+            t.path,
+            t.old,
+            theme.arrow(),
+            theme.accent(&t.new)
+        );
     }
     if let Some(cl) = &summary.changelog {
         println!("  changelog: {cl}");
@@ -567,9 +609,9 @@ pub fn print_bump_summary(summary: &Summary) {
         println!("  post_bump: {hook}");
     }
     println!("  commit: {}", summary.commit_message);
-    println!("  tag: {}", summary.tag);
+    println!("  tag: {}", theme.accent(&summary.tag));
     if let Some(ft) = &summary.floating_tag {
-        println!("  floating tag: {ft}");
+        println!("  floating tag: {}", theme.accent(ft));
     }
     if summary.publish_push || !summary.publish_commands.is_empty() {
         println!("  publish:");
@@ -581,7 +623,7 @@ pub fn print_bump_summary(summary: &Summary) {
         if !summary.publish_commands.is_empty() {
             println!("    commands:");
             for cmd in &summary.publish_commands {
-                println!("      • {cmd}");
+                println!("      {} {cmd}", theme.bullet());
             }
         }
     }

@@ -397,3 +397,58 @@ path = "CHANGELOG.md"
         "stderr does not contain expected error: {stderr}"
     );
 }
+
+#[test]
+fn changelog_latest_cli_terminal_styling_with_clicolor_force() {
+    let guard = FixtureGuard::new("changelog-latest-style");
+    let fixture = guard.fixture();
+    let cutver_toml = r#"[version]
+current_source = "package.json"
+
+[[manifest]]
+path = "package.json"
+kind = "json"
+field = "version"
+
+[changelog]
+path = "CHANGELOG.md"
+"#;
+    fixture.write("cutver.toml", cutver_toml);
+    fixture.write("package.json", r#"{"version": "1.2.0"}"#);
+    let changelog_content = r#"# Changelog
+
+## [1.2.0] - 2026-03-01
+
+### 🚀 Features
+- **parser**: improve speed (#42)
+"#;
+    fixture.write("CHANGELOG.md", changelog_content);
+
+    // Styled run
+    let output = Command::new(env!("CARGO_BIN_EXE_cutver"))
+        .current_dir(&fixture.dir)
+        .env("CLICOLOR_FORCE", "1")
+        .args(["changelog", "latest", "-H"])
+        .output()
+        .expect("failed to execute cutver binary");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("\x1b[36m\x1b[1m[1.2.0] - 2026-03-01\x1b[0m\x1b[0m"));
+    assert!(stdout.contains("\x1b[1m🚀 Features\x1b[0m"));
+    assert!(stdout.contains("\x1b[36m\x1b[1mparser\x1b[0m\x1b[0m"));
+    assert!(stdout.contains("\x1b[90m(#42)\x1b[0m"));
+
+    // Raw run with NO_COLOR
+    let output_no_color = Command::new(env!("CARGO_BIN_EXE_cutver"))
+        .current_dir(&fixture.dir)
+        .env("NO_COLOR", "1")
+        .args(["changelog", "latest", "-H"])
+        .output()
+        .expect("failed to execute cutver binary");
+
+    assert!(output_no_color.status.success());
+    let stdout_no_color = String::from_utf8_lossy(&output_no_color.stdout);
+    assert!(!stdout_no_color.contains("\x1b["));
+    assert!(stdout_no_color.contains("## [1.2.0] - 2026-03-01"));
+}

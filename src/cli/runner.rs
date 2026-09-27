@@ -313,7 +313,7 @@ pub fn run_changelog(config_override: Option<&Path>, command: ChangelogCommands)
 
                 match crate::changelog::render_template(&template_str, &ctx) {
                     Ok(rendered) => {
-                        println!("{rendered}");
+                        crate::cli::changelog::print_changelog_output(&rendered, &Theme::stdout());
                         0
                     }
                     Err(e) => {
@@ -324,7 +324,7 @@ pub fn run_changelog(config_override: Option<&Path>, command: ChangelogCommands)
             } else {
                 match crate::changelog::read_latest(&target_path, include_header) {
                     Ok(output) => {
-                        println!("{output}");
+                        crate::cli::changelog::print_changelog_output(&output, &Theme::stdout());
                         0
                     }
                     Err(e) => {
@@ -431,7 +431,7 @@ pub fn run_changelog(config_override: Option<&Path>, command: ChangelogCommands)
 
                 match crate::changelog::render_template(&template_str, &ctx) {
                     Ok(rendered) => {
-                        println!("{rendered}");
+                        crate::cli::changelog::print_changelog_output(&rendered, &Theme::stdout());
                         0
                     }
                     Err(e) => {
@@ -442,7 +442,7 @@ pub fn run_changelog(config_override: Option<&Path>, command: ChangelogCommands)
             } else {
                 match crate::changelog::read_version(&target_path, &version, include_header) {
                     Ok(output) => {
-                        println!("{output}");
+                        crate::cli::changelog::print_changelog_output(&output, &Theme::stdout());
                         0
                     }
                     Err(e) => {

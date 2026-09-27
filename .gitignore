@@ -2,3 +2,8 @@
 # Local Pi runtime state
 .atl/
 .codegraph/
+
+# Local drafts
+DISCORD_POST.md
+discord.md
+

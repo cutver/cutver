@@ -58,7 +58,7 @@ field = "version"
         !stdout.contains("\x1b["),
         "stdout contains ANSI escape sequences under NO_COLOR=1: {stdout}"
     );
-    assert!(stdout.contains("✔ cutver.toml is valid."));
+    assert!(stdout.contains("✔ cutver.toml is valid"));
 }
 
 #[test]

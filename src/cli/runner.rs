@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use crate::bump::{self, Drift, Summary};
+use crate::bump::{self, Summary};
 use crate::cli::args::{BumpLevel, ChangelogCommands, Cli, Commands};
 use crate::cli::style::Theme;
 use crate::config;
@@ -482,24 +482,7 @@ pub fn run_doctor(config: &config::Config, check_changelog: bool) -> i32 {
     match bump::doctor(config) {
         Ok(drifts) => {
             if !drifts.is_empty() {
-                eprintln!(
-                    "{} Version drift detected ({} manifest(s) out of sync):",
-                    err_theme.error_icon(),
-                    drifts.len()
-                );
-                for Drift { path, expected, actual } in drifts {
-                    eprintln!("  {} {path}: expected {expected}, found {actual}", err_theme.bullet());
-                }
-                eprintln!("\nSuggested fix:");
-                eprintln!(
-                    "  {} Align version numbers manually across all files.",
-                    err_theme.bullet()
-                );
-                eprintln!(
-                    "  {} Or run '{}' to synchronize all manifests in one step.",
-                    err_theme.bullet(),
-                    err_theme.accent("cutver bump patch")
-                );
+                eprint!("{}", crate::cli::doctor::render_version_drift(&drifts, &err_theme));
                 has_drift = true;
             }
         }
@@ -513,29 +496,7 @@ pub fn run_doctor(config: &config::Config, check_changelog: bool) -> i32 {
         match bump::doctor_changelog(config) {
             Ok(cl_drift) => {
                 if !cl_drift.is_empty() {
-                    eprintln!("{} Changelog drift detected:", err_theme.error_icon());
-                    if !cl_drift.missing_in_changelog.is_empty() {
-                        eprintln!("\n  Missing in changelog (Git tag exists):");
-                        for tag in &cl_drift.missing_in_changelog {
-                            eprintln!("    {} {tag}", err_theme.bullet());
-                        }
-                    }
-                    if !cl_drift.orphan_sections.is_empty() {
-                        eprintln!("\n  Orphan changelog sections (no Git tag exists):");
-                        for sec in &cl_drift.orphan_sections {
-                            eprintln!("    {} {sec}", err_theme.bullet());
-                        }
-                    }
-                    eprintln!("\nSuggested next steps:");
-                    eprintln!(
-                        "  {} Add missing release sections to CHANGELOG.md or query with '{}'.",
-                        err_theme.bullet(),
-                        err_theme.accent("cutver changelog show <version>")
-                    );
-                    eprintln!(
-                        "  {} Check if orphan versions were tagged with a different prefix or not yet pushed.",
-                        err_theme.bullet()
-                    );
+                    eprint!("{}", crate::cli::doctor::render_changelog_drift(&cl_drift, &err_theme));
                     has_drift = true;
                 }
             }
@@ -551,18 +512,10 @@ pub fn run_doctor(config: &config::Config, check_changelog: bool) -> i32 {
         return 2;
     }
 
-    let filename = if config.root_dir.join("release.toml").is_file() && !config.root_dir.join("cutver.toml").is_file() {
-        "release.toml"
-    } else {
-        "cutver.toml"
-    };
-    println!("{} {filename} is valid.", out_theme.success_icon());
-    println!("  manifests: {}", config.manifest.len());
-    println!("  preflight steps: {}", config.preflight.len());
-    println!("  current source: {}", config.version.current_source);
-    if check_changelog {
-        println!("  changelog: consistent with Git tags");
-    }
+    print!(
+        "{}",
+        crate::cli::doctor::render_dashboard(config, check_changelog, &out_theme)
+    );
     0
 }
 

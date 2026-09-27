@@ -16,10 +16,10 @@ fn test_semver_breakdown_and_forge_in_template() {
         "None",
     );
 
-    let template = "v{{ major }}.{{ minor }}.{{ patch }} [prerelease: {{ is_prerelease }}, pre: {{ prerelease }}, build: {{ build }}] on {{ forge }} by {{ owner }}/{{ repo }} (alt: {{ repo_owner }}/{{ repo_name }}) env: {{ env('NON_EXISTENT_VAR_XYZ', 'default_val') }}";
+    let template = "v{{ major }}.{{ minor }}.{{ patch }} [prerelease: {{ is_prerelease }}, pre: {{ prerelease }}, build: {{ build }}] on {{ forge }} by {{ owner }}/{{ repo }} (alt: {{ repo_owner }}/{{ repo_name }})";
     let rendered = render_template(template, &ctx).expect("render should succeed");
     assert_eq!(
         rendered,
-        "v1.2.3 [prerelease: True, pre: beta.1, build: build.42] on github by my-org/my-repo (alt: my-org/my-repo) env: default_val"
+        "v1.2.3 [prerelease: True, pre: beta.1, build: build.42] on github by my-org/my-repo (alt: my-org/my-repo)"
     );
 }

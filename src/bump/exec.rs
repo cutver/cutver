@@ -88,8 +88,8 @@ pub fn run_with_first_release(
         current_branch.as_deref(),
         repo_url.as_deref(),
     );
-    let commit_message = changelog::interpolate_string(&config.git.commit_message, &interp_ctx)
-        .unwrap_or_else(|_| git::commit_message(&config.git.commit_message, &next.to_string()));
+    let commit_message =
+        changelog::interpolate_string(&config.git.commit_message, &interp_ctx).map_err(Error::Changelog)?;
 
     // Abort before any mutation whenever the target tag already exists. HEAD
     // moves during the run, so "points at HEAD" is not stable here: a tag at
@@ -198,7 +198,7 @@ pub fn run_with_first_release(
     };
 
     let summary_post_bump = if let Some(raw_post_bump) = &config.hooks.post_bump {
-        let cmd = format_command(raw_post_bump, &interp_ctx);
+        let cmd = format_command(raw_post_bump, &interp_ctx)?;
         if !dry_run {
             let (shell, flag) = if cfg!(windows) { ("cmd", "/C") } else { ("sh", "-c") };
             let status = std::process::Command::new(shell)
@@ -294,7 +294,7 @@ pub fn run_with_first_release(
 
     let mut publish_commands = Vec::new();
     for cmd in &config.publish.commands {
-        let formatted = format_command(cmd, &interp_ctx);
+        let formatted = format_command(cmd, &interp_ctx)?;
         if !dry_run {
             run_publish_command(&formatted, &config.root_dir, config.publish.default_timeout)?;
         }
@@ -320,12 +320,8 @@ pub fn run_with_first_release(
     })
 }
 
-fn format_command(template: &str, context: &changelog::InterpolationContext) -> String {
-    changelog::interpolate_string(template, context).unwrap_or_else(|_| {
-        template
-            .replace("{version}", &context.version)
-            .replace("{tag}", &context.tag)
-    })
+fn format_command(template: &str, context: &changelog::InterpolationContext) -> Result<String, Error> {
+    changelog::interpolate_string(template, context).map_err(Error::Changelog)
 }
 
 /// Single source of truth for mapping `config.version.current_source` to its

@@ -645,7 +645,7 @@ post_bump = "echo \"bump={{ bump_level }} tag={{ tag }} branch={{ branch }}\" > 
 [publish]
 push = false
 commands = [
-    "echo \"published {{ version }} (tag {{ tag }}) [forge: {{ forge }} repo: {{ repo }} owner: {{ owner }}] env: {{ env('CARGO_PKG_NAME', 'cutver-default') }}\" > publish_out.txt"
+    "echo \"published {{ version }} (tag {{ tag }}) [forge: {{ forge }} repo: {{ repo }} owner: {{ owner }}]\" > publish_out.txt"
 ]
 "#;
     fixture.write("package.json", PACKAGE_JSON);
@@ -671,11 +671,11 @@ commands = [
     assert_eq!(summary.publish_commands.len(), 1);
     assert_eq!(
         summary.publish_commands[0],
-        "echo \"published 1.3.0 (tag v1.3.0) [forge: github repo: test-repo owner: test-owner] env: cutver\" > publish_out.txt"
+        "echo \"published 1.3.0 (tag v1.3.0) [forge: github repo: test-repo owner: test-owner]\" > publish_out.txt"
     );
     assert!(fixture.dir.join("publish_out.txt").exists());
     assert_eq!(
         fixture.read("publish_out.txt").trim(),
-        "published 1.3.0 (tag v1.3.0) [forge: github repo: test-repo owner: test-owner] env: cutver"
+        "published 1.3.0 (tag v1.3.0) [forge: github repo: test-repo owner: test-owner]"
     );
 }

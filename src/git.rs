@@ -332,8 +332,7 @@ pub fn status_files(repo: impl AsRef<Path>) -> Result<Vec<String>, Error> {
 }
 
 pub fn commit_message(template: &str, version: &str) -> String {
-    let ctx = crate::changelog::InterpolationContext::build(version, None, version, None, "patch", "", None, None);
-    crate::changelog::interpolate_string(template, &ctx).unwrap_or_else(|_| template.replace("{version}", version))
+    template.replace("{version}", version)
 }
 
 pub fn tag_name(prefix: &str, version: &str) -> String {

@@ -9,9 +9,6 @@ use std::path::Path;
 pub fn create_environment() -> minijinja::Environment<'static> {
     let mut env = minijinja::Environment::new();
     env.set_auto_escape_callback(|_| minijinja::AutoEscape::None);
-    env.add_function("env", |var_name: &str, default: Option<&str>| -> String {
-        std::env::var(var_name).unwrap_or_else(|_| default.unwrap_or("").to_string())
-    });
     env
 }
 
@@ -60,29 +57,15 @@ pub fn normalize_legacy_tokens(template: &str) -> String {
 /// Interpolate a string using MiniJinja with an `InterpolationContext`.
 ///
 /// Supports backward compatibility with `{version}` and `{tag}` tokens, converting them
-/// automatically. If MiniJinja template rendering fails, falls back gracefully to a simple
-/// legacy token replacement so execution is robust.
+/// automatically to MiniJinja expressions. If template rendering fails, returns `Error::TemplateRender`
+/// without swallowing errors.
 pub fn interpolate_string(template: &str, context: &InterpolationContext) -> Result<String, Error> {
     let normalized = normalize_legacy_tokens(template);
     let env = create_environment();
     let val = minijinja::Value::from_serialize(context);
-    match env.render_str(&normalized, val) {
-        Ok(rendered) => Ok(rendered),
-        Err(e) => {
-            // Attempt fallback replacing legacy {version} and {tag} on the original template
-            let fallback = template
-                .replace("{version}", &context.version)
-                .replace("{tag}", &context.tag);
-            // If the template contained MiniJinja syntax, return the error
-            if template.contains("{{") || template.contains("{%") {
-                Err(Error::TemplateRender {
-                    detail: format!("{e:#}"),
-                })
-            } else {
-                Ok(fallback)
-            }
-        }
-    }
+    env.render_str(&normalized, val).map_err(|e| Error::TemplateRender {
+        detail: format!("{e:#}"),
+    })
 }
 
 /// Render release notes using a MiniJinja template string and release context.
@@ -443,7 +426,7 @@ mod tests {
     }
 
     #[test]
-    fn test_render_template_with_semver_forge_and_env() {
+    fn test_render_template_with_semver_and_forge() {
         let ctx = build_context(
             "3.14.15-rc.1+exp.sha.5114f85",
             None,
@@ -459,20 +442,12 @@ mod tests {
 
         // Test semver components, aliases owner/repo and repo_owner/repo_name, forge
         let tpl = "Release: {{ major }}.{{ minor }}.{{ patch }} (pre: {{ prerelease }}, build: {{ build }}, is_pre: {{ is_prerelease }})\n\
-                   Forge: {{ forge }}, Owner: {{ owner }} ({{ repo_owner }}), Repo: {{ repo }} ({{ repo_name }})\n\
-                   Env test: [{{ env('NON_EXISTENT_VAR_123', 'fallback_value') }}] [{{ env('NON_EXISTENT_VAR_456') }}]";
+                   Forge: {{ forge }}, Owner: {{ owner }} ({{ repo_owner }}), Repo: {{ repo }} ({{ repo_name }})";
 
         let rendered = render_template(tpl, &ctx).unwrap();
         let expected = "Release: 3.14.15 (pre: rc.1, build: exp.sha.5114f85, is_pre: True)\n\
-                        Forge: gitlab, Owner: awesome-org/subgroup (awesome-org/subgroup), Repo: super-tool (super-tool)\n\
-                        Env test: [fallback_value] []";
+                        Forge: gitlab, Owner: awesome-org/subgroup (awesome-org/subgroup), Repo: super-tool (super-tool)";
         assert_eq!(rendered, expected);
-
-        // Test with actual env var present (using existing ambient env var without mutating process state)
-        let env_tpl = "{{ env('CARGO_MANIFEST_DIR', 'fallback') }}";
-        let res = render_template(env_tpl, &ctx).unwrap();
-        assert!(!res.is_empty());
-        assert_ne!(res, "fallback");
     }
 
     #[test]
@@ -515,15 +490,15 @@ mod tests {
             "chore: v1.2.3-rc.1 tag v1.2.3-rc.1"
         );
 
-        // Modern MiniJinja variables, forge, semver parts, env
+        // Modern MiniJinja variables, forge, semver parts
         let modern = "release: {{ tag }} (prev: {{ previous_tag }}) [{{ repo }} by {{ owner }}] on {{ branch }} - bump: {{ bump_level }} - major: {{ major }}, minor: {{ minor }}, patch: {{ patch }}{% if is_prerelease %} (pre: {{ prerelease }}){% endif %}";
         assert_eq!(
             interpolate_string(modern, &ctx).unwrap(),
             "release: v1.2.3-rc.1 (prev: v1.2.2) [my-repo by my-org] on main - bump: minor - major: 1, minor: 2, patch: 3 (pre: rc.1)"
         );
 
-        // Env function in interpolation
-        let env_str = "dir: {{ env('CARGO_MANIFEST_DIR', 'fallback') }}";
-        assert!(!interpolate_string(env_str, &ctx).unwrap().contains("fallback"));
+        // Fails fast on malformed template syntax without swallowing error
+        let malformed = "release: {{ tag [unclosed";
+        assert!(interpolate_string(malformed, &ctx).is_err());
     }
 }

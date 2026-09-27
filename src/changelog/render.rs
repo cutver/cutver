@@ -1,14 +1,76 @@
 use super::Error;
-use super::context::ReleaseContext;
+use super::context::{InterpolationContext, ReleaseContext};
 use crate::config::Changelog;
 use crate::conventional::ConventionalCommit;
 use std::fs;
 use std::path::Path;
 
-/// Render release notes using a MiniJinja template string and release context.
-pub fn render_template(template_str: &str, context: &ReleaseContext) -> Result<String, Error> {
+/// Create a configured MiniJinja environment with custom globals.
+pub fn create_environment() -> minijinja::Environment<'static> {
     let mut env = minijinja::Environment::new();
     env.set_auto_escape_callback(|_| minijinja::AutoEscape::None);
+    env
+}
+
+/// Helper to normalize legacy `{version}` and `{tag}` tokens to MiniJinja syntax `{{ version }}` and `{{ tag }}`.
+///
+/// Only standalone single braces are converted: occurrences of `{{` or `}}` are preserved intact.
+pub fn normalize_legacy_tokens(template: &str) -> String {
+    let mut result = String::with_capacity(template.len() + 16);
+    let chars: Vec<char> = template.chars().collect();
+    let len = chars.len();
+    let mut i = 0;
+
+    while i < len {
+        if chars[i] == '{' {
+            if i + 1 < len && chars[i + 1] == '{' {
+                // Double opening brace `{{`, preserve as-is
+                result.push('{');
+                result.push('{');
+                i += 2;
+                continue;
+            }
+
+            // Check if this is `{version}`
+            let remaining: String = chars[i..].iter().collect();
+            if remaining.starts_with("{version}") {
+                result.push_str("{{ version }}");
+                i += "{version}".len();
+                continue;
+            } else if remaining.starts_with("{tag}") {
+                result.push_str("{{ tag }}");
+                i += "{tag}".len();
+                continue;
+            } else {
+                result.push(chars[i]);
+                i += 1;
+            }
+        } else {
+            result.push(chars[i]);
+            i += 1;
+        }
+    }
+
+    result
+}
+
+/// Interpolate a string using MiniJinja with an `InterpolationContext`.
+///
+/// Supports backward compatibility with `{version}` and `{tag}` tokens, converting them
+/// automatically to MiniJinja expressions. If template rendering fails, returns `Error::TemplateRender`
+/// without swallowing errors.
+pub fn interpolate_string(template: &str, context: &InterpolationContext) -> Result<String, Error> {
+    let normalized = normalize_legacy_tokens(template);
+    let env = create_environment();
+    let val = minijinja::Value::from_serialize(context);
+    env.render_str(&normalized, val).map_err(|e| Error::TemplateRender {
+        detail: format!("{e:#}"),
+    })
+}
+
+/// Render release notes using a MiniJinja template string and release context.
+pub fn render_template(template_str: &str, context: &ReleaseContext) -> Result<String, Error> {
+    let env = create_environment();
     let val = minijinja::Value::from_serialize(context);
     let rendered = env.render_str(template_str, val).map_err(|e| Error::TemplateRender {
         detail: format!("{e:#}"),
@@ -361,5 +423,82 @@ mod tests {
         };
         let body = render_body(&config, &[], None);
         assert_eq!(body, "- Custom fallback notes.");
+    }
+
+    #[test]
+    fn test_render_template_with_semver_and_forge() {
+        let ctx = build_context(
+            "3.14.15-rc.1+exp.sha.5114f85",
+            None,
+            "v3.14.15-rc.1+exp.sha.5114f85",
+            None,
+            "2026-03-30",
+            Some("https://gitlab.com/awesome-org/subgroup/super-tool".to_string()),
+            &[],
+            vec![],
+            true,
+            "None",
+        );
+
+        // Test semver components, aliases owner/repo and repo_owner/repo_name, forge
+        let tpl = "Release: {{ major }}.{{ minor }}.{{ patch }} (pre: {{ prerelease }}, build: {{ build }}, is_pre: {{ is_prerelease }})\n\
+                   Forge: {{ forge }}, Owner: {{ owner }} ({{ repo_owner }}), Repo: {{ repo }} ({{ repo_name }})";
+
+        let rendered = render_template(tpl, &ctx).unwrap();
+        let expected = "Release: 3.14.15 (pre: rc.1, build: exp.sha.5114f85, is_pre: True)\n\
+                        Forge: gitlab, Owner: awesome-org/subgroup (awesome-org/subgroup), Repo: super-tool (super-tool)";
+        assert_eq!(rendered, expected);
+    }
+
+    #[test]
+    fn test_normalize_legacy_tokens() {
+        assert_eq!(
+            normalize_legacy_tokens("chore(release): v{version}"),
+            "chore(release): v{{ version }}"
+        );
+        assert_eq!(
+            normalize_legacy_tokens("release {tag} ({version})"),
+            "release {{ tag }} ({{ version }})"
+        );
+        assert_eq!(
+            normalize_legacy_tokens("chore(release): v{{ version }}"),
+            "chore(release): v{{ version }}"
+        );
+        assert_eq!(
+            normalize_legacy_tokens("{other} stay intact: {version}"),
+            "{other} stay intact: {{ version }}"
+        );
+    }
+
+    #[test]
+    fn test_interpolate_string_with_legacy_and_minijinja() {
+        let ctx = InterpolationContext::build(
+            "1.2.3-rc.1",
+            Some("1.2.2"),
+            "v1.2.3-rc.1",
+            Some("v1.2.2"),
+            "minor",
+            "2026-03-30",
+            Some("main"),
+            Some("https://github.com/my-org/my-repo"),
+        );
+
+        // Legacy single brace
+        let legacy = "chore: v{version} tag {tag}";
+        assert_eq!(
+            interpolate_string(legacy, &ctx).unwrap(),
+            "chore: v1.2.3-rc.1 tag v1.2.3-rc.1"
+        );
+
+        // Modern MiniJinja variables, forge, semver parts
+        let modern = "release: {{ tag }} (prev: {{ previous_tag }}) [{{ repo }} by {{ owner }}] on {{ branch }} - bump: {{ bump_level }} - major: {{ major }}, minor: {{ minor }}, patch: {{ patch }}{% if is_prerelease %} (pre: {{ prerelease }}){% endif %}";
+        assert_eq!(
+            interpolate_string(modern, &ctx).unwrap(),
+            "release: v1.2.3-rc.1 (prev: v1.2.2) [my-repo by my-org] on main - bump: minor - major: 1, minor: 2, patch: 3 (pre: rc.1)"
+        );
+
+        // Fails fast on malformed template syntax without swallowing error
+        let malformed = "release: {{ tag [unclosed";
+        assert!(interpolate_string(malformed, &ctx).is_err());
     }
 }

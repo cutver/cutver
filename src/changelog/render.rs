@@ -5,10 +5,19 @@ use crate::conventional::ConventionalCommit;
 use std::fs;
 use std::path::Path;
 
-/// Render release notes using a MiniJinja template string and release context.
-pub fn render_template(template_str: &str, context: &ReleaseContext) -> Result<String, Error> {
+/// Create a configured MiniJinja environment with custom globals.
+pub fn create_environment() -> minijinja::Environment<'static> {
     let mut env = minijinja::Environment::new();
     env.set_auto_escape_callback(|_| minijinja::AutoEscape::None);
+    env.add_function("env", |var_name: &str, default: Option<&str>| -> String {
+        std::env::var(var_name).unwrap_or_else(|_| default.unwrap_or("").to_string())
+    });
+    env
+}
+
+/// Render release notes using a MiniJinja template string and release context.
+pub fn render_template(template_str: &str, context: &ReleaseContext) -> Result<String, Error> {
+    let env = create_environment();
     let val = minijinja::Value::from_serialize(context);
     let rendered = env.render_str(template_str, val).map_err(|e| Error::TemplateRender {
         detail: format!("{e:#}"),
@@ -361,5 +370,44 @@ mod tests {
         };
         let body = render_body(&config, &[], None);
         assert_eq!(body, "- Custom fallback notes.");
+    }
+
+    #[test]
+    fn test_render_template_with_semver_forge_and_env() {
+        let ctx = build_context(
+            "3.14.15-rc.1+exp.sha.5114f85",
+            None,
+            "v3.14.15-rc.1+exp.sha.5114f85",
+            None,
+            "2026-03-30",
+            Some("https://gitlab.com/awesome-org/subgroup/super-tool".to_string()),
+            &[],
+            vec![],
+            true,
+            "None",
+        );
+
+        // Test semver components, aliases owner/repo and repo_owner/repo_name, forge
+        let tpl = "Release: {{ major }}.{{ minor }}.{{ patch }} (pre: {{ prerelease }}, build: {{ build }}, is_pre: {{ is_prerelease }})\n\
+                   Forge: {{ forge }}, Owner: {{ owner }} ({{ repo_owner }}), Repo: {{ repo }} ({{ repo_name }})\n\
+                   Env test: [{{ env('NON_EXISTENT_VAR_123', 'fallback_value') }}] [{{ env('NON_EXISTENT_VAR_456') }}]";
+
+        let rendered = render_template(tpl, &ctx).unwrap();
+        let expected = "Release: 3.14.15 (pre: rc.1, build: exp.sha.5114f85, is_pre: True)\n\
+                        Forge: gitlab, Owner: awesome-org/subgroup (awesome-org/subgroup), Repo: super-tool (super-tool)\n\
+                        Env test: [fallback_value] []";
+        assert_eq!(rendered, expected);
+
+        // Test with actual env var present
+        // SAFETY: Safe in single-threaded test context or scoped test
+        unsafe {
+            std::env::set_var("TEST_CUTVER_ENV_VAR", "injected_value");
+        }
+        let env_tpl = "{{ env('TEST_CUTVER_ENV_VAR', 'wrong') }}";
+        let res = render_template(env_tpl, &ctx).unwrap();
+        assert_eq!(res, "injected_value");
+        unsafe {
+            std::env::remove_var("TEST_CUTVER_ENV_VAR");
+        }
     }
 }

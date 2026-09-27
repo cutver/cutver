@@ -1,4 +1,5 @@
 pub mod args;
+pub mod doctor;
 mod runner;
 pub mod style;
 pub mod tree;

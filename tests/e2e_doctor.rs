@@ -46,12 +46,16 @@ field = "version"
     assert_eq!(output.status.code(), Some(0));
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("cutver.toml is valid."),
-        "stdout does not contain 'cutver.toml is valid.': {stdout}"
+        stdout.contains("cutver.toml is valid"),
+        "stdout does not contain 'cutver.toml is valid': {stdout}"
     );
     assert!(
-        stdout.contains("changelog: consistent with Git tags"),
-        "stdout does not contain 'changelog: consistent with Git tags': {stdout}"
+        stdout.contains("Configuration   valid (cutver.toml)"),
+        "stdout does not contain 'Configuration   valid (cutver.toml)': {stdout}"
+    );
+    assert!(
+        stdout.contains("Changelog       consistent with Git tags"),
+        "stdout does not contain 'Changelog       consistent with Git tags': {stdout}"
     );
 }
 
@@ -100,12 +104,16 @@ floating_major_tag = true
     assert_eq!(output.status.code(), Some(0));
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("cutver.toml is valid."),
-        "stdout does not contain 'cutver.toml is valid.': {stdout}"
+        stdout.contains("cutver.toml is valid"),
+        "stdout does not contain 'cutver.toml is valid': {stdout}"
     );
     assert!(
-        stdout.contains("changelog: consistent with Git tags"),
-        "stdout does not contain 'changelog: consistent with Git tags': {stdout}"
+        stdout.contains("Configuration   valid (cutver.toml)"),
+        "stdout does not contain 'Configuration   valid (cutver.toml)': {stdout}"
+    );
+    assert!(
+        stdout.contains("Changelog       consistent with Git tags"),
+        "stdout does not contain 'Changelog       consistent with Git tags': {stdout}"
     );
 }
 

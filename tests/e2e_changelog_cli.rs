@@ -452,3 +452,116 @@ path = "CHANGELOG.md"
     assert!(!stdout_no_color.contains("\x1b["));
     assert!(stdout_no_color.contains("## [1.2.0] - 2026-03-01"));
 }
+
+#[test]
+fn changelog_latest_cli_json_export() {
+    let guard = FixtureGuard::new("changelog-latest-json");
+    let fixture = guard.fixture();
+    let cutver_toml = r#"[version]
+current_source = "package.json"
+
+[[manifest]]
+path = "package.json"
+kind = "json"
+field = "version"
+
+[changelog]
+path = "CHANGELOG.md"
+"#;
+    fixture.write("cutver.toml", cutver_toml);
+    fixture.write("package.json", r#"{"version": "1.2.0"}"#);
+    let changelog_content = r#"# Changelog
+
+## [1.2.0] - 2026-03-01
+
+### Features
+- **cli**: add json support (#66)
+"#;
+    fixture.write("CHANGELOG.md", changelog_content);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_cutver"))
+        .current_dir(&fixture.dir)
+        .env("CLICOLOR_FORCE", "1")
+        .args(["changelog", "latest", "--json"])
+        .output()
+        .expect("failed to execute cutver binary");
+
+    assert!(
+        output.status.success(),
+        "command failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(output.status.code(), Some(0));
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(!stdout.contains("\x1b["), "stdout contains ANSI escapes: {stdout}");
+
+    let parsed: serde_json::Value = serde_json::from_str(&stdout).expect("stdout should be parseable as valid JSON");
+    assert_eq!(parsed["version"], "1.2.0");
+    assert_eq!(parsed["major"], 1);
+    assert_eq!(parsed["minor"], 2);
+    assert_eq!(parsed["patch"], 0);
+    assert_eq!(parsed["date"], "2026-03-01");
+}
+
+#[test]
+fn changelog_show_cli_json_export() {
+    let guard = FixtureGuard::new("changelog-show-json");
+    let fixture = guard.fixture();
+    let cutver_toml = r#"[version]
+current_source = "package.json"
+
+[[manifest]]
+path = "package.json"
+kind = "json"
+field = "version"
+
+[changelog]
+path = "CHANGELOG.md"
+"#;
+    fixture.write("cutver.toml", cutver_toml);
+    fixture.write("package.json", r#"{"version": "2.0.0"}"#);
+    let changelog_content = r#"# Changelog
+
+## [2.0.0] - 2026-04-01
+
+### Features
+- major overhaul
+
+## [1.2.0] - 2026-03-01
+
+### Features
+- **cli**: add json support (#66)
+
+## [1.1.0] - 2026-02-01
+
+### Fixes
+- bug fix
+"#;
+    fixture.write("CHANGELOG.md", changelog_content);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_cutver"))
+        .current_dir(&fixture.dir)
+        .env("CLICOLOR_FORCE", "1")
+        .args(["changelog", "show", "v1.2.0", "--json"])
+        .output()
+        .expect("failed to execute cutver binary");
+
+    assert!(
+        output.status.success(),
+        "command failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(output.status.code(), Some(0));
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(!stdout.contains("\x1b["), "stdout contains ANSI escapes: {stdout}");
+
+    let parsed: serde_json::Value = serde_json::from_str(&stdout).expect("stdout should be parseable as valid JSON");
+    assert_eq!(parsed["version"], "1.2.0");
+    assert_eq!(parsed["previous_version"], "1.1.0");
+    assert_eq!(parsed["major"], 1);
+    assert_eq!(parsed["minor"], 2);
+    assert_eq!(parsed["patch"], 0);
+    assert_eq!(parsed["date"], "2026-03-01");
+}

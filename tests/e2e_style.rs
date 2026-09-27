@@ -40,7 +40,8 @@ field = "version"
         !stdout.contains("\x1b["),
         "stdout contains ANSI escape sequences under NO_COLOR=1: {stdout}"
     );
-    assert!(stdout.contains("ℹ Running in simulation mode (--dry-run)."));
+    assert!(stdout.contains("SIMULATION MODE"));
+    assert!(stdout.contains("No files, commits, or git tags will be modified."));
     assert!(stdout.contains("Release Plan:"));
 
     // Run doctor with NO_COLOR=1
@@ -97,7 +98,7 @@ field = "version"
     );
     // Verify yellow info icon "\x1b[33mℹ\x1b[0m" and bold simulation mode
     assert!(stdout.contains("\x1b[33mℹ\x1b[0m"));
-    assert!(stdout.contains("\x1b[1msimulation mode\x1b[0m"));
+    assert!(stdout.contains("\x1b[1mSIMULATION MODE\x1b[0m"));
 
     // Run doctor with CLICOLOR_FORCE=1
     let output = Command::new(env!("CARGO_BIN_EXE_cutver"))

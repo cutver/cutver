@@ -415,8 +415,8 @@ check = "true""#,
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("bump rationale:"),
-        "expected stdout to contain 'bump rationale:', got: {stdout}"
+        stdout.contains("Release Plan:"),
+        "expected stdout to contain 'Release Plan:', got: {stdout}"
     );
     assert!(
         stdout.contains("minor (deduced from 1 feature, 1 bugfix)"),

@@ -199,6 +199,124 @@ fn parse_footer_line(line: &str) -> Option<(String, String)> {
     None
 }
 
+/// SemVer bump deduction rationale with commit counts and breaking change sample.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BumpRationale {
+    pub level: Bump,
+    pub breaking_count: usize,
+    pub feat_count: usize,
+    pub fix_count: usize,
+    pub other_count: usize,
+    pub breaking_sample: Option<String>,
+}
+
+impl BumpRationale {
+    /// Describes the SemVer deduction decision cleanly.
+    ///
+    /// Examples:
+    /// - "major (deduced from breaking change: feat!: ...)"
+    /// - "minor (deduced from 3 features, 1 bugfix)"
+    /// - "patch (default - no breaking changes or features)"
+    pub fn summary(&self) -> String {
+        let level_str = match self.level {
+            Bump::Major => "major",
+            Bump::Minor => "minor",
+            Bump::Patch => "patch",
+        };
+        match self.level {
+            Bump::Major => {
+                if let Some(sample) = &self.breaking_sample {
+                    format!("{level_str} (deduced from breaking change: {sample})")
+                } else if self.breaking_count > 0 {
+                    let s = if self.breaking_count == 1 { "" } else { "s" };
+                    format!("{level_str} (deduced from {} breaking change{s})", self.breaking_count)
+                } else {
+                    format!("{level_str} (deduced from breaking changes)")
+                }
+            }
+            Bump::Minor => {
+                let mut parts = Vec::new();
+                if self.feat_count > 0 {
+                    let s = if self.feat_count == 1 { "" } else { "s" };
+                    parts.push(format!("{} feature{s}", self.feat_count));
+                }
+                if self.fix_count > 0 {
+                    let s = if self.fix_count == 1 { "" } else { "es" };
+                    parts.push(format!("{} bugfix{s}", self.fix_count));
+                }
+                if parts.is_empty() {
+                    format!("{level_str} (deduced from features)")
+                } else {
+                    format!("{level_str} (deduced from {})", parts.join(", "))
+                }
+            }
+            Bump::Patch => {
+                let mut parts = Vec::new();
+                if self.fix_count > 0 {
+                    let s = if self.fix_count == 1 { "" } else { "es" };
+                    parts.push(format!("{} bugfix{s}", self.fix_count));
+                }
+                if self.other_count > 0 {
+                    let s = if self.other_count == 1 { "" } else { "s" };
+                    parts.push(format!("{} other change{s}", self.other_count));
+                }
+                if parts.is_empty() {
+                    format!("{level_str} (default - no breaking changes or features)")
+                } else {
+                    format!("{level_str} (deduced from {})", parts.join(", "))
+                }
+            }
+        }
+    }
+}
+
+impl std::fmt::Display for BumpRationale {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.summary())
+    }
+}
+
+/// Deduce the SemVer bump rationale from a list of parsed conventional commits.
+pub fn deduce_rationale(commits: &[ConventionalCommit]) -> BumpRationale {
+    let mut breaking_count = 0;
+    let mut feat_count = 0;
+    let mut fix_count = 0;
+    let mut other_count = 0;
+    let mut breaking_sample = None;
+
+    for commit in commits {
+        if commit.is_breaking {
+            breaking_count += 1;
+            if breaking_sample.is_none() {
+                let scope_str = commit.scope.as_deref().map(|s| format!("({s})")).unwrap_or_default();
+                breaking_sample = Some(format!("{}{scope_str}!: {}", commit.commit_type, commit.description));
+            }
+        }
+        match commit.commit_type.as_str() {
+            "feat" => feat_count += 1,
+            "fix" => fix_count += 1,
+            _ => other_count += 1,
+        }
+    }
+
+    let level = if breaking_count > 0 {
+        Bump::Major
+    } else if feat_count > 0 {
+        Bump::Minor
+    } else {
+        Bump::Patch
+    };
+
+    BumpRationale {
+        level,
+        breaking_count,
+        feat_count,
+        fix_count,
+        other_count,
+        breaking_sample,
+    }
+}
+
 /// Deduce the SemVer bump level from a list of parsed conventional commits.
 ///
 /// Returns:
@@ -215,21 +333,23 @@ pub fn deduce_bump(commits: &[ConventionalCommit]) -> Bump {
     }
 }
 
-/// Parse all commit messages and deduce the appropriate SemVer bump.
-///
-/// Defaults to `(Bump::Patch, vec![])` if no valid Conventional Commits are found.
-pub fn parse_and_deduce_bump(messages: &[impl AsRef<str>]) -> (Bump, Vec<ConventionalCommit>) {
+/// Parse all commit messages and deduce the appropriate SemVer bump rationale.
+pub fn parse_and_deduce_with_rationale(messages: &[impl AsRef<str>]) -> (BumpRationale, Vec<ConventionalCommit>) {
     let commits: Vec<ConventionalCommit> = messages
         .iter()
         .filter_map(|m| ConventionalCommit::parse(m.as_ref()))
         .collect();
 
-    if commits.is_empty() {
-        (Bump::Patch, Vec::new())
-    } else {
-        let bump = deduce_bump(&commits);
-        (bump, commits)
-    }
+    let rationale = deduce_rationale(&commits);
+    (rationale, commits)
+}
+
+/// Parse all commit messages and deduce the appropriate SemVer bump.
+///
+/// Defaults to `(Bump::Patch, vec![])` if no valid Conventional Commits are found.
+pub fn parse_and_deduce_bump(messages: &[impl AsRef<str>]) -> (Bump, Vec<ConventionalCommit>) {
+    let (rationale, commits) = parse_and_deduce_with_rationale(messages);
+    (rationale.level, commits)
 }
 
 #[cfg(test)]
@@ -478,5 +598,74 @@ Signed-off-by: Maintainer <maintainer@example.com>"#;
         assert!(c2.is_breaking);
         assert_eq!(c2.footers[0].0, "BREAKING-CHANGE");
         assert_eq!(c2.footers[0].1, "database schema dropped");
+    }
+
+    #[test]
+    fn deduce_rationale_major_with_breaking_sample() {
+        let commits = vec![
+            ConventionalCommit::parse("feat(api)!: remove v1 endpoints").unwrap(),
+            ConventionalCommit::parse("feat: add v2 endpoints").unwrap(),
+            ConventionalCommit::parse("fix: handle null").unwrap(),
+        ];
+        let rationale = deduce_rationale(&commits);
+        assert_eq!(rationale.level, Bump::Major);
+        assert_eq!(rationale.breaking_count, 1);
+        assert_eq!(rationale.feat_count, 2);
+        assert_eq!(rationale.fix_count, 1);
+        assert_eq!(rationale.other_count, 0);
+        assert_eq!(
+            rationale.breaking_sample.as_deref(),
+            Some("feat(api)!: remove v1 endpoints")
+        );
+        assert_eq!(
+            rationale.summary(),
+            "major (deduced from breaking change: feat(api)!: remove v1 endpoints)"
+        );
+        assert_eq!(rationale.to_string(), rationale.summary());
+    }
+
+    #[test]
+    fn deduce_rationale_minor_mixed_commits() {
+        let commits = vec![
+            ConventionalCommit::parse("feat: add cli flag").unwrap(),
+            ConventionalCommit::parse("feat(parser): add parser option").unwrap(),
+            ConventionalCommit::parse("fix: off-by-one in loop").unwrap(),
+            ConventionalCommit::parse("chore: update deps").unwrap(),
+        ];
+        let rationale = deduce_rationale(&commits);
+        assert_eq!(rationale.level, Bump::Minor);
+        assert_eq!(rationale.breaking_count, 0);
+        assert_eq!(rationale.feat_count, 2);
+        assert_eq!(rationale.fix_count, 1);
+        assert_eq!(rationale.other_count, 1);
+        assert_eq!(rationale.breaking_sample, None);
+        assert_eq!(rationale.summary(), "minor (deduced from 2 features, 1 bugfix)");
+    }
+
+    #[test]
+    fn deduce_rationale_patch_fixes_and_chores() {
+        let commits = vec![
+            ConventionalCommit::parse("fix: repair glitch").unwrap(),
+            ConventionalCommit::parse("chore: lint cleanup").unwrap(),
+        ];
+        let rationale = deduce_rationale(&commits);
+        assert_eq!(rationale.level, Bump::Patch);
+        assert_eq!(rationale.breaking_count, 0);
+        assert_eq!(rationale.feat_count, 0);
+        assert_eq!(rationale.fix_count, 1);
+        assert_eq!(rationale.other_count, 1);
+        assert_eq!(rationale.summary(), "patch (deduced from 1 bugfix, 1 other change)");
+    }
+
+    #[test]
+    fn deduce_rationale_patch_empty_or_no_commits() {
+        let empty: Vec<ConventionalCommit> = Vec::new();
+        let rationale = deduce_rationale(&empty);
+        assert_eq!(rationale.level, Bump::Patch);
+        assert_eq!(rationale.breaking_count, 0);
+        assert_eq!(rationale.feat_count, 0);
+        assert_eq!(rationale.fix_count, 0);
+        assert_eq!(rationale.other_count, 0);
+        assert_eq!(rationale.summary(), "patch (default - no breaking changes or features)");
     }
 }

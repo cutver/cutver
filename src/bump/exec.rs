@@ -42,6 +42,7 @@ pub fn run_with_first_release(
     let (source_entry, _editor, current) = current_source(config)?;
     let bump_level = bump_kind.into();
     let mut auto_commits = None;
+    let mut rationale = None;
     let previous_tag = if first_release {
         None
     } else {
@@ -56,7 +57,9 @@ pub fn run_with_first_release(
             BumpLevel::Major => Bump::Major,
             BumpLevel::Auto => {
                 let commits = git::commits_since(repo, previous_tag.as_deref())?;
-                let (deduced, parsed) = conventional::parse_and_deduce_bump(&commits);
+                let (deduced_rationale, parsed) = conventional::parse_and_deduce_with_rationale(&commits);
+                let deduced = deduced_rationale.level;
+                rationale = Some(deduced_rationale);
                 auto_commits = Some(parsed);
                 deduced
             }
@@ -317,6 +320,7 @@ pub fn run_with_first_release(
         publish_push: config.publish.push,
         publish_push_command,
         publish_commands,
+        rationale,
     })
 }
 

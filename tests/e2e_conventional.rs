@@ -31,6 +31,10 @@ check = "true""#,
     let summary = bump_run(&cfg, BumpLevel::Auto, true, &[]).unwrap();
     assert_eq!(summary.next.to_string(), "1.3.0");
     assert!(summary.dry_run);
+    assert_eq!(
+        summary.rationale.as_ref().map(|r| r.summary()),
+        Some("minor (deduced from 1 feature)".to_string())
+    );
     assert_versions_at_123(fixture);
     assert!(!tag_exists(fixture, "v1.3.0"));
 }
@@ -381,4 +385,41 @@ check = "true""#,
     assert!(!cl.contains("Maintenance"));
     assert!(!cl.contains("chore(release)"));
     assert!(!cl.contains("v1.2.3"));
+}
+
+#[test]
+fn bump_auto_cli_dry_run_prints_bump_rationale() {
+    assert!(
+        git_available(),
+        "git CLI is required for e2e tests but was not found in PATH"
+    );
+    let guard = FixtureGuard::new("auto-cli-dry-run-rationale");
+    write_fixture(
+        &guard,
+        r#"[preflight]
+check = "true""#,
+    );
+    let fixture = guard.fixture();
+    run_git_ok(
+        &fixture.dir,
+        &["commit", "--allow-empty", "-m", "feat: exciting new feature"],
+    );
+    run_git_ok(&fixture.dir, &["commit", "--allow-empty", "-m", "fix: off-by-one bug"]);
+
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_cutver"))
+        .current_dir(&fixture.dir)
+        .args(["bump", "auto", "--dry-run"])
+        .output()
+        .expect("failed to execute cutver binary");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("bump rationale:"),
+        "expected stdout to contain 'bump rationale:', got: {stdout}"
+    );
+    assert!(
+        stdout.contains("minor (deduced from 1 feature, 1 bugfix)"),
+        "expected stdout to contain formatted rationale, got: {stdout}"
+    );
 }

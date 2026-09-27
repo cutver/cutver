@@ -102,6 +102,7 @@ pub struct Summary {
     pub publish_push: bool,
     pub publish_push_command: Option<String>,
     pub publish_commands: Vec<String>,
+    pub rationale: Option<crate::conventional::BumpRationale>,
 }
 
 #[derive(Debug)]

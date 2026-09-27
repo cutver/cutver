@@ -581,6 +581,85 @@ pub fn print_bump_summary(summary: &Summary) {
     println!("  source: {}", summary.source);
     println!("  current version: {}", summary.current);
     println!("  next version: {}", theme.accent(&summary.next));
+    if let Some(ref rationale) = summary.rationale {
+        let level_str = match rationale.level {
+            crate::semver_bump::Bump::Major => "major",
+            crate::semver_bump::Bump::Minor => "minor",
+            crate::semver_bump::Bump::Patch => "patch",
+        };
+        let formatted = match rationale.level {
+            crate::semver_bump::Bump::Major => {
+                if let Some(sample) = &rationale.breaking_sample {
+                    format!(
+                        "{} {}",
+                        theme.accent(level_str),
+                        theme.muted(format!("(deduced from breaking change: {sample})"))
+                    )
+                } else if rationale.breaking_count > 0 {
+                    let s = if rationale.breaking_count == 1 { "" } else { "s" };
+                    format!(
+                        "{} {}",
+                        theme.accent(level_str),
+                        theme.muted(format!(
+                            "(deduced from {} breaking change{s})",
+                            rationale.breaking_count
+                        ))
+                    )
+                } else {
+                    format!(
+                        "{} {}",
+                        theme.accent(level_str),
+                        theme.muted("(deduced from breaking changes)")
+                    )
+                }
+            }
+            crate::semver_bump::Bump::Minor => {
+                let mut parts = Vec::new();
+                if rationale.feat_count > 0 {
+                    let s = if rationale.feat_count == 1 { "" } else { "s" };
+                    parts.push(format!("{} feature{s}", rationale.feat_count));
+                }
+                if rationale.fix_count > 0 {
+                    let s = if rationale.fix_count == 1 { "" } else { "es" };
+                    parts.push(format!("{} bugfix{s}", rationale.fix_count));
+                }
+                if parts.is_empty() {
+                    format!("{} {}", theme.accent(level_str), theme.muted("(deduced from features)"))
+                } else {
+                    format!(
+                        "{} {}",
+                        theme.accent(level_str),
+                        theme.muted(format!("(deduced from {})", parts.join(", ")))
+                    )
+                }
+            }
+            crate::semver_bump::Bump::Patch => {
+                let mut parts = Vec::new();
+                if rationale.fix_count > 0 {
+                    let s = if rationale.fix_count == 1 { "" } else { "es" };
+                    parts.push(format!("{} bugfix{s}", rationale.fix_count));
+                }
+                if rationale.other_count > 0 {
+                    let s = if rationale.other_count == 1 { "" } else { "s" };
+                    parts.push(format!("{} other change{s}", rationale.other_count));
+                }
+                if parts.is_empty() {
+                    format!(
+                        "{} {}",
+                        theme.accent(level_str),
+                        theme.muted("(default - no breaking changes or features)")
+                    )
+                } else {
+                    format!(
+                        "{} {}",
+                        theme.accent(level_str),
+                        theme.muted(format!("(deduced from {})", parts.join(", ")))
+                    )
+                }
+            }
+        };
+        println!("  bump rationale: {formatted}");
+    }
     println!("  dry run: {}", summary.dry_run);
     println!("  preflight commands:");
     for step in &summary.preflight {

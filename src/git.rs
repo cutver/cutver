@@ -49,6 +49,51 @@ pub fn tag_exists(repo: impl AsRef<Path>, tag_name: &str) -> Result<bool, Error>
     Ok(!String::from_utf8_lossy(&output.stdout).trim().is_empty())
 }
 
+pub fn has_remote(repo: impl AsRef<Path>, remote: &str) -> bool {
+    let Ok(output) = run_git(&repo, &["remote"]) else {
+        return false;
+    };
+    if !output.status.success() {
+        return false;
+    }
+    let text = String::from_utf8_lossy(&output.stdout);
+    text.lines().any(|l| l.trim() == remote)
+}
+
+pub fn remote_tag_exists(
+    repo: impl AsRef<Path>,
+    remote: &str,
+    tag_name: &str,
+) -> Result<Option<String>, Error> {
+    if !has_remote(&repo, remote) {
+        return Ok(None);
+    }
+    let tag_ref = format!("refs/tags/{tag_name}");
+    let peeled_ref = format!("{tag_ref}^{{}}");
+    let output = run_git(
+        &repo,
+        &["ls-remote", "--tags", remote, &tag_ref, &peeled_ref],
+    )?;
+    if !output.status.success() {
+        return Ok(None);
+    }
+    let text = String::from_utf8_lossy(&output.stdout);
+    let mut direct_hash = None;
+    for line in text.lines() {
+        let mut parts = line.split_whitespace();
+        let (Some(hash), Some(r)) = (parts.next(), parts.next()) else {
+            continue;
+        };
+        if r == peeled_ref {
+            return Ok(Some(hash.to_string()));
+        }
+        if r == tag_ref {
+            direct_hash = Some(hash.to_string());
+        }
+    }
+    Ok(direct_hash)
+}
+
 pub fn rev_parse(repo: impl AsRef<Path>, rev: &str) -> Result<String, Error> {
     let text = stdout_text(run_git(&repo, &["rev-parse", rev])?, &format!("rev-parse {rev}"))?;
     Ok(text.trim().to_string())
@@ -1092,5 +1137,53 @@ mod tests {
         // push_tag_force dry run
         let push_cmd = push_tag_force(&dir, "v1", true).unwrap().unwrap();
         assert_eq!(push_cmd, "git push origin +refs/tags/v1:refs/tags/v1");
+    }
+
+    #[test]
+    #[cfg_attr(not(unix), ignore)]
+    fn test_remote_tag_exists_handles_missing_remote_and_tags() {
+        let dir = tmp_repo();
+        // No remotes configured
+        assert_eq!(remote_tag_exists(&dir, "origin", "v1.0.0").unwrap(), None);
+
+        // Remote bare repo setup
+        let remote = std::env::temp_dir().join(tmp_id("cutver-git-remote-tag"));
+        let _ = fs::remove_dir_all(&remote);
+        fs::create_dir_all(&remote).unwrap();
+        assert!(
+            Command::new("git")
+                .current_dir(&remote)
+                .args(["init", "--bare", "-q"])
+                .status()
+                .unwrap()
+                .success()
+        );
+        git(&dir, &["remote", "add", "origin", remote.to_str().unwrap()]);
+
+        // Tag does not exist yet
+        assert_eq!(remote_tag_exists(&dir, "origin", "v1.0.0").unwrap(), None);
+
+        // Push lightweight tag to remote
+        git(&dir, &["tag", "v1.0.0"]);
+        git(&dir, &["push", "origin", "v1.0.0"]);
+        let commit_hash = rev_parse(&dir, "v1.0.0").unwrap();
+
+        // Delete tag locally to verify it detects it remotely even when absent locally
+        git(&dir, &["tag", "-d", "v1.0.0"]);
+        assert!(!tag_exists(&dir, "v1.0.0").unwrap());
+
+        let remote_commit = remote_tag_exists(&dir, "origin", "v1.0.0").unwrap();
+        assert_eq!(remote_commit, Some(commit_hash.clone()));
+
+        // Also test annotated tag with peeling ^{}
+        git(&dir, &["tag", "-a", "v2.0.0", "-m", "release v2.0.0"]);
+        git(&dir, &["push", "origin", "v2.0.0"]);
+        let v2_commit = rev_parse(&dir, "v2.0.0^{commit}").unwrap();
+        git(&dir, &["tag", "-d", "v2.0.0"]);
+
+        let remote_v2_commit = remote_tag_exists(&dir, "origin", "v2.0.0").unwrap();
+        assert_eq!(remote_v2_commit, Some(v2_commit));
+
+        let _ = fs::remove_dir_all(&remote);
     }
 }

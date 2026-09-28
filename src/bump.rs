@@ -39,6 +39,12 @@ pub enum Error {
     },
     #[error("release tag {tag} already exists (points at {commit}) — resolve it before re-running")]
     TagExists { tag: String, commit: String },
+    #[error("release tag '{tag}' already exists remotely on '{remote}' (points at {commit}) — delete or resolve the remote tag before re-running")]
+    RemoteTagExists {
+        tag: String,
+        remote: String,
+        commit: String,
+    },
     #[error("write failed for '{path}'; rollback attempted. {rollback}")]
     WriteRollback {
         path: String,

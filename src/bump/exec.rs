@@ -107,6 +107,16 @@ pub fn run_with_first_release(
         });
     }
 
+    if (git::has_remote(repo, "origin") || config.publish.push)
+        && let Some(commit) = git::remote_tag_exists(repo, "origin", &tag)?
+    {
+        return Err(Error::RemoteTagExists {
+            tag: tag.clone(),
+            remote: "origin".to_string(),
+            commit,
+        });
+    }
+
     let preflight_plan = preflight::plan(&config.preflight, skip_preflight);
     if !dry_run {
         preflight::run(&preflight_plan)?;

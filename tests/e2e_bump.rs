@@ -177,6 +177,61 @@ check = "true""#,
 }
 
 #[test]
+fn bump_aborts_when_release_tag_exists_remotely() {
+    assert!(
+        git_available(),
+        "git CLI is required for e2e tests but was not found in PATH"
+    );
+    let guard = FixtureGuard::new("remote-tag-conflict");
+    write_fixture(
+        &guard,
+        r#"[publish]
+push = true
+"#,
+    );
+    let fixture = guard.fixture();
+
+    let remote_dir = std::env::temp_dir().join(format!("cutver-e2e-remote-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&remote_dir);
+    std::fs::create_dir_all(&remote_dir).unwrap();
+    assert!(
+        std::process::Command::new("git")
+            .current_dir(&remote_dir)
+            .args(["init", "--bare", "-q"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    run_git_ok(&fixture.dir, &["remote", "add", "origin", remote_dir.to_str().unwrap()]);
+
+    // Create v1.3.0 tag locally, push to remote, then delete locally
+    run_git_ok(&fixture.dir, &["tag", "v1.3.0"]);
+    run_git_ok(&fixture.dir, &["push", "origin", "v1.3.0"]);
+    run_git_ok(&fixture.dir, &["tag", "-d", "v1.3.0"]);
+
+    // Verify tag does not exist locally
+    assert!(!tag_exists(fixture, "v1.3.0"));
+
+    let cfg = config::load("cutver.toml").unwrap();
+    let err = bump_run(&cfg, Bump::Minor, false, &[]).unwrap_err();
+
+    assert!(
+        matches!(err, cutver::bump::Error::RemoteTagExists { .. }),
+        "expected RemoteTagExists error, got {err:?}"
+    );
+    let err_msg = err.to_string();
+    assert!(err_msg.contains("v1.3.0"), "expected tag in error message: {err_msg}");
+    assert!(err_msg.contains("origin"), "expected remote in error message: {err_msg}");
+    assert!(err_msg.contains("already exists remotely"), "expected remote collision text: {err_msg}");
+
+    // Manifests must not be mutated
+    assert_versions_at_123(fixture);
+    assert_eq!(commit_count(fixture), 1);
+
+    let _ = std::fs::remove_dir_all(&remote_dir);
+}
+
+#[test]
 #[cfg_attr(not(unix), ignore)]
 fn bump_rolls_back_manifests_when_commit_fails() {
     use std::os::unix::fs::PermissionsExt;

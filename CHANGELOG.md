@@ -3,6 +3,36 @@
 All notable changes to this project are documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com).
 
+##  [v0.9.0] - 2026-09-28
+### 🚀 Features & Enhancements
+- 
+- 
+- 
+- 
+- 
+- 
+- 
+- 
+- 
+- 
+
+### 📚 Documentation
+- 
+- 
+- 
+- 
+- 
+
+### 🛠️ Maintenance & Dependencies
+- 
+- 
+- 
+
+### 👥 Contributors
+- @Row0902
+
+---
+**Full Changelog**: https://github.com/cutver/cutver/compare/v0.8.0...v0.9.0
 ## [v0.8.0] - 2026-09-26
 
 ### 🚀 Features & Enhancements

@@ -191,6 +191,7 @@ mod tests {
         let theme = Theme::new(false);
         let config = Config {
             root_dir: PathBuf::from("."),
+            project: Default::default(),
             version: VersionSection {
                 current_source: "Cargo.toml".into(),
                 strategy: "manual".into(),

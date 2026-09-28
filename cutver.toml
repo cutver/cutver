@@ -18,9 +18,10 @@ template_file = ".github/templates/cutver/RELEASE.md"
 
 [git]
 tag_prefix = "v"
-commit_message = "chore(release): v{version} [skip ci]"
+commit_message = "chore(release): v{{ version }} [skip ci]"
 require_clean_tree = true
 require_branch = "main"
+floating_major_tag = true
 
 [hooks]
 post_bump = "cargo check --workspace"

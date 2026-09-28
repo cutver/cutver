@@ -122,49 +122,27 @@ pub fn run_with_first_release(
         preflight::run(&preflight_plan)?;
     }
 
-    // Phase 1: compute every new manifest content in memory. No disk writes.
+    // Phase 1: compute every new manifest content and changelog update in memory. No disk writes.
     let computed = compute(config, &next)?;
 
-    // Phase 2: write all changed manifests atomically. On failure, best-effort
-    // rollback restores previously written files to their original content.
-    let (touched, mut paths_to_stage) = apply(&computed, &next, dry_run)?;
-
-    let original_changelog = if let Some(cl_path) = &config.changelog.path {
-        let original = if !dry_run { read(cl_path).ok() } else { None };
-        if !dry_run {
+    let changelog_update = if let Some(cl_path) = &config.changelog.path {
+        let original = if !dry_run { Some(read(cl_path)?) } else { None };
+        let updated = if !dry_run {
             let latest_tag = if first_release {
                 None
             } else {
-                match git::latest_tag(repo, Some(&config.git.tag_prefix)) {
-                    Ok(t) => t,
-                    Err(e) => {
-                        rollback(&computed, &paths_to_stage, None);
-                        return Err(Error::Git(e));
-                    }
-                }
+                git::latest_tag(repo, Some(&config.git.tag_prefix))?
             };
             let raw_commits = git::raw_commits_since(repo, latest_tag.as_deref()).ok();
             let commits = if first_release {
-                let commit_msgs = match git::commits_since(repo, None) {
-                    Ok(c) => c,
-                    Err(e) => {
-                        rollback(&computed, &paths_to_stage, None);
-                        return Err(Error::Git(e));
-                    }
-                };
+                let commit_msgs = git::commits_since(repo, None)?;
                 let (_bump, parsed) = conventional::parse_and_deduce_bump(&commit_msgs);
                 parsed
             } else {
                 match auto_commits {
                     Some(parsed) => parsed,
                     None => {
-                        let commit_msgs = match git::commits_since(repo, latest_tag.as_deref()) {
-                            Ok(c) => c,
-                            Err(e) => {
-                                rollback(&computed, &paths_to_stage, None);
-                                return Err(Error::Git(e));
-                            }
-                        };
+                        let commit_msgs = git::commits_since(repo, latest_tag.as_deref())?;
                         let (_bump, parsed) = conventional::parse_and_deduce_bump(&commit_msgs);
                         parsed
                     }
@@ -191,18 +169,37 @@ pub fn run_with_first_release(
                 &config.changelog.ignore_scopes,
             );
             let body = changelog::render_body_with_context(&config.changelog, &commits, &context);
-            let update_res = changelog::update_with_options(
-                cl_path,
+            let orig_content = original.as_deref().unwrap_or_default();
+            changelog::compute_update(
+                orig_content,
                 &tag,
                 &body,
                 config.changelog.full_template,
                 config.changelog.header_template.as_deref(),
                 Some(&context),
-            );
-            if let Err(e) = update_res {
-                rollback(&computed, &paths_to_stage, None);
-                return Err(Error::Changelog(e));
-            }
+            )?
+        } else {
+            None
+        };
+        Some((cl_path.clone(), original, updated))
+    } else {
+        None
+    };
+
+    // Phase 2: write all changed manifests atomically, then write computed changelog atomically.
+    // On failure, best-effort rollback restores previously written files to their original content.
+    let (touched, mut paths_to_stage) = apply(&computed, &next, dry_run)?;
+
+    let original_changelog = if let Some((cl_path, original, updated)) = changelog_update {
+        if !dry_run
+            && let Some(new_content) = updated
+            && let Err(e) = atomic::write_atomic(&cl_path, &new_content)
+        {
+            rollback(&computed, &paths_to_stage, None);
+            return Err(Error::Changelog(changelog::Error::Write {
+                path: cl_path.clone(),
+                source: e,
+            }));
         }
         paths_to_stage.push(cl_path.clone());
         original.map(|orig| (cl_path.clone(), orig))

@@ -60,20 +60,13 @@ pub fn has_remote(repo: impl AsRef<Path>, remote: &str) -> bool {
     text.lines().any(|l| l.trim() == remote)
 }
 
-pub fn remote_tag_exists(
-    repo: impl AsRef<Path>,
-    remote: &str,
-    tag_name: &str,
-) -> Result<Option<String>, Error> {
+pub fn remote_tag_exists(repo: impl AsRef<Path>, remote: &str, tag_name: &str) -> Result<Option<String>, Error> {
     if !has_remote(&repo, remote) {
         return Ok(None);
     }
     let tag_ref = format!("refs/tags/{tag_name}");
     let peeled_ref = format!("{tag_ref}^{{}}");
-    let output = run_git(
-        &repo,
-        &["ls-remote", "--tags", remote, &tag_ref, &peeled_ref],
-    )?;
+    let output = run_git(&repo, &["ls-remote", "--tags", remote, &tag_ref, &peeled_ref])?;
     if !output.status.success() {
         return Ok(None);
     }

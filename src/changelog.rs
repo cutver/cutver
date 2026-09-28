@@ -14,7 +14,7 @@ pub use context::{
 };
 pub use extract::{extract_latest, extract_version, list_versions, read_latest, read_version};
 pub use render::{create_environment, interpolate_string, render_body, render_body_with_context, render_template};
-pub use update::{format_date, update, update_with_options};
+pub use update::{compute_update, format_date, update, update_with_options};
 
 pub type ChangelogError = Error;
 

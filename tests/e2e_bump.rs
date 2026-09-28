@@ -221,8 +221,14 @@ push = true
     );
     let err_msg = err.to_string();
     assert!(err_msg.contains("v1.3.0"), "expected tag in error message: {err_msg}");
-    assert!(err_msg.contains("origin"), "expected remote in error message: {err_msg}");
-    assert!(err_msg.contains("already exists remotely"), "expected remote collision text: {err_msg}");
+    assert!(
+        err_msg.contains("origin"),
+        "expected remote in error message: {err_msg}"
+    );
+    assert!(
+        err_msg.contains("already exists remotely"),
+        "expected remote collision text: {err_msg}"
+    );
 
     // Manifests must not be mutated
     assert_versions_at_123(fixture);
@@ -787,4 +793,68 @@ require_clean_tree = false
     assert_eq!(summary.next.to_string(), "1.0.1");
     assert_eq!(summary.commit_message, "chore(release): v1.0.1 [skip ci]");
     assert_eq!(head_commit_message(fixture), "chore(release): v1.0.1 [skip ci]");
+}
+
+#[test]
+fn bump_aborts_in_phase1_without_mutating_files_when_changelog_template_fails() {
+    assert!(
+        git_available(),
+        "git CLI is required for e2e tests but was not found in PATH"
+    );
+    let guard = FixtureGuard::new("bump-changelog-syntax-fail");
+    let fixture = guard.fixture();
+
+    let package_json = r#"{
+  "name": "template-fail-pkg",
+  "version": "1.0.0"
+}
+"#;
+    let cutver_toml = r#"[[manifest]]
+path = "package.json"
+kind = "json"
+field = "version"
+
+[changelog]
+path = "CHANGELOG.md"
+header_template = "{{ invalid syntax"
+
+[git]
+require_clean_tree = false
+"#;
+    fixture.write("package.json", package_json);
+    fixture.write("cutver.toml", cutver_toml);
+    fixture.write(
+        "CHANGELOG.md",
+        "# Changelog\n\n## [v1.0.0] - 2026-01-01\n\n- Initial release\n",
+    );
+
+    init_git_repo(fixture);
+    initial_commit(fixture);
+    run_git_ok(&fixture.dir, &["tag", "v1.0.0"]);
+    run_git_ok(&fixture.dir, &["commit", "--allow-empty", "-m", "fix: small bug"]);
+
+    let cfg = config::load("cutver.toml").unwrap();
+    let err = cutver::bump::run(&cfg, cutver::cli::BumpLevel::Patch, false, &[]).unwrap_err();
+
+    assert!(
+        matches!(
+            err,
+            cutver::bump::Error::Changelog(cutver::changelog::Error::TemplateRender { .. })
+        ),
+        "expected Changelog(TemplateRender), got: {err:?}"
+    );
+
+    // Verify manifests and changelog remain 100% untouched
+    let pkg_content = fixture.read("package.json");
+    assert!(
+        pkg_content.contains("\"version\": \"1.0.0\""),
+        "package.json should remain at 1.0.0: {pkg_content}"
+    );
+    let cl_content = fixture.read("CHANGELOG.md");
+    assert!(
+        !cl_content.contains("v1.0.1"),
+        "CHANGELOG.md must not have been updated: {cl_content}"
+    );
+    assert_eq!(commit_count(fixture), 2);
+    assert!(!tag_exists(fixture, "v1.0.1"));
 }

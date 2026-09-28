@@ -28,57 +28,84 @@ pub fn update_with_options(
         source: e,
     })?;
 
+    if let Some(updated) = compute_update(&content, version, template, full_template, header_template, context)? {
+        atomic::write_atomic(path, updated).map_err(|e| Error::Write {
+            path: path_str,
+            source: e,
+        })?;
+    }
+    Ok(())
+}
+
+/// Compute the updated changelog content in memory without performing disk I/O.
+/// Returns `Ok(Some(new_content))` if an update is needed, or `Ok(None)` if
+/// `version` is already present in `content`.
+pub fn compute_update(
+    content: &str,
+    version: &str,
+    template: &str,
+    full_template: bool,
+    header_template: Option<&str>,
+    context: Option<&super::context::ReleaseContext>,
+) -> Result<Option<String>, Error> {
     let version_tag = format!("[{version}]");
     if content
         .lines()
         .any(|line| line.starts_with("## [") && line.contains(&version_tag))
     {
-        return Ok(());
+        return Ok(None);
     }
 
     let is_full = full_template || template.trim_start().starts_with("## ") || template.trim_start().starts_with("# ");
 
     let section = if is_full {
-        if template.is_empty() {
-            "- Unreleased\n".to_string()
-        } else {
-            let mut s = template.trim().to_string();
-            s.push('\n');
-            s
-        }
+        format_full_section(template)
     } else {
-        let heading = if let Some(ht) = header_template {
-            if let Some(ctx) = context {
-                super::render::render_template(ht, ctx)
-                    .unwrap_or_else(|_| format!("## [{}] - {}", version, format_date(SystemTime::now())))
-            } else {
-                let today = format_date(SystemTime::now());
-                let mut env = minijinja::Environment::new();
-                env.set_auto_escape_callback(|_| minijinja::AutoEscape::None);
-                let ctx_val = minijinja::context! {
-                    version => version,
-                    tag => version,
-                    date => today,
-                };
-                env.render_str(ht, ctx_val)
-                    .unwrap_or_else(|_| format!("## [{}] - {}", version, format_date(SystemTime::now())))
-            }
-        } else {
-            format!("## [{}] - {}", version, format_date(SystemTime::now()))
-        };
-
+        let heading = render_heading(header_template, version, context)?;
         if template.is_empty() {
-            format!("{}\n\n- Unreleased\n", heading)
+            format!("{heading}\n\n- Unreleased\n")
         } else {
-            format!("{}\n\n{}\n", heading, template)
+            format!("{heading}\n\n{template}\n")
         }
     };
 
-    let updated = insert_section(&content, &section);
-    atomic::write_atomic(path, updated).map_err(|e| Error::Write {
-        path: path_str,
-        source: e,
-    })
+    Ok(Some(insert_section(content, &section)))
+}
+
+fn format_full_section(template: &str) -> String {
+    if template.is_empty() {
+        "- Unreleased\n".to_string()
+    } else {
+        let mut s = template.trim().to_string();
+        s.push('\n');
+        s
+    }
+}
+
+fn render_heading(
+    header_template: Option<&str>,
+    version: &str,
+    context: Option<&super::context::ReleaseContext>,
+) -> Result<String, Error> {
+    let Some(ht) = header_template else {
+        return Ok(format!("## [{version}] - {}", format_date(SystemTime::now())));
+    };
+
+    if let Some(ctx) = context {
+        super::render::render_template(ht, ctx)
+    } else {
+        let today = format_date(SystemTime::now());
+        let mut env = minijinja::Environment::new();
+        env.set_auto_escape_callback(|_| minijinja::AutoEscape::None);
+        let ctx_val = minijinja::context! {
+            version => version,
+            tag => version,
+            date => today,
+        };
+        env.render_str(ht, ctx_val).map_err(|e| Error::TemplateRender {
+            detail: format!("{e:#}"),
+        })
+    }
 }
 
 fn detect_line_ending(content: &str) -> &'static str {

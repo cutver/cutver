@@ -3,6 +3,19 @@
 All notable changes to this project are documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com).
 
+## [v0.9.1] - 2026-09-28
+### 🐛 Bug Fixes
+- **cli**: enrich raw git commits in changelog commands and build release binary from source (#84) in [#84](https://github.com/cutver/cutver/pull/84) ([36e7e16](https://github.com/cutver/cutver/commit/36e7e16e47a877b894b8221592daea3306b39040)) by @Row0902
+
+### 📚 Documentation
+- **odd**: record completion evidence for cli raw commits fix ([74a83d3](https://github.com/cutver/cutver/commit/74a83d3ab11e6ab8b041a3cbdc2625df9d6a39d3)) by @Row0902
+- **changelog**: hydrate v0.9.0 release notes and guard release workflow tag detection [skip ci] ([5ddab07](https://github.com/cutver/cutver/commit/5ddab073ac460e6d075005b7cd8b10884ee81266)) by @Row0902
+
+### 👥 Contributors
+- @Row0902
+
+---
+**Full Changelog**: https://github.com/cutver/cutver/compare/v0.9.0...v0.9.1
 ## [v0.9.0] - 2026-09-28
 ### 🚀 Features & Enhancements
 - **config**: add [project] table and expose project_name in release context (#82) in [#83](https://github.com/cutver/cutver/pull/83) ([2375d5c](https://github.com/cutver/cutver/commit/2375d5cda502aadb9363db3006b1f8d6475801a0)) by @Row0902

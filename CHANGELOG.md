@@ -4,32 +4,32 @@ All notable changes to this project are documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com).
 
 ## [v0.9.0] - 2026-09-28
-
 ### 🚀 Features & Enhancements
-- **config**: add [project] table and expose project_name in release context (#82) in [#83](https://github.com/cutver/cutver/pull/83)
-- **changelog**: declarative commit line formatting (c.line) and rich category pre-rendering (#80) in [#81](https://github.com/cutver/cutver/pull/81)
-- **cli**: structured JSON export for release context (--json flag) (#66) in [#78](https://github.com/cutver/cutver/pull/78)
-- **changelog**: ANSI-styled terminal rendering for changelog commands in interactive TTY (#72) in [#77](https://github.com/cutver/cutver/pull/77)
-- **doctor**: structured status grid dashboard for 'cutver doctor' (#71) in [#76](https://github.com/cutver/cutver/pull/76)
-- **cli**: tree-structured release plan layout and simulation banner for 'cutver bump' (#69) in [#75](https://github.com/cutver/cutver/pull/75)
-- **bump**: explain SemVer deduction rationale in 'cutver bump auto' (#70) in [#74](https://github.com/cutver/cutver/pull/74)
-- **cli**: terminal color hierarchy and TTY/NO_COLOR auto-detection (#68) in [#73](https://github.com/cutver/cutver/pull/73)
-- **templating**: universal MiniJinja interpolation in git messages and publish hooks (#43) in [#67](https://github.com/cutver/cutver/pull/67)
-- **template**: include both PR link and commit hash in release template in [#61](https://github.com/cutver/cutver/pull/61)
+- **config**: add [project] table and expose project_name in release context (#82) in [#83](https://github.com/cutver/cutver/pull/83) ([2375d5c](https://github.com/cutver/cutver/commit/2375d5cda502aadb9363db3006b1f8d6475801a0)) by @Row0902
+- **changelog**: declarative commit line formatting (c.line) and rich category pre-rendering (#80) in [#81](https://github.com/cutver/cutver/pull/81) ([40b1aab](https://github.com/cutver/cutver/commit/40b1aab5f7ca639e5c6ae25149ae1e008acba524)) by @Row0902
+- **cli**: structured JSON export for release context (--json flag) (#66) in [#78](https://github.com/cutver/cutver/pull/78) ([0c8511d](https://github.com/cutver/cutver/commit/0c8511d89d24aa9be3e7b28e635aaf7c5bd6c279)) by @Row0902
+- **changelog**: ANSI-styled terminal rendering for changelog commands in interactive TTY (#72) in [#77](https://github.com/cutver/cutver/pull/77) ([8fdd65a](https://github.com/cutver/cutver/commit/8fdd65a708f7fbc83bd1800c13d4361aa6524986)) by @Row0902
+- **doctor**: structured status grid dashboard for 'cutver doctor' (#71) in [#76](https://github.com/cutver/cutver/pull/76) ([946bd38](https://github.com/cutver/cutver/commit/946bd38aad466aad1c38270e6b0dd1868c341210)) by @Row0902
+- **cli**: tree-structured release plan layout and simulation banner for 'cutver bump' (#69) in [#75](https://github.com/cutver/cutver/pull/75) ([e7a89e9](https://github.com/cutver/cutver/commit/e7a89e983447116bb10fb4d30f0fbe5d526019d0)) by @Row0902
+- **bump**: explain SemVer deduction rationale in 'cutver bump auto' (#70) in [#74](https://github.com/cutver/cutver/pull/74) ([b8494c5](https://github.com/cutver/cutver/commit/b8494c5f9f05ee86a9abf4ed8b1694fa494b70a6)) by @Row0902
+- **cli**: terminal color hierarchy and TTY/NO_COLOR auto-detection (#68) in [#73](https://github.com/cutver/cutver/pull/73) ([8bbbc22](https://github.com/cutver/cutver/commit/8bbbc22ab3ad1dfb7443f77443af1e5a5452dc44)) by @Row0902
+- **templating**: universal MiniJinja interpolation in git messages and publish hooks (#43) in [#67](https://github.com/cutver/cutver/pull/67) ([4e8c1a3](https://github.com/cutver/cutver/commit/4e8c1a3e1b1d8bc229406e9aff471793b5f6c264)) by @Row0902
+- **template**: include both PR link and commit hash in release template in [#61](https://github.com/cutver/cutver/pull/61) ([d7bf008](https://github.com/cutver/cutver/commit/d7bf008574077c43c8bfd2f91400e56e3ae096a9)) by @Row0902
 
-### 📝 Documentation
-- **readme**: add visual CLI showcase screenshots and fix emojis
-- **readme**: clarify homebrew 6.0+ tap trust syntax in [#64](https://github.com/cutver/cutver/pull/64)
-- **readme**: add homebrew installation guide for macos and linux in [#63](https://github.com/cutver/cutver/pull/63)
-- **readme**: add scoop installation guide for windows in [#62](https://github.com/cutver/cutver/pull/62)
-- **changelog**: deduplicate v0.8.0 heading line [skip ci]
+### 📚 Documentation
+- **readme**: add visual CLI showcase screenshots and fix emojis ([c587af8](https://github.com/cutver/cutver/commit/c587af8ec78bfa012060891319f72bfd16fb6fd8)) by @Row0902
+- **readme**: clarify homebrew 6.0+ tap trust syntax in [#64](https://github.com/cutver/cutver/pull/64) ([02fc599](https://github.com/cutver/cutver/commit/02fc599418cbddaa1da8d766e3de9714391ac3a0)) by @Row0902
+- **readme**: add homebrew installation guide for macos and linux in [#63](https://github.com/cutver/cutver/pull/63) ([b93afdd](https://github.com/cutver/cutver/commit/b93afddf859de5344d387cab98339f56d5d0a159)) by @Row0902
+- **readme**: add scoop installation guide for windows in [#62](https://github.com/cutver/cutver/pull/62) ([9a330e6](https://github.com/cutver/cutver/commit/9a330e6890600a8c362d27b389d8d492b584efe5)) by @Row0902
+- **changelog**: deduplicate v0.8.0 heading line [skip ci] ([f846947](https://github.com/cutver/cutver/commit/f84694788f5d31373dd04c9df309a6371a3b66a9)) by @Row0902
 
 ### 🛠️ Maintenance & Dependencies
-- **config**: dogfood floating major tag and MiniJinja release template in [#79](https://github.com/cutver/cutver/pull/79)
-- **git**: ignore local linkedin post draft
-- **git**: ignore local discord post drafts
+- **config**: dogfood floating major tag and MiniJinja release template in [#79](https://github.com/cutver/cutver/pull/79) ([a8eb347](https://github.com/cutver/cutver/commit/a8eb34762462429d75c625120c220431829b9f80)) by @Row0902
+- **git**: ignore local linkedin post draft ([2149124](https://github.com/cutver/cutver/commit/21491247d097ce7e8efd0cd16321622b10ffdc95)) by @Row0902
+- **git**: ignore local discord post drafts ([3c941aa](https://github.com/cutver/cutver/commit/3c941aa687a7e10df73f59b72b7c0d38d2ea1f44)) by @Row0902
 
 ### 👥 Contributors
+- @github-actions[bot]
 - @Row0902
 
 ---

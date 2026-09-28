@@ -458,6 +458,7 @@ pub struct ReleaseContext {
     pub repo_owner: Option<String>,
     pub repo_name: Option<String>,
     pub forge: Option<String>,
+    pub project_name: Option<String>,
 }
 
 impl serde::Serialize for ReleaseContext {
@@ -466,7 +467,7 @@ impl serde::Serialize for ReleaseContext {
         S: serde::Serializer,
     {
         use serde::ser::SerializeMap;
-        let mut map = serializer.serialize_map(Some(29))?;
+        let mut map = serializer.serialize_map(Some(31))?;
         map.serialize_entry("version", &self.version)?;
         map.serialize_entry("previous_version", &self.previous_version)?;
         map.serialize_entry("tag", &self.tag)?;
@@ -498,6 +499,8 @@ impl serde::Serialize for ReleaseContext {
         map.serialize_entry("repo_name", &self.repo_name)?;
         map.serialize_entry("repo", &self.repo_name)?;
         map.serialize_entry("forge", &self.forge)?;
+        map.serialize_entry("project_name", &self.project_name)?;
+        map.serialize_entry("project", &self.project_name)?;
         map.end()
     }
 }
@@ -521,6 +524,7 @@ pub struct InterpolationContext {
     pub repo_owner: Option<String>,
     pub repo_name: Option<String>,
     pub forge: Option<String>,
+    pub project_name: Option<String>,
 }
 
 impl serde::Serialize for InterpolationContext {
@@ -529,7 +533,7 @@ impl serde::Serialize for InterpolationContext {
         S: serde::Serializer,
     {
         use serde::ser::SerializeMap;
-        let mut map = serializer.serialize_map(Some(18))?;
+        let mut map = serializer.serialize_map(Some(20))?;
         map.serialize_entry("version", &self.version)?;
         map.serialize_entry("previous_version", &self.previous_version)?;
         map.serialize_entry("tag", &self.tag)?;
@@ -548,6 +552,8 @@ impl serde::Serialize for InterpolationContext {
         map.serialize_entry("repo_name", &self.repo_name)?;
         map.serialize_entry("repo", &self.repo_name)?;
         map.serialize_entry("forge", &self.forge)?;
+        map.serialize_entry("project_name", &self.project_name)?;
+        map.serialize_entry("project", &self.project_name)?;
         map.end()
     }
 }
@@ -589,6 +595,8 @@ impl<'de> serde::Deserialize<'de> for InterpolationContext {
             repo_name: Option<String>,
             #[serde(default)]
             forge: Option<String>,
+            #[serde(default, alias = "project")]
+            project_name: Option<String>,
         }
 
         let h = Helper::deserialize(deserializer)?;
@@ -619,6 +627,8 @@ impl<'de> serde::Deserialize<'de> for InterpolationContext {
             })
         });
 
+        let project_name = h.project_name.or_else(|| h.repo_name.clone());
+
         Ok(InterpolationContext {
             version: h.version,
             previous_version: h.previous_version,
@@ -636,6 +646,7 @@ impl<'de> serde::Deserialize<'de> for InterpolationContext {
             repo_owner: h.repo_owner,
             repo_name: h.repo_name,
             forge: h.forge,
+            project_name,
         })
     }
 }
@@ -677,6 +688,7 @@ impl InterpolationContext {
         let repo_owner = forge_meta.as_ref().and_then(|f| f.owner.clone());
         let repo_name = forge_meta.as_ref().and_then(|f| f.repo.clone());
         let forge = forge_meta.as_ref().and_then(|f| f.forge.clone());
+        let project_name = repo_name.clone();
 
         InterpolationContext {
             version: version.to_string(),
@@ -695,6 +707,30 @@ impl InterpolationContext {
             repo_owner,
             repo_name,
             forge,
+            project_name,
+        }
+    }
+
+    /// Build an `InterpolationContext` from a `ReleaseContext`.
+    pub fn from_release_context(ctx: &ReleaseContext, bump_level: &str, branch: Option<&str>) -> Self {
+        InterpolationContext {
+            version: ctx.version.clone(),
+            previous_version: ctx.previous_version.clone(),
+            tag: ctx.tag.clone(),
+            previous_tag: ctx.previous_tag.clone(),
+            bump_level: bump_level.to_string(),
+            is_prerelease: ctx.is_prerelease,
+            prerelease: ctx.prerelease.clone(),
+            build: ctx.build.clone(),
+            major: ctx.major,
+            minor: ctx.minor,
+            patch: ctx.patch,
+            date: ctx.date.clone(),
+            branch: branch.map(String::from),
+            repo_owner: ctx.repo_owner.clone(),
+            repo_name: ctx.repo_name.clone(),
+            forge: ctx.forge.clone(),
+            project_name: ctx.project_name.clone(),
         }
     }
 }
@@ -757,6 +793,8 @@ impl<'de> serde::Deserialize<'de> for ReleaseContext {
             repo_name: Option<String>,
             #[serde(default)]
             forge: Option<String>,
+            #[serde(default, alias = "project")]
+            project_name: Option<String>,
         }
 
         let h = Helper::deserialize(deserializer)?;
@@ -803,6 +841,7 @@ impl<'de> serde::Deserialize<'de> for ReleaseContext {
             .repo_name
             .or_else(|| parsed_forge.as_ref().and_then(|f| f.repo.clone()));
         let forge = h.forge.or_else(|| parsed_forge.as_ref().and_then(|f| f.forge.clone()));
+        let project_name = h.project_name.or_else(|| repo_name.clone());
 
         Ok(ReleaseContext {
             version: h.version,
@@ -832,6 +871,7 @@ impl<'de> serde::Deserialize<'de> for ReleaseContext {
             repo_owner,
             repo_name,
             forge,
+            project_name,
         })
     }
 }
@@ -1034,6 +1074,7 @@ pub fn build_context_with_raw_and_filter(
     let repo_owner = forge_meta.as_ref().and_then(|f| f.owner.clone());
     let repo_name = forge_meta.as_ref().and_then(|f| f.repo.clone());
     let forge = forge_meta.as_ref().and_then(|f| f.forge.clone());
+    let project_name = repo_name.clone();
 
     ReleaseContext {
         version: version.to_string(),
@@ -1063,6 +1104,7 @@ pub fn build_context_with_raw_and_filter(
         repo_owner,
         repo_name,
         forge,
+        project_name,
     }
 }
 
@@ -1633,6 +1675,8 @@ mod tests {
         assert_eq!(value["repo"], "my-pkg");
         assert_eq!(value["repo_name"], "my-pkg");
         assert_eq!(value["forge"], "github");
+        assert_eq!(value["project"], "my-pkg");
+        assert_eq!(value["project_name"], "my-pkg");
 
         // Test deserialization with owner/repo aliases
         let json_input = r#"{
@@ -1650,6 +1694,17 @@ mod tests {
         assert_eq!(deserialized.repo_owner.as_deref(), Some("custom-owner"));
         assert_eq!(deserialized.repo_name.as_deref(), Some("custom-repo"));
         assert_eq!(deserialized.forge.as_deref(), Some("custom-forge"));
+        assert_eq!(deserialized.project_name.as_deref(), Some("custom-repo"));
+
+        // Test deserialization with explicit project alias
+        let json_input_project = r#"{
+            "version": "2.3.4",
+            "tag": "v2.3.4",
+            "date": "2026-03-30",
+            "project": "custom-project"
+        }"#;
+        let deserialized: ReleaseContext = serde_json::from_str(json_input_project).unwrap();
+        assert_eq!(deserialized.project_name.as_deref(), Some("custom-project"));
     }
 
     #[test]
@@ -1681,6 +1736,7 @@ mod tests {
         assert_eq!(ctx.repo_owner.as_deref(), Some("my-org"));
         assert_eq!(ctx.repo_name.as_deref(), Some("my-pkg"));
         assert_eq!(ctx.forge.as_deref(), Some("github"));
+        assert_eq!(ctx.project_name.as_deref(), Some("my-pkg"));
 
         let json = serde_json::to_string(&ctx).unwrap();
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();
@@ -1692,5 +1748,76 @@ mod tests {
         assert_eq!(value["branch"], "main");
         assert_eq!(value["bump_level"], "minor");
         assert_eq!(value["is_prerelease"], true);
+        assert_eq!(value["project"], "my-pkg");
+        assert_eq!(value["project_name"], "my-pkg");
+
+        let from_rc = InterpolationContext::from_release_context(
+            &ReleaseContext {
+                version: "1.0.0".into(),
+                previous_version: None,
+                tag: "v1.0.0".into(),
+                previous_tag: None,
+                date: "2026-03-30".into(),
+                compare_url: None,
+                repository: None,
+                features: String::new(),
+                fixes: String::new(),
+                breaking: String::new(),
+                perf: String::new(),
+                refactor: String::new(),
+                docs: String::new(),
+                maintenance: String::new(),
+                other: String::new(),
+                all_changes: String::new(),
+                commits: Vec::new(),
+                contributors: Vec::new(),
+                major: 1,
+                minor: 0,
+                patch: 0,
+                is_prerelease: false,
+                prerelease: None,
+                build: None,
+                repo_owner: None,
+                repo_name: None,
+                forge: None,
+                project_name: Some("cutver".into()),
+            },
+            "major",
+            Some("main"),
+        );
+        assert_eq!(from_rc.project_name.as_deref(), Some("cutver"));
+    }
+
+    #[test]
+    fn test_template_rendering_with_project_and_project_name() {
+        let mut ctx = build_context_with_filter(
+            "1.0.0",
+            None,
+            "v1.0.0",
+            None,
+            "2026-03-30",
+            Some("https://github.com/my-org/my-repo".to_string()),
+            &[],
+            vec![],
+            true,
+            "entry",
+            true,
+            &[],
+        );
+        assert_eq!(ctx.project_name.as_deref(), Some("my-repo"));
+
+        let template = "Project: {{ project_name }}, Alias: {{ project }}, Repo: {{ repo }}";
+        let mut env = minijinja::Environment::new();
+        env.add_template("test", template).unwrap();
+        let tmpl = env.get_template("test").unwrap();
+        let rendered = tmpl.render(&ctx).unwrap();
+        assert_eq!(rendered, "Project: my-repo, Alias: my-repo, Repo: my-repo");
+
+        ctx.project_name = Some("custom-project".to_string());
+        let rendered = tmpl.render(&ctx).unwrap();
+        assert_eq!(
+            rendered,
+            "Project: custom-project, Alias: custom-project, Repo: my-repo"
+        );
     }
 }

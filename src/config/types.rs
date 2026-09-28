@@ -38,6 +38,8 @@ pub struct Config {
     #[serde(skip)]
     pub root_dir: PathBuf,
     #[serde(default)]
+    pub project: Project,
+    #[serde(default)]
     pub version: VersionSection,
     #[serde(default)]
     pub manifest: Vec<Manifest>,
@@ -53,6 +55,28 @@ pub struct Config {
     pub hooks: Hooks,
     #[serde(default)]
     pub publish: Publish,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+pub struct Project {
+    pub name: Option<String>,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            root_dir: PathBuf::new(),
+            project: Project::default(),
+            version: VersionSection::default(),
+            manifest: Vec::new(),
+            preflight: Vec::new(),
+            preflight_default_timeout: None,
+            changelog: Changelog::default(),
+            git: Git::default(),
+            hooks: Hooks::default(),
+            publish: Publish::default(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
@@ -359,5 +383,22 @@ floating_major_tag = true
 
         let default_cfg = load_str(&manifest("cargo-package", "")).unwrap();
         assert!(!default_cfg.git.floating_major_tag);
+    }
+
+    #[test]
+    fn project_config_parsing_and_defaults() {
+        let toml = r#"
+[project]
+name = "my-tool"
+
+[[manifest]]
+path = "Cargo.toml"
+kind = "cargo-package"
+"#;
+        let c = load_str(toml).unwrap();
+        assert_eq!(c.project.name.as_deref(), Some("my-tool"));
+
+        let default_cfg = load_str(&manifest("cargo-package", "")).unwrap();
+        assert_eq!(default_cfg.project.name, None);
     }
 }

@@ -21,7 +21,10 @@ impl GradleEditor {
             code_re,
         })
     }
+}
 
+#[cfg(test)]
+impl GradleEditor {
     pub fn new(version_name_field: String, version_code_field: String) -> Self {
         Self::try_new(version_name_field, version_code_field).expect("valid regex for escaped field names")
     }

@@ -68,7 +68,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com).
 ### 📚 Documentation
 - update org urls, showcase github actions, and overhaul readme (#47)
 
-### 🧰 Maintenance & Dependencies
+### 🛠️ Maintenance & Dependencies
 - **config**: add [skip ci] to release commit message
 
 ### 👥 Contributors
@@ -81,10 +81,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com).
 ### 🐛 Bug Fixes
 - **changelog**: only break release extraction on versioned headings (#45)
 
-### 🧰 Maintenance & Dependencies
+### 🛠️ Maintenance & Dependencies
 - automate release pipeline using cutver actions and conditional build matrix
 
-### 🔍 Other Changes
+### 📦 Other Changes
 - **template**: add sparkle emoji to release notes header
 - **template**: restore contributors section in release notes template
 - **template**: remove redundant contributors section from release notes template
@@ -100,11 +100,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com).
 - **git**: respect .mailmap and resolve GitHub handles from noreply emails
 - **changelog**: dynamic release notes templating with MiniJinja (#42) (#44)
 
-### 🧰 Maintenance & Dependencies
+### 🛠️ Maintenance & Dependencies
 - **config**: adopt MiniJinja release notes template in cutver.toml and release.yml
 - **release**: prepend 'What's Changed' header and append full changelog link in release.yml (#41)
 
-### 🔍 Other Changes
+### 📦 Other Changes
 - **template**: trim whitespace on release notes template blocks
 
 ### 👥 Contributors

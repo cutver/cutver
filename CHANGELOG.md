@@ -3,36 +3,38 @@
 All notable changes to this project are documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com).
 
-##  [v0.9.0] - 2026-09-28
-### 🚀 Features & Enhancements
-- 
-- 
-- 
-- 
-- 
-- 
-- 
-- 
-- 
-- 
+## [v0.9.0] - 2026-09-28
 
-### 📚 Documentation
-- 
-- 
-- 
-- 
-- 
+### 🚀 Features & Enhancements
+- **config**: add [project] table and expose project_name in release context (#82) in [#83](https://github.com/cutver/cutver/pull/83)
+- **changelog**: declarative commit line formatting (c.line) and rich category pre-rendering (#80) in [#81](https://github.com/cutver/cutver/pull/81)
+- **cli**: structured JSON export for release context (--json flag) (#66) in [#78](https://github.com/cutver/cutver/pull/78)
+- **changelog**: ANSI-styled terminal rendering for changelog commands in interactive TTY (#72) in [#77](https://github.com/cutver/cutver/pull/77)
+- **doctor**: structured status grid dashboard for 'cutver doctor' (#71) in [#76](https://github.com/cutver/cutver/pull/76)
+- **cli**: tree-structured release plan layout and simulation banner for 'cutver bump' (#69) in [#75](https://github.com/cutver/cutver/pull/75)
+- **bump**: explain SemVer deduction rationale in 'cutver bump auto' (#70) in [#74](https://github.com/cutver/cutver/pull/74)
+- **cli**: terminal color hierarchy and TTY/NO_COLOR auto-detection (#68) in [#73](https://github.com/cutver/cutver/pull/73)
+- **templating**: universal MiniJinja interpolation in git messages and publish hooks (#43) in [#67](https://github.com/cutver/cutver/pull/67)
+- **template**: include both PR link and commit hash in release template in [#61](https://github.com/cutver/cutver/pull/61)
+
+### 📝 Documentation
+- **readme**: add visual CLI showcase screenshots and fix emojis
+- **readme**: clarify homebrew 6.0+ tap trust syntax in [#64](https://github.com/cutver/cutver/pull/64)
+- **readme**: add homebrew installation guide for macos and linux in [#63](https://github.com/cutver/cutver/pull/63)
+- **readme**: add scoop installation guide for windows in [#62](https://github.com/cutver/cutver/pull/62)
+- **changelog**: deduplicate v0.8.0 heading line [skip ci]
 
 ### 🛠️ Maintenance & Dependencies
-- 
-- 
-- 
+- **config**: dogfood floating major tag and MiniJinja release template in [#79](https://github.com/cutver/cutver/pull/79)
+- **git**: ignore local linkedin post draft
+- **git**: ignore local discord post drafts
 
 ### 👥 Contributors
 - @Row0902
 
 ---
 **Full Changelog**: https://github.com/cutver/cutver/compare/v0.8.0...v0.9.0
+
 ## [v0.8.0] - 2026-09-26
 
 ### 🚀 Features & Enhancements

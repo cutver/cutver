@@ -75,7 +75,7 @@ jobs:
       - name: Get latest release tag
         id: tag
         if: steps.check.outputs.released == 'true'
-        run: echo "tag=$(git describe --tags --abbrev=0)" >> "$GITHUB_OUTPUT"
+        run: echo "tag=$(git describe --tags --match="v*.*.*" --abbrev=0)" >> "$GITHUB_OUTPUT"
 
       - name: Save Release Notes Artifact
         if: steps.check.outputs.released == 'true'

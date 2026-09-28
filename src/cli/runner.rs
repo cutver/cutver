@@ -228,7 +228,7 @@ fn resolve_release_tag_and_prefix(
 struct ReleaseTargetInfo {
     version: String,
     prev_version: Option<String>,
-    commits: Vec<String>,
+    raw_commits: Vec<crate::git::RawCommit>,
 }
 
 fn resolve_latest_target_info(
@@ -250,13 +250,13 @@ fn resolve_latest_target_info(
     let prev_tag = prev_ver
         .as_deref()
         .map(|pv| resolve_release_tag_and_prefix(cfg, root_dir, content, pv).0);
-    let commits = crate::git::commits_since(root_dir, prev_tag.as_deref()).unwrap_or_default();
+    let raw_commits = crate::git::raw_commits_since(root_dir, prev_tag.as_deref()).unwrap_or_default();
     let latest_ver = versions.remove(0);
 
     Ok(ReleaseTargetInfo {
         version: latest_ver,
         prev_version: prev_ver,
-        commits,
+        raw_commits,
     })
 }
 
@@ -286,12 +286,12 @@ fn resolve_show_target_info(
     let prev_tag = prev_ver
         .as_deref()
         .map(|pv| resolve_release_tag_and_prefix(cfg, root_dir, content, pv).0);
-    let commits = crate::git::commits_between(root_dir, prev_tag.as_deref(), &tag).unwrap_or_default();
+    let raw_commits = crate::git::raw_commits_between(root_dir, prev_tag.as_deref(), &tag).unwrap_or_default();
 
     Ok(ReleaseTargetInfo {
         version: matched_ver,
         prev_version: prev_ver,
-        commits,
+        raw_commits,
     })
 }
 
@@ -323,13 +323,14 @@ fn resolve_changelog_context(
         .as_deref()
         .map(|pv| resolve_release_tag_and_prefix(cfg.as_ref(), root_dir, content, pv).0);
 
-    let (_bump, parsed_commits) = crate::conventional::parse_and_deduce_bump(&target.commits);
+    let commit_messages: Vec<String> = target.raw_commits.iter().map(|r| r.message.clone()).collect();
+    let (_bump, parsed_commits) = crate::conventional::parse_and_deduce_bump(&commit_messages);
     let contributors = crate::git::list_authors_between(root_dir, prev_tag.as_deref(), &tag).unwrap_or_default();
     let repository = crate::git::remote_url(root_dir);
     let date_str = extract_heading_date(content, &target.version)
         .unwrap_or_else(|| crate::changelog::format_date(std::time::SystemTime::now()));
 
-    let mut ctx = crate::changelog::build_context(
+    let mut ctx = crate::changelog::build_context_with_raw_and_filter(
         &target.version,
         target.prev_version.as_deref(),
         &tag,
@@ -337,9 +338,14 @@ fn resolve_changelog_context(
         &date_str,
         repository,
         &parsed_commits,
+        Some(&target.raw_commits),
         contributors,
         include_scopes,
         fallback_entry,
+        cfg.as_ref().map(|c| c.changelog.ignore_release_commits).unwrap_or(true),
+        &cfg.as_ref()
+            .map(|c| c.changelog.ignore_scopes.clone())
+            .unwrap_or_default(),
     );
 
     if parsed_commits.is_empty()

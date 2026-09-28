@@ -565,3 +565,96 @@ path = "CHANGELOG.md"
     assert_eq!(parsed["patch"], 0);
     assert_eq!(parsed["date"], "2026-03-01");
 }
+
+#[test]
+fn changelog_latest_and_show_cli_with_template_enriches_commits_from_git() {
+    assert!(
+        git_available(),
+        "git CLI is required for e2e tests but was not found in PATH"
+    );
+    let guard = FixtureGuard::new("changelog-cli-raw-commits");
+    let fixture = guard.fixture();
+
+    let cutver_toml = r#"[version]
+current_source = "package.json"
+
+[[manifest]]
+path = "package.json"
+kind = "json"
+field = "version"
+
+[changelog]
+path = "CHANGELOG.md"
+
+[git]
+tag_prefix = "v"
+"#;
+    fixture.write("cutver.toml", cutver_toml);
+    fixture.write("package.json", r#"{"version": "1.2.0"}"#);
+
+    init_git_repo(fixture);
+    initial_commit(fixture);
+    run_git_ok(&fixture.dir, &["tag", "v1.1.0"]);
+
+    run_git_ok(
+        &fixture.dir,
+        &["commit", "--allow-empty", "-m", "feat(cli): add raw commits (#42)"],
+    );
+    run_git_ok(&fixture.dir, &["tag", "v1.2.0"]);
+
+    let changelog_content = r#"# Changelog
+
+## [1.2.0] - 2026-03-01
+
+### Features
+- **cli**: add raw commits (#42)
+
+## [1.1.0] - 2026-02-01
+
+- initial release
+"#;
+    fixture.write("CHANGELOG.md", changelog_content);
+
+    let template = "Release {{ version }}: {% for c in commits %}[{{ c.short_hash }}] {{ c.description }} by {{ c.author }}{% endfor %}";
+    fixture.write("custom.j2", template);
+
+    // Test changelog latest --template custom.j2
+    let output_latest = Command::new(env!("CARGO_BIN_EXE_cutver"))
+        .current_dir(&fixture.dir)
+        .args(["changelog", "latest", "--template", "custom.j2"])
+        .output()
+        .expect("failed to execute cutver binary");
+
+    assert!(
+        output_latest.status.success(),
+        "latest command failed: {}",
+        String::from_utf8_lossy(&output_latest.stderr)
+    );
+    let stdout_latest = String::from_utf8_lossy(&output_latest.stdout);
+    assert!(stdout_latest.contains("Release 1.2.0:"));
+    assert!(stdout_latest.contains("add raw commits (#42) by Test User"));
+    assert!(
+        !stdout_latest.contains("[]"),
+        "short_hash should be populated in latest output: {stdout_latest}"
+    );
+
+    // Test changelog show v1.2.0 --template custom.j2
+    let output_show = Command::new(env!("CARGO_BIN_EXE_cutver"))
+        .current_dir(&fixture.dir)
+        .args(["changelog", "show", "v1.2.0", "--template", "custom.j2"])
+        .output()
+        .expect("failed to execute cutver binary");
+
+    assert!(
+        output_show.status.success(),
+        "show command failed: {}",
+        String::from_utf8_lossy(&output_show.stderr)
+    );
+    let stdout_show = String::from_utf8_lossy(&output_show.stdout);
+    assert!(stdout_show.contains("Release 1.2.0:"));
+    assert!(stdout_show.contains("add raw commits (#42) by Test User"));
+    assert!(
+        !stdout_show.contains("[]"),
+        "short_hash should be populated in show output: {stdout_show}"
+    );
+}

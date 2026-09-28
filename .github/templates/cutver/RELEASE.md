@@ -1,4 +1,4 @@
-## {{ project_name or repo }} [{{ tag }}] - {{ date }}
+## [{{ tag }}] - {{ date }}
 
 {%- if breaking %}
 ### ⚠️ Breaking Changes

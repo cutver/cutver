@@ -40,10 +40,16 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Setup Cutver CLI
-        uses: cutver/setup@v1
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build local Cutver binary
+        run: |
+          cargo build --release
+          echo "$GITHUB_WORKSPACE/target/release" >> "$GITHUB_PATH"
 
       - name: Record HEAD commit before release
         id: pre

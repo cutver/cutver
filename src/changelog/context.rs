@@ -103,6 +103,8 @@ pub struct CommitContext {
     pub pr_url: Option<String>,
     pub issue_numbers: Vec<u64>,
     pub commit_url: Option<String>,
+    pub line: String,
+    pub bullet: String,
 }
 
 impl serde::Serialize for CommitContext {
@@ -111,7 +113,7 @@ impl serde::Serialize for CommitContext {
         S: serde::Serializer,
     {
         use serde::ser::SerializeMap;
-        let mut map = serializer.serialize_map(Some(14))?;
+        let mut map = serializer.serialize_map(Some(16))?;
         map.serialize_entry("type", &self.commit_type)?;
         map.serialize_entry("commit_type", &self.commit_type)?;
         map.serialize_entry("scope", &self.scope)?;
@@ -126,6 +128,8 @@ impl serde::Serialize for CommitContext {
         map.serialize_entry("pr_url", &self.pr_url)?;
         map.serialize_entry("issue_numbers", &self.issue_numbers)?;
         map.serialize_entry("commit_url", &self.commit_url)?;
+        map.serialize_entry("line", &self.line)?;
+        map.serialize_entry("bullet", &self.bullet)?;
         map.end()
     }
 }
@@ -161,12 +165,16 @@ impl<'de> serde::Deserialize<'de> for CommitContext {
             issue_numbers: Vec<u64>,
             #[serde(default)]
             commit_url: Option<String>,
+            #[serde(default)]
+            line: Option<String>,
+            #[serde(default)]
+            bullet: Option<String>,
         }
         let h = Helper::deserialize(deserializer)?;
         let clean = h
             .clean_description
             .unwrap_or_else(|| strip_trailing_pr_number(&h.description));
-        Ok(CommitContext {
+        let mut ctx = CommitContext {
             commit_type: h.r#type,
             scope: h.scope,
             description: h.description,
@@ -180,7 +188,12 @@ impl<'de> serde::Deserialize<'de> for CommitContext {
             pr_url: h.pr_url,
             issue_numbers: h.issue_numbers,
             commit_url: h.commit_url,
-        })
+            line: String::new(),
+            bullet: String::new(),
+        };
+        ctx.line = h.line.unwrap_or_else(|| format_commit_line(&ctx, true));
+        ctx.bullet = h.bullet.unwrap_or_else(|| format!("- {}", ctx.line));
+        Ok(ctx)
     }
 }
 
@@ -319,6 +332,44 @@ fn build_urls(repo_url: Option<&str>, pr_number: Option<u64>, hash: Option<&str>
     (pr_url, commit_url)
 }
 
+/// Formats a single commit into a canonical, rich Markdown line.
+/// Output format: `**scope**: clean description in [#123](url) ([abc1234](url)) by @author`
+pub fn format_commit_line(ctx: &CommitContext, include_scope: bool) -> String {
+    let mut line = String::new();
+    if include_scope && let Some(scope) = &ctx.scope {
+        line.push_str(&format!("**{scope}**: "));
+    }
+
+    let desc = if ctx.clean_description.is_empty() {
+        &ctx.description
+    } else {
+        &ctx.clean_description
+    };
+    line.push_str(desc);
+
+    if let Some(pr) = ctx.pr_number {
+        match &ctx.pr_url {
+            Some(url) => line.push_str(&format!(" in [#{pr}]({url})")),
+            None => line.push_str(&format!(" in #{pr}")),
+        }
+    }
+
+    if let Some(hash) = &ctx.short_hash {
+        match &ctx.commit_url {
+            Some(url) => line.push_str(&format!(" ([{hash}]({url}))")),
+            None => line.push_str(&format!(" ({hash})")),
+        }
+    }
+
+    if let Some(author) = &ctx.author
+        && !author.is_empty()
+    {
+        line.push_str(&format!(" by @{author}"));
+    }
+
+    line
+}
+
 pub fn enrich_commit_context(
     mut ctx: CommitContext,
     raw_commit: Option<&crate::git::RawCommit>,
@@ -343,6 +394,8 @@ pub fn enrich_commit_context(
     let (pr_url, commit_url) = build_urls(repo_url, ctx.pr_number, ctx.hash.as_deref());
     ctx.pr_url = pr_url;
     ctx.commit_url = commit_url;
+    ctx.line = format_commit_line(&ctx, true);
+    ctx.bullet = format!("- {}", ctx.line);
 
     ctx
 }
@@ -351,7 +404,7 @@ impl From<&ConventionalCommit> for CommitContext {
     fn from(c: &ConventionalCommit) -> Self {
         let desc = c.description.trim().to_string();
         let clean = strip_trailing_pr_number(&desc);
-        Self {
+        let mut ctx = Self {
             commit_type: c.commit_type.clone(),
             scope: c.scope.clone(),
             description: desc,
@@ -365,7 +418,12 @@ impl From<&ConventionalCommit> for CommitContext {
             pr_url: None,
             issue_numbers: Vec::new(),
             commit_url: None,
-        }
+            line: String::new(),
+            bullet: String::new(),
+        };
+        ctx.line = format_commit_line(&ctx, true);
+        ctx.bullet = format!("- {}", ctx.line);
+        ctx
     }
 }
 
@@ -908,12 +966,8 @@ pub fn build_context_with_raw_and_filter(
         };
 
         let enriched = enrich_commit_context(CommitContext::from(c), matching_raw, Some(c), repository.as_deref());
+        let item = format!("- {}", format_commit_line(&enriched, include_scopes));
         commit_contexts.push(enriched);
-
-        let item = match (&c.scope, include_scopes) {
-            (Some(scope), true) => format!("- **{}**: {}", scope, c.description.trim()),
-            _ => format!("- {}", c.description.trim()),
-        };
 
         if c.is_breaking {
             categories[0].items.push(item);
@@ -1182,6 +1236,83 @@ mod tests {
         let filtered = filter_commits(&commits, false, &ignore);
         let descriptions: Vec<&str> = filtered.iter().map(|c| c.description.trim()).collect();
         assert_eq!(descriptions, vec!["new flag", "regular chore"]);
+    }
+
+    #[test]
+    fn test_format_commit_line_and_bullet() {
+        let mut ctx = CommitContext {
+            commit_type: "feat".to_string(),
+            scope: Some("cli".to_string()),
+            description: "add flag (#42)".to_string(),
+            clean_description: "add flag".to_string(),
+            is_breaking: false,
+            hash: Some("1234567890abcdef".to_string()),
+            short_hash: Some("1234567".to_string()),
+            author: Some("Alice".to_string()),
+            author_email: Some("alice@example.com".to_string()),
+            pr_number: Some(42),
+            pr_url: Some("https://github.com/org/repo/pull/42".to_string()),
+            issue_numbers: vec![],
+            commit_url: Some("https://github.com/org/repo/commit/1234567890abcdef".to_string()),
+            line: String::new(),
+            bullet: String::new(),
+        };
+
+        let formatted = format_commit_line(&ctx, true);
+        assert_eq!(
+            formatted,
+            "**cli**: add flag in [#42](https://github.com/org/repo/pull/42) ([1234567](https://github.com/org/repo/commit/1234567890abcdef)) by @Alice"
+        );
+        let no_scope = format_commit_line(&ctx, false);
+        assert_eq!(
+            no_scope,
+            "add flag in [#42](https://github.com/org/repo/pull/42) ([1234567](https://github.com/org/repo/commit/1234567890abcdef)) by @Alice"
+        );
+
+        ctx.line = formatted.clone();
+        ctx.bullet = format!("- {formatted}");
+        assert_eq!(ctx.bullet, format!("- {formatted}"));
+
+        // Serialization & deserialization check
+        let json = serde_json::to_string(&ctx).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(value["line"], formatted);
+        assert_eq!(value["bullet"], format!("- {formatted}"));
+
+        // Deserialization check (Helper has type with alias commit_type)
+        let json_input = serde_json::json!({
+            "type": "feat",
+            "scope": "cli",
+            "description": "add flag (#42)",
+            "line": formatted,
+            "bullet": format!("- {formatted}")
+        });
+        let deserialized: CommitContext = serde_json::from_value(json_input).unwrap();
+        assert_eq!(deserialized.line, formatted);
+        assert_eq!(deserialized.bullet, format!("- {formatted}"));
+    }
+
+    #[test]
+    fn test_format_commit_line_without_urls() {
+        let ctx = CommitContext {
+            commit_type: "fix".to_string(),
+            scope: None,
+            description: "resolve bug".to_string(),
+            clean_description: "resolve bug".to_string(),
+            is_breaking: false,
+            hash: None,
+            short_hash: Some("abc1234".to_string()),
+            author: Some("Bob".to_string()),
+            author_email: None,
+            pr_number: Some(10),
+            pr_url: None,
+            issue_numbers: vec![],
+            commit_url: None,
+            line: String::new(),
+            bullet: String::new(),
+        };
+        let formatted = format_commit_line(&ctx, true);
+        assert_eq!(formatted, "resolve bug in #10 (abc1234) by @Bob");
     }
 
     #[test]

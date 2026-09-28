@@ -81,20 +81,34 @@ pub fn update_with_options(
     })
 }
 
+fn detect_line_ending(content: &str) -> &'static str {
+    if content.contains("\r\n") { "\r\n" } else { "\n" }
+}
+
+fn normalize_line_endings(text: &str, line_ending: &str) -> String {
+    let mut normalized = text.replace("\r\n", "\n");
+    if line_ending == "\r\n" {
+        normalized = normalized.replace('\n', "\r\n");
+    }
+    normalized
+}
+
 fn insert_section(content: &str, section: &str) -> String {
+    let line_ending = detect_line_ending(content);
+    let normalized_section = normalize_line_endings(section, line_ending);
     let lines: Vec<&str> = content.lines().collect();
     let idx = find_insertion_index(&lines);
 
     let mut out = String::new();
     for (i, line) in lines.iter().enumerate() {
         if i == idx {
-            out.push_str(section);
+            out.push_str(&normalized_section);
         }
         out.push_str(line);
-        out.push('\n');
+        out.push_str(line_ending);
     }
     if idx == lines.len() {
-        out.push_str(section);
+        out.push_str(&normalized_section);
     }
     out
 }
@@ -168,6 +182,32 @@ mod tests {
         fs::write(path, content).unwrap();
         update(path, version, template).unwrap();
         fs::read_to_string(path).unwrap()
+    }
+
+    #[test]
+    fn update_crlf_changelog_preserves_crlf_endings() {
+        let path = tmp_file("cutver-cl-crlf");
+        let base = "# Changelog\r\n\r\n## [1.0.0] - 2022-01-01\r\n\r\n- First release\r\n";
+        let out = update_file(&path, base, "v1.1.0", "Maintenance and updates.\nSecond line.");
+
+        assert!(out.contains("\r\n"));
+        // Every \n must be preceded by \r (no bare \n)
+        let bytes = out.as_bytes();
+        for (i, &b) in bytes.iter().enumerate() {
+            if b == b'\n' {
+                assert!(i > 0 && bytes[i - 1] == b'\r', "Bare LF found at byte index {}", i);
+            }
+        }
+    }
+
+    #[test]
+    fn update_lf_changelog_preserves_lf_endings() {
+        let path = tmp_file("cutver-cl-lf");
+        let base = "# Changelog\n\n## [1.0.0] - 2022-01-01\n\n- First release\n";
+        let out = update_file(&path, base, "v1.1.0", "Maintenance and updates.");
+
+        assert!(!out.contains("\r\n"));
+        assert!(out.contains('\n'));
     }
 
     #[test]

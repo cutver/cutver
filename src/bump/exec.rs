@@ -8,6 +8,7 @@ use crate::git;
 use crate::manifest;
 use crate::preflight;
 use crate::semver_bump::{self, Bump};
+use rayon::prelude::*;
 use semver::Version;
 use std::collections::HashSet;
 use std::fs;
@@ -354,23 +355,25 @@ fn read_manifest(m: &crate::config::Manifest) -> Result<(Box<dyn manifest::Manif
 }
 
 fn compute(config: &Config, next: &Version) -> Result<Vec<Change>, Error> {
-    let mut out = Vec::new();
-    for m in &config.manifest {
-        let (editor, content, old) = read_manifest(m)?;
-        let new = editor.write_version(&content, next).map_err(|e| Error::Manifest {
-            path: m.path.clone(),
-            source: e,
-        })?;
-        let changed = content != new;
-        out.push(Change {
-            path: m.path.clone(),
-            old,
-            original: content,
-            new,
-            changed,
-        });
-    }
-    Ok(out)
+    config
+        .manifest
+        .par_iter()
+        .map(|m| {
+            let (editor, content, old) = read_manifest(m)?;
+            let new = editor.write_version(&content, next).map_err(|e| Error::Manifest {
+                path: m.path.clone(),
+                source: e,
+            })?;
+            let changed = content != new;
+            Ok(Change {
+                path: m.path.clone(),
+                old,
+                original: content,
+                new,
+                changed,
+            })
+        })
+        .collect()
 }
 
 fn apply(
@@ -456,21 +459,25 @@ fn unstage(repo: &Path) {
 
 pub fn doctor(config: &Config) -> Result<Vec<Drift>, Error> {
     let (source_entry, _editor, expected) = current_source(config)?;
-    let mut drifts = Vec::new();
-    for m in &config.manifest {
-        if m.path == source_entry.path {
-            continue;
-        }
-        let (_editor, _content, actual) = read_manifest(m)?;
-        if actual != expected {
-            drifts.push(Drift {
-                path: m.path.clone(),
-                expected: expected.to_string(),
-                actual: actual.to_string(),
-            });
-        }
-    }
-    Ok(drifts)
+    let drifts: Vec<Option<Drift>> = config
+        .manifest
+        .par_iter()
+        .filter(|m| m.path != source_entry.path)
+        .map(|m| {
+            let (_editor, _content, actual) = read_manifest(m)?;
+            if actual != expected {
+                Ok(Some(Drift {
+                    path: m.path.clone(),
+                    expected: expected.to_string(),
+                    actual: actual.to_string(),
+                }))
+            } else {
+                Ok(None)
+            }
+        })
+        .collect::<Result<Vec<Option<Drift>>, Error>>()?;
+
+    Ok(drifts.into_iter().flatten().collect())
 }
 
 pub fn doctor_changelog(config: &Config) -> Result<ChangelogDrift, Error> {

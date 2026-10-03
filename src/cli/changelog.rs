@@ -38,16 +38,29 @@ pub fn print_release_context_json(ctx: &ReleaseContext) -> Result<(), String> {
 /// emits the content unmodified (100% byte-for-byte raw Markdown).
 ///
 /// When styling is enabled, renders headings, categories, bullet items, and scopes
-/// with clean ANSI terminal colors.
+/// with clean ANSI terminal colors, converting markdown links to OSC 8 hyperlinks
+/// and appending an accessible footnotes section.
 pub fn print_changelog_output(content: &str, theme: &Theme) {
     if !theme.is_enabled() {
         println!("{content}");
         return;
     }
 
+    let link_mode = crate::cli::link::LinkMode::new(theme.is_enabled(), false);
+    let mut collector = crate::cli::link::FootnoteCollector::new();
+
     for line in content.lines() {
-        let styled = style_markdown_line(line, theme);
+        let transformed = crate::cli::link::transform_markdown_links(line, link_mode, &mut collector);
+        let styled = style_markdown_line(&transformed, theme);
         println!("{styled}");
+    }
+
+    if !collector.is_empty() {
+        println!();
+        let footnotes = collector.render_footnotes();
+        for fn_line in footnotes.lines() {
+            println!("  {}", theme.muted(fn_line));
+        }
     }
 }
 

@@ -55,6 +55,18 @@ pub enum Commands {
         #[command(subcommand)]
         command: ChangelogCommands,
     },
+    /// Open repository releases, tags, or comparisons in the browser
+    Open {
+        /// Optional target release version, compare range (e.g. '0.9.1', 'v1.0.0...v1.1.0', or 'compare')
+        #[arg(value_name = "TARGET")]
+        target: Option<String>,
+        /// Print the resolved URL to stdout instead of launching a browser
+        #[arg(long, visible_alias = "dry-run")]
+        print_url: bool,
+        /// Explicit browser or command to launch
+        #[arg(long, value_name = "BROWSER")]
+        browser: Option<String>,
+    },
 }
 
 #[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
@@ -91,6 +103,18 @@ pub enum ChangelogCommands {
         /// Output release context as structured JSON directly to stdout
         #[arg(long)]
         json: bool,
+    },
+    /// Open the changelog, release, or comparison in the browser
+    Open {
+        /// Optional target release version, compare range (e.g. '0.9.1', 'v1.0.0...v1.1.0', or 'compare')
+        #[arg(value_name = "TARGET")]
+        target: Option<String>,
+        /// Print the resolved URL to stdout instead of launching a browser
+        #[arg(long, visible_alias = "dry-run")]
+        print_url: bool,
+        /// Explicit browser or command to launch
+        #[arg(long, value_name = "BROWSER")]
+        browser: Option<String>,
     },
 }
 

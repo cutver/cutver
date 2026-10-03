@@ -62,6 +62,17 @@ pub struct Project {
     pub name: Option<String>,
 }
 
+impl Config {
+    /// Returns the primary manifest according to `version.current_source`,
+    /// falling back to the first configured manifest.
+    pub fn primary_manifest(&self) -> Option<&Manifest> {
+        self.manifest
+            .iter()
+            .find(|m| m.path == self.version.current_source)
+            .or_else(|| self.manifest.first())
+    }
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -149,6 +160,9 @@ pub type PreflightSteps = Vec<(String, PreflightCommand)>;
 
 /// Global `[preflight] default_timeout`.
 pub type PreflightDefault = Option<u64>;
+
+/// Alias for `Changelog` configuration section.
+pub type ChangelogConfig = Changelog;
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 pub struct Changelog {
@@ -400,5 +414,35 @@ kind = "cargo-package"
 
         let default_cfg = load_str(&manifest("cargo-package", "")).unwrap();
         assert_eq!(default_cfg.project.name, None);
+    }
+
+    #[test]
+    fn primary_manifest_resolution() {
+        let mut cfg = Config::default();
+        assert!(cfg.primary_manifest().is_none());
+
+        cfg.manifest.push(Manifest {
+            path: "Cargo.toml".into(),
+            primary: false,
+            kind: ManifestKind::CargoPackage,
+        });
+        cfg.manifest.push(Manifest {
+            path: "package.json".into(),
+            primary: false,
+            kind: ManifestKind::Json {
+                field: "version".into(),
+            },
+        });
+
+        // When current_source is empty, falls back to first manifest
+        assert_eq!(cfg.primary_manifest().map(|m| m.path.as_str()), Some("Cargo.toml"));
+
+        // When current_source matches a manifest, finds that manifest
+        cfg.version.current_source = "package.json".into();
+        assert_eq!(cfg.primary_manifest().map(|m| m.path.as_str()), Some("package.json"));
+
+        // When current_source does not match any manifest, falls back to first manifest
+        cfg.version.current_source = "nonexistent.json".into();
+        assert_eq!(cfg.primary_manifest().map(|m| m.path.as_str()), Some("Cargo.toml"));
     }
 }

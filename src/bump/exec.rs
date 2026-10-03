@@ -153,21 +153,18 @@ pub fn run_with_first_release(
             let today = changelog::format_date(std::time::SystemTime::now());
             let next_ver = next.to_string();
             let current_ver = current.to_string();
-            let context = changelog::build_context_with_raw_and_filter(
-                &next_ver,
-                Some(&current_ver),
-                &tag,
-                latest_tag.as_deref(),
-                &today,
+            let context = changelog::assemble_release_context(changelog::AssembleContextParams {
+                version: &next_ver,
+                prev_version: Some(&current_ver),
+                tag: &tag,
+                prev_tag: latest_tag.as_deref(),
+                date: &today,
                 repository,
-                &commits,
-                raw_commits.as_deref(),
+                parsed_commits: &commits,
+                raw_commits: raw_commits.as_deref(),
                 contributors,
-                config.changelog.include_scopes,
-                &config.changelog.fallback_entry,
-                config.changelog.ignore_release_commits,
-                &config.changelog.ignore_scopes,
-            );
+                changelog_config: &config.changelog,
+            });
             let body = changelog::render_body_with_context(&config.changelog, &commits, &context);
             let orig_content = original.as_deref().unwrap_or_default();
             changelog::compute_update(
@@ -342,14 +339,10 @@ fn format_command(template: &str, context: &changelog::InterpolationContext) -> 
 fn current_source(
     config: &Config,
 ) -> Result<(&crate::config::Manifest, Box<dyn manifest::ManifestEditor>, Version), Error> {
-    let entry = config
-        .manifest
-        .iter()
-        .find(|m| m.path == config.version.current_source)
-        .ok_or_else(|| Error::Read {
-            path: config.version.current_source.clone(),
-            source: io::Error::new(io::ErrorKind::NotFound, "current_source manifest entry not found"),
-        })?;
+    let entry = config.primary_manifest().ok_or_else(|| Error::Read {
+        path: config.version.current_source.clone(),
+        source: io::Error::new(io::ErrorKind::NotFound, "current_source manifest entry not found"),
+    })?;
     let content = read(&entry.path)?;
     let editor = manifest::editor_for(entry).map_err(|e| Error::CurrentSource {
         path: entry.path.clone(),

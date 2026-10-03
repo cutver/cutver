@@ -35,11 +35,7 @@ pub fn render_grid_row(out: &mut String, label: &str, value: &str, theme: &crate
 /// Formats the summary text for manifests row.
 fn format_manifest_summary(config: &Config, theme: &crate::cli::style::Theme) -> String {
     let total = config.manifest.len();
-    let primary = config
-        .manifest
-        .iter()
-        .find(|m| m.path == config.version.current_source)
-        .or_else(|| config.manifest.first());
+    let primary = config.primary_manifest();
 
     let (path_str, ver_str) = match primary {
         Some(m) => {

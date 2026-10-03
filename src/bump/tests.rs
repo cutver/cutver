@@ -26,12 +26,12 @@ fn write(dir: &std::path::Path, name: &str, text: &str) {
 fn load(dir: &std::path::Path, source: &str, extra: &str) -> config::Config {
     write(
         dir,
-        "release.toml",
+        "cutver.toml",
         &format!(
             "[version]\ncurrent_source = \"{source}\"\n\n[[manifest]]\npath = \"{source}\"\nkind = \"json\"\nfield = \"version\"\n\n[[manifest]]\npath = \"Cargo.toml\"\nkind = \"cargo-package\"\n\n{extra}"
         ),
     );
-    config::load(dir.join("release.toml")).unwrap()
+    config::load(dir.join("cutver.toml")).unwrap()
 }
 
 fn git_commit(dir: &Path, msg: &str) {
@@ -277,12 +277,12 @@ fn compute_failure_aborts_before_any_write() {
     let bad = dir.join("bad.json").to_string_lossy().to_string();
     write(
         &dir,
-        "release.toml",
+        "cutver.toml",
         &format!(
             "[version]\ncurrent_source = \"{pkg}\"\n[git]\nrequire_clean_tree = false\n[[manifest]]\npath = \"{pkg}\"\nkind = \"json\"\nfield = \"version\"\n[[manifest]]\npath = \"{bad}\"\nkind = \"json\"\nfield = \"version\"\n"
         ),
     );
-    let cfg = config::load(dir.join("release.toml")).unwrap();
+    let cfg = config::load(dir.join("cutver.toml")).unwrap();
     assert!(run(&cfg, Bump::Minor, false, &[]).is_err());
     assert_eq!(
         fs::read_to_string(dir.join("package.json")).unwrap(),
@@ -305,7 +305,7 @@ fn write_failure_restores_previously_written_files() {
     let cargo = b.join("Cargo.toml").to_string_lossy().to_string();
     write(
         &dir,
-        "release.toml",
+        "cutver.toml",
         &format!(
             "[version]\ncurrent_source = \"{pkg}\"\n[git]\nrequire_clean_tree = false\n[[manifest]]\npath = \"{pkg}\"\nkind = \"json\"\nfield = \"version\"\n[[manifest]]\npath = \"{cargo}\"\nkind = \"cargo-package\"\n"
         ),
@@ -313,7 +313,7 @@ fn write_failure_restores_previously_written_files() {
     let mut perms = fs::metadata(&b).unwrap().permissions();
     perms.set_readonly(true);
     fs::set_permissions(&b, perms).unwrap();
-    let cfg = config::load(dir.join("release.toml")).unwrap();
+    let cfg = config::load(dir.join("cutver.toml")).unwrap();
     assert!(run(&cfg, Bump::Minor, false, &[]).is_err());
     assert_eq!(
         fs::read_to_string(a.join("package.json")).unwrap(),
@@ -339,7 +339,7 @@ fn changelog_write_failure_restores_previously_written_manifests() {
     write(&cl_dir, "CHANGELOG.md", "# Changelog\n\n## [1.2.3] - 2024-01-01\n");
     write(
         &dir,
-        "release.toml",
+        "cutver.toml",
         &format!(
             "[version]\ncurrent_source = \"{pkg}\"\n[git]\nrequire_clean_tree = false\n[changelog]\npath = \"{cl_path}\"\n[[manifest]]\npath = \"{pkg}\"\nkind = \"json\"\nfield = \"version\"\n"
         ),
@@ -347,7 +347,7 @@ fn changelog_write_failure_restores_previously_written_manifests() {
     let mut perms = fs::metadata(&cl_dir).unwrap().permissions();
     perms.set_readonly(true);
     fs::set_permissions(&cl_dir, perms).unwrap();
-    let cfg = config::load(dir.join("release.toml")).unwrap();
+    let cfg = config::load(dir.join("cutver.toml")).unwrap();
     assert!(run(&cfg, Bump::Minor, false, &[]).is_err());
     assert_eq!(
         fs::read_to_string(a.join("package.json")).unwrap(),

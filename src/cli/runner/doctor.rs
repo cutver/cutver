@@ -12,7 +12,10 @@ pub fn run_doctor(config: &config::Config, check_changelog: bool) -> i32 {
     match bump::doctor(config) {
         Ok(drifts) => {
             if !drifts.is_empty() {
-                eprint!("{}", crate::cli::doctor::render_version_drift(&drifts, &err_theme));
+                eprint!(
+                    "{}",
+                    crate::cli::doctor::render_version_drift(&drifts, Some(&config.root_dir), &err_theme)
+                );
                 has_drift = true;
             }
         }

@@ -1,4 +1,5 @@
 use crate::bump::{ChangelogDrift, Drift};
+use crate::cli::path::relativize_path;
 use crate::config::Config;
 use crate::manifest;
 use std::fmt::Write as _;
@@ -8,7 +9,7 @@ use std::path::Path;
 /// Renders the complete status dashboard grid for valid doctor runs.
 pub fn render_dashboard(config: &Config, check_changelog: bool, theme: &crate::cli::style::Theme) -> String {
     let mut out = String::new();
-    let filename = detect_config_filename(&config.root_dir);
+    let filename = "cutver.toml";
     let _ = writeln!(out, "{} {} is valid\n", theme.success_icon(), theme.bold(filename));
 
     let config_val = format!("valid ({filename})");
@@ -40,7 +41,8 @@ fn format_manifest_summary(config: &Config, theme: &crate::cli::style::Theme) ->
     let (path_str, ver_str) = match primary {
         Some(m) => {
             let ver = read_manifest_version(&config.root_dir, m).unwrap_or_else(|| "unknown".into());
-            (m.path.as_str().to_string(), ver)
+            let rel_path = relativize_path(m.path.as_str(), Some(&config.root_dir));
+            (rel_path, ver)
         }
         None => return "0 tracked".to_string(),
     };
@@ -75,19 +77,8 @@ fn read_manifest_version(root_dir: &Path, manifest: &crate::config::Manifest) ->
     Some(version.to_string())
 }
 
-/// Determines whether release.toml or cutver.toml is active.
-fn detect_config_filename(root_dir: &Path) -> &'static str {
-    let release_path = root_dir.join("release.toml");
-    let cutver_path = root_dir.join("cutver.toml");
-    if release_path.is_file() && !cutver_path.is_file() {
-        "release.toml"
-    } else {
-        "cutver.toml"
-    }
-}
-
 /// Renders version drift diagnostic block answering: what, where, and how to fix.
-pub fn render_version_drift(drifts: &[Drift], theme: &crate::cli::style::Theme) -> String {
+pub fn render_version_drift(drifts: &[Drift], root_dir: Option<&Path>, theme: &crate::cli::style::Theme) -> String {
     let mut out = String::new();
     let count = drifts.len();
     let count_styled = theme.accent(count.to_string());
@@ -98,7 +89,7 @@ pub fn render_version_drift(drifts: &[Drift], theme: &crate::cli::style::Theme) 
     );
 
     for Drift { path, expected, actual } in drifts {
-        let norm_path = path.replace('\\', "/");
+        let norm_path = relativize_path(path, root_dir);
         let exp = theme.accent(expected);
         let act = theme.error(actual);
         let _ = writeln!(out, "  {} {norm_path}: expected {exp}, found {act}", theme.bullet());
@@ -223,11 +214,12 @@ mod tests {
     fn test_render_version_drift() {
         let theme = Theme::new(false);
         let drifts = vec![Drift {
-            path: "Cargo.toml".into(),
+            path: "/path/to/repo/Cargo.toml".into(),
             expected: "1.2.0".into(),
             actual: "1.1.0".into(),
         }];
-        let rendered = render_version_drift(&drifts, &theme);
+        let root = Path::new("/path/to/repo");
+        let rendered = render_version_drift(&drifts, Some(root), &theme);
         assert!(rendered.contains("Version drift detected (1 manifest(s) out of sync):"));
         assert!(rendered.contains("Cargo.toml: expected 1.2.0, found 1.1.0"));
         assert!(rendered.contains("Suggested fix:"));

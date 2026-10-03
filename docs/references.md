@@ -11,7 +11,7 @@ This document provides the complete technical specification for `cutver`, includ
 ### Discovery Algorithm
 
 1. When invoked without `-c / --config`, `cutver` begins at the current working directory and traverses upwards through parent directories.
-2. At each directory, it checks for `cutver.toml`. If not present, it checks for backwards-compatible `release.toml`.
+2. At each directory, it checks for `cutver.toml`.
 3. Traversal halts immediately upon encountering a Git repository boundary (`.git` directory or `.git` submodule file).
 4. All paths declared in the configuration resolve **relative to the directory containing `cutver.toml`**, allowing `cutver` to be invoked safely from any nested subdirectory.
 
@@ -341,7 +341,7 @@ cutver bump [patch|minor|major|auto] [OPTIONS]
 - `--first-release`, `--fr`, `-fr`: Performs an initial/first release without incrementing the manifest version. Collects initial commits into changelog, commits (even if manifests didn't change), and creates the initial release tag.
 - `--dry-run`: Runs the full pipeline in simulation mode. Validates config, tests preflight, calculates version bumps, and displays the execution summary without writing any files, creating commits, or pushing tags.
 - `--skip-preflight <STEP>`: Bypasses one or more named preflight checks (can be specified multiple times, e.g., `--skip-preflight tests --skip-preflight lint`).
-- `-c, --config <PATH>`: Explicit path to `cutver.toml` or `release.toml`.
+- `-c, --config <PATH>`: Explicit path to `cutver.toml`.
 
 ---
 
@@ -355,7 +355,7 @@ cutver doctor [OPTIONS]
 
 #### Options
 - `--check-changelog`: Also validates that CHANGELOG.md is consistent with Git release tags.
-- `-c, --config <PATH>`: Explicit path to `cutver.toml` or `release.toml`.
+- `-c, --config <PATH>`: Explicit path to `cutver.toml`.
 
 #### Exit Codes
 - `0`: Success. Configuration is valid and all manifests are in sync.
@@ -375,7 +375,7 @@ cutver changelog latest [OPTIONS]
 #### Options
 - `-H, --include-header`: Includes the release title header (e.g. `## [0.3.1] - 2026-09-20`) in the output (default: emits only the markdown body, ideal for `--notes`).
 - `-p, --path <PATH>`: Explicit path to the changelog file (bypasses configuration discovery).
-- `-c, --config <PATH>`: Explicit path to `cutver.toml` or `release.toml`.
+- `-c, --config <PATH>`: Explicit path to `cutver.toml`.
 - `--template <PATH>`: Optional path to an arbitrary MiniJinja template file to format the output.
 
 #### Exit Codes
@@ -398,7 +398,7 @@ cutver changelog show <VERSION> [OPTIONS]
 #### Options
 - `-H, --include-header`: Includes the release title header (e.g. `## [0.2.0] - 2026-09-19`) in the output (default: emits only the markdown body, ideal for `--notes`).
 - `-p, --path <PATH>`: Explicit path to the changelog file (bypasses configuration discovery).
-- `-c, --config <PATH>`: Explicit path to `cutver.toml` or `release.toml`.
+- `-c, --config <PATH>`: Explicit path to `cutver.toml`.
 - `--template <PATH>`: Optional path to an arbitrary MiniJinja template file to format the output.
 
 #### Exit Codes

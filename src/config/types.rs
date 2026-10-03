@@ -25,9 +25,7 @@ pub enum ConfigError {
     PreflightMissingCommand(String),
     #[error("preflight timeout for '{0}' must be a positive integer")]
     PreflightInvalidTimeout(String),
-    #[error(
-        "no cutver.toml or release.toml found in '{0}' or any parent directory.\n  Get started by running:\n    cutver init"
-    )]
+    #[error("no cutver.toml found in '{0}' or any parent directory.\n  Get started by running:\n    cutver init")]
     NotFound(String),
     #[error("no manifests declared: at least one [[manifest]] entry is required")]
     NoManifestsDeclared,
@@ -159,7 +157,7 @@ pub struct PreflightCommand {
     pub timeout: Option<u64>,
 }
 
-/// Ordered `[preflight]` steps as declared in `release.toml`.
+/// Ordered `[preflight]` steps as declared in `cutver.toml`.
 pub type PreflightSteps = Vec<(String, PreflightCommand)>;
 
 /// Global `[preflight] default_timeout`.

@@ -318,7 +318,7 @@ check = "touch .git/index.lock""#,
 }
 
 #[test]
-fn discover_stops_at_git_boundary_without_release_toml() {
+fn discover_stops_at_git_boundary_without_cutver_toml() {
     assert!(
         git_available(),
         "git CLI is required for e2e tests but was not found in PATH"
@@ -326,8 +326,8 @@ fn discover_stops_at_git_boundary_without_release_toml() {
     let guard = FixtureGuard::new("boundary-stop");
     let fixture = guard.fixture();
     fixture.write(
-        "release.toml",
-        &base_release_toml(
+        "cutver.toml",
+        &base_cutver_toml(
             r#"[preflight]
 check = "true""#,
         ),
@@ -351,13 +351,13 @@ check = "true""#,
 }
 
 #[test]
-fn discover_from_deep_subdirectory_finds_release_toml() {
+fn discover_from_deep_subdirectory_finds_cutver_toml() {
     assert!(
         git_available(),
         "git CLI is required for e2e tests but was not found in PATH"
     );
     let guard = FixtureGuard::new("deep-subdir-discover");
-    write_legacy_release_fixture(
+    write_fixture(
         &guard,
         r#"[preflight]
 check = "true""#,
@@ -422,43 +422,31 @@ require_clean_tree = true
 }
 
 #[test]
-fn discover_prioritizes_cutver_toml_over_release_toml_e2e() {
+fn discover_fails_when_only_legacy_release_toml_present_e2e() {
     assert!(
         git_available(),
         "git CLI is required for e2e tests but was not found in PATH"
     );
-    let guard = FixtureGuard::new("precedence-e2e");
+    let guard = FixtureGuard::new("legacy-release-toml-fails");
     let fixture = guard.fixture();
     fixture.write("package.json", PACKAGE_JSON);
     fixture.write("Cargo.toml", CARGO_TOML);
     fixture.write("android/build.gradle.kts", GRADLE_KTS);
     fixture.write("CHANGELOG.md", CHANGELOG_MD);
-    // release.toml uses package.json
     fixture.write(
         "release.toml",
-        r#"[version]
-current_source = "package.json"
-[[manifest]]
-path = "package.json"
-kind = "json"
-field = "version"
-"#,
-    );
-    // cutver.toml uses Cargo.toml
-    fixture.write(
-        "cutver.toml",
-        r#"[[manifest]]
-path = "Cargo.toml"
-kind = "cargo-package"
-"#,
+        &base_cutver_toml(
+            r#"[preflight]
+check = "true""#,
+        ),
     );
     init_git_repo(fixture);
     initial_commit(fixture);
 
     let sub = fixture.dir.join("nested");
     std::fs::create_dir_all(&sub).unwrap();
-    let cfg = config::discover(&sub).unwrap();
-    assert!(cfg.version.current_source.ends_with("Cargo.toml"));
+    let err = config::discover(&sub).unwrap_err();
+    assert!(matches!(err, config::ConfigError::NotFound(_)));
 }
 
 #[test]
@@ -525,22 +513,29 @@ edition = "2024"
 }
 
 #[test]
-fn bump_minor_with_legacy_release_toml_fallback() {
+fn bump_fails_cleanly_when_only_release_toml_present() {
     assert!(
         git_available(),
         "git CLI is required for e2e tests but was not found in PATH"
     );
-    let guard = FixtureGuard::new("legacy-fallback");
-    write_legacy_release_fixture(
-        &guard,
-        r#"[preflight]
+    let guard = FixtureGuard::new("bump-release-toml-not-found");
+    let fixture = guard.fixture();
+    fixture.write("package.json", PACKAGE_JSON);
+    fixture.write("Cargo.toml", CARGO_TOML);
+    fixture.write("android/build.gradle.kts", GRADLE_KTS);
+    fixture.write("CHANGELOG.md", CHANGELOG_MD);
+    fixture.write(
+        "release.toml",
+        &base_cutver_toml(
+            r#"[preflight]
 check = "true""#,
+        ),
     );
-    let cfg = config::load("release.toml").unwrap();
-    let summary = bump_run(&cfg, Bump::Minor, false, &[]).unwrap();
-    assert_eq!(summary.next.to_string(), "1.3.0");
-    assert!(!summary.dry_run);
-    assert_bumped(guard.fixture());
+    init_git_repo(fixture);
+    initial_commit(fixture);
+
+    let err = config::discover(&fixture.dir).unwrap_err();
+    assert!(matches!(err, config::ConfigError::NotFound(_)));
 }
 
 #[test]

@@ -2,6 +2,7 @@
 name = "cutver"
 version = "0.9.1"
 edition = "2024"
+rust-version = "1.99.0"
 authors = ["Row0902"]
 description = "Cut a release. Bump SemVer. Every project, every language."
 license = "MIT"

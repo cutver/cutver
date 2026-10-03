@@ -46,7 +46,7 @@ pub fn tag_exists(repo: impl AsRef<Path>, tag_name: &str) -> Result<bool, Error>
             status: output.status,
         });
     }
-    Ok(!String::from_utf8_lossy(&output.stdout).trim().is_empty())
+    Ok(output.stdout.iter().any(|b| !b.is_ascii_whitespace()))
 }
 
 pub fn has_remote(repo: impl AsRef<Path>, remote: &str) -> bool {
@@ -56,7 +56,7 @@ pub fn has_remote(repo: impl AsRef<Path>, remote: &str) -> bool {
     if !output.status.success() {
         return false;
     }
-    let text = String::from_utf8_lossy(&output.stdout);
+    let text = String::from_utf8_lossy_owned(output.stdout);
     text.lines().any(|l| l.trim() == remote)
 }
 
@@ -70,7 +70,7 @@ pub fn remote_tag_exists(repo: impl AsRef<Path>, remote: &str, tag_name: &str) -
     if !output.status.success() {
         return Ok(None);
     }
-    let text = String::from_utf8_lossy(&output.stdout);
+    let text = String::from_utf8_lossy_owned(output.stdout);
     let mut direct_hash = None;
     for line in text.lines() {
         let mut parts = line.split_whitespace();
@@ -432,7 +432,7 @@ pub fn latest_tag(repo: impl AsRef<Path>, tag_prefix: Option<&str>) -> Result<Op
         let target_commit = format!("{tag}^{{commit}}");
         let points_at_output = run_git(&repo, &["tag", "--points-at", &target_commit])?;
         if points_at_output.status.success() {
-            let points_at_text = String::from_utf8_lossy(&points_at_output.stdout);
+            let points_at_text = String::from_utf8_lossy_owned(points_at_output.stdout);
             let prefix_opt = tag_prefix.filter(|p| !p.is_empty());
             for candidate in points_at_text.lines().map(str::trim).filter(|s| !s.is_empty()) {
                 if !is_floating_major_tag(candidate, tag_prefix) {
@@ -562,7 +562,7 @@ pub fn list_authors_between(dir: &Path, from_tag: Option<&str>, to_ref: &str) ->
             output.status
         )));
     }
-    let text = String::from_utf8_lossy(&output.stdout);
+    let text = String::from_utf8_lossy_owned(output.stdout);
     let mut seen = std::collections::HashSet::new();
     let mut authors = Vec::new();
     for line in text.lines() {

@@ -18,3 +18,6 @@ Goal: Implement Issue #123 adhering strictly to `CONTRACT.md` Pillars I, II, III
 - `cargo test`: 290 unit tests passed; all integration test suites passed (bump, changelog_cli, changelog_template, conventional, doctor, init, lifecycle, open, style, context).
 - `cargo clippy --all-targets -- -D warnings`: 0 warnings.
 - `cargo fmt -- --check`: passed cleanly.
+
+### Work-Unit Commit
+- Commit: `8b7e6c9` (`refactor(cli): drop release.toml, workspace-relative diagnostics, dry-run polish, and WSL browser support (#123)`)

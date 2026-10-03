@@ -134,7 +134,7 @@ mod tests {
         );
         assert_eq!(
             c.changelog.path,
-            Some(d.join("CHANGELOG.md").to_string_lossy().to_string())
+            Some(d.join("CHANGELOG.md").to_string_lossy().replace('\\', "/"))
         );
 
         let d = tmp("cutver-cfg-abs");
@@ -162,7 +162,10 @@ mod tests {
         write(&d, "a", "");
         let c = discover(&s).unwrap();
         assert_eq!(c.root_dir, d);
-        assert_eq!(c.version.current_source, d.join("a").to_string_lossy().to_string());
+        assert_eq!(
+            c.version.current_source,
+            d.join("a").to_string_lossy().replace('\\', "/")
+        );
     }
 
     #[test]
@@ -226,7 +229,10 @@ mod tests {
 
         let c = discover(&deep).unwrap();
         assert_eq!(c.root_dir, repo);
-        assert_eq!(c.version.current_source, repo.join("a").to_string_lossy().to_string());
+        assert_eq!(
+            c.version.current_source,
+            repo.join("a").to_string_lossy().replace('\\', "/")
+        );
     }
 
     #[test]
@@ -315,7 +321,7 @@ mod tests {
         let c = discover(&d).unwrap();
         assert_eq!(
             c.version.current_source,
-            d.join("cutver-manifest").to_string_lossy().to_string()
+            d.join("cutver-manifest").to_string_lossy().replace('\\', "/")
         );
     }
 
@@ -332,7 +338,7 @@ mod tests {
         let c = discover(&d).unwrap();
         assert_eq!(
             c.version.current_source,
-            d.join("release-manifest").to_string_lossy().to_string()
+            d.join("release-manifest").to_string_lossy().replace('\\', "/")
         );
     }
 }

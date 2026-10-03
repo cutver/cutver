@@ -1,7 +1,215 @@
+use std::fmt;
 use std::io;
+use std::ops::Deref;
 use std::path::Path;
 use std::process::{Command, ExitStatus, Output};
+use std::str::FromStr;
 use thiserror::Error;
+
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum TagError {
+    #[error("git tag cannot be empty")]
+    Empty,
+    #[error("git tag cannot contain whitespace or control characters: '{0}'")]
+    InvalidCharacter(String),
+    #[error("git tag cannot contain '..': '{0}'")]
+    ContainsDoubleDot(String),
+    #[error("git tag cannot start or end with '/': '{0}'")]
+    SlashBoundary(String),
+    #[error("git tag cannot end with '.lock': '{0}'")]
+    EndsWithLock(String),
+    #[error("git tag cannot end with a dot: '{0}'")]
+    EndsWithDot(String),
+    #[error("git tag cannot be '@': '{0}'")]
+    IsAt(String),
+    #[error("git tag cannot contain forbidden ref characters (~, ^, :, ?, *, [, \\, @{{): '{0}'")]
+    ForbiddenRefChar(String),
+}
+
+/// Validates that a string is a valid Git tag reference name according to git-check-ref-format rules.
+fn validate_git_tag_name(s: &str) -> Result<(), TagError> {
+    if s.is_empty() {
+        return Err(TagError::Empty);
+    }
+    if s == "@" {
+        return Err(TagError::IsAt(s.to_string()));
+    }
+    if s.starts_with('/') || s.ends_with('/') {
+        return Err(TagError::SlashBoundary(s.to_string()));
+    }
+    if s.ends_with('.') {
+        return Err(TagError::EndsWithDot(s.to_string()));
+    }
+    if s.ends_with(".lock") {
+        return Err(TagError::EndsWithLock(s.to_string()));
+    }
+    if s.contains("..") {
+        return Err(TagError::ContainsDoubleDot(s.to_string()));
+    }
+    if s.contains("@{") {
+        return Err(TagError::ForbiddenRefChar(s.to_string()));
+    }
+    for c in s.chars() {
+        if c.is_whitespace() || c.is_control() {
+            return Err(TagError::InvalidCharacter(s.to_string()));
+        }
+        if matches!(c, '~' | '^' | ':' | '?' | '*' | '[' | '\\') {
+            return Err(TagError::ForbiddenRefChar(s.to_string()));
+        }
+    }
+    Ok(())
+}
+
+/// TagPrefix domain newtype wrapping a git tag prefix (e.g. "v", "", "release/").
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
+pub struct TagPrefix(String);
+
+impl TagPrefix {
+    pub fn new(prefix: impl Into<String>) -> Self {
+        Self(prefix.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    pub fn format_tag(&self, version: &str) -> TagName {
+        let tag_str = if version == "HEAD" || self.0.is_empty() || version.starts_with(&self.0) {
+            version.to_string()
+        } else {
+            format!("{}{version}", self.0)
+        };
+        TagName(tag_str)
+    }
+}
+
+impl Deref for TagPrefix {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl AsRef<str> for TagPrefix {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for TagPrefix {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl From<&str> for TagPrefix {
+    fn from(s: &str) -> Self {
+        Self(s.to_string())
+    }
+}
+
+impl From<String> for TagPrefix {
+    fn from(s: String) -> Self {
+        Self(s)
+    }
+}
+
+/// TagName domain newtype wrapping a validated Git tag ref string.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct TagName(String);
+
+impl TagName {
+    pub fn parse(s: impl AsRef<str>) -> Result<Self, TagError> {
+        let text = s.as_ref();
+        validate_git_tag_name(text)?;
+        Ok(Self(text.to_string()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    pub fn strip_prefix<'a>(&'a self, prefix: &TagPrefix) -> Option<&'a str> {
+        if prefix.as_str().is_empty() {
+            Some(&self.0)
+        } else {
+            self.0.strip_prefix(prefix.as_str())
+        }
+    }
+
+    pub fn normalize_version<'a>(&'a self, prefix: &TagPrefix) -> &'a str {
+        let mut norm = self.0.as_str();
+        if !prefix.is_empty()
+            && let Some(rest) = norm.strip_prefix(prefix.as_str())
+        {
+            norm = rest;
+        }
+        if let Some(rest) = norm.strip_prefix(['v', 'V']) {
+            norm = rest;
+        }
+        norm
+    }
+
+    pub fn is_floating_major(&self, prefix: &TagPrefix) -> bool {
+        let mut s = self.0.as_str();
+        if !prefix.is_empty() {
+            if let Some(rest) = s.strip_prefix(prefix.as_str()) {
+                s = rest;
+            } else {
+                return false;
+            }
+        } else if let Some(rest) = s.strip_prefix(['v', 'V']) {
+            s = rest;
+        }
+        !s.is_empty() && s.chars().all(|c| c.is_ascii_digit())
+    }
+}
+
+impl Deref for TagName {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl AsRef<str> for TagName {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for TagName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl TryFrom<&str> for TagName {
+    type Error = TagError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Self::parse(value)
+    }
+}
+
+impl TryFrom<String> for TagName {
+    type Error = TagError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        validate_git_tag_name(&value)?;
+        Ok(Self(value))
+    }
+}
+
+impl FromStr for TagName {
+    type Err = TagError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::parse(s)
+    }
+}
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -327,19 +535,12 @@ pub fn update_floating_tag(
 }
 
 pub fn is_floating_major_tag(tag: &str, prefix: Option<&str>) -> bool {
-    let mut s = tag.trim();
-    if let Some(p) = prefix
-        && !p.is_empty()
-    {
-        if let Some(rest) = s.strip_prefix(p) {
-            s = rest;
-        } else {
-            return false;
-        }
-    } else if let Some(rest) = s.strip_prefix(['v', 'V']) {
-        s = rest;
+    let p = TagPrefix::new(prefix.unwrap_or_default());
+    if let Ok(tag_name) = TagName::parse(tag) {
+        tag_name.is_floating_major(&p)
+    } else {
+        false
     }
-    !s.is_empty() && s.chars().all(|c| c.is_ascii_digit())
 }
 
 pub fn status_files(repo: impl AsRef<Path>) -> Result<Vec<String>, Error> {
@@ -1063,6 +1264,98 @@ mod tests {
                 "Alice".to_string(),
             ]
         );
+    }
+
+    #[test]
+    fn test_tag_name_and_prefix_domain_newtypes() {
+        use std::str::FromStr;
+
+        // Valid tag names
+        let tag = TagName::parse("v1.2.3").unwrap();
+        assert_eq!(tag.as_str(), "v1.2.3");
+        assert_eq!(&*tag, "v1.2.3");
+        assert_eq!(tag.as_ref(), "v1.2.3");
+        assert_eq!(tag.to_string(), "v1.2.3");
+        assert_eq!(TagName::from_str("release/v2.0.0").unwrap().as_str(), "release/v2.0.0");
+        assert_eq!(TagName::try_from("v1.0.0".to_string()).unwrap().as_str(), "v1.0.0");
+
+        // Invalid tag names
+        assert!(TagName::parse("").is_err());
+        assert!(TagName::parse("   ").is_err());
+        assert!(TagName::parse("tag with spaces").is_err());
+        assert!(TagName::parse("tag\twith\ttab").is_err());
+        assert!(TagName::parse("tag\nwith\nnewline").is_err());
+        assert!(TagName::parse("tag\x00null").is_err());
+        assert!(TagName::parse("tag..name").is_err());
+        assert!(TagName::parse("/starts/slash").is_err());
+        assert!(TagName::parse("ends/slash/").is_err());
+        assert!(TagName::parse("tag.lock").is_err());
+        assert!(TagName::parse("tag@{upstream}").is_err());
+        assert!(TagName::parse("tag~1").is_err());
+        assert!(TagName::parse("tag^2").is_err());
+        assert!(TagName::parse("tag:colon").is_err());
+        assert!(TagName::parse("tag?question").is_err());
+        assert!(TagName::parse("tag*star").is_err());
+        assert!(TagName::parse("tag[bracket").is_err());
+        assert!(TagName::parse("tag\\backslash").is_err());
+        assert!(TagName::parse("@").is_err());
+        assert!(TagName::parse("tag.").is_err());
+
+        // TagPrefix formatting & methods
+        let prefix_v = TagPrefix::new("v");
+        assert_eq!(prefix_v.as_str(), "v");
+        assert_eq!(&*prefix_v, "v");
+        assert_eq!(prefix_v.as_ref(), "v");
+        assert_eq!(prefix_v.to_string(), "v");
+
+        let empty_prefix = TagPrefix::default();
+        assert_eq!(empty_prefix.as_str(), "");
+
+        let formatted = prefix_v.format_tag("1.2.3");
+        assert_eq!(formatted.as_str(), "v1.2.3");
+
+        let rel_prefix = TagPrefix::new("release/");
+        let rel_tag = rel_prefix.format_tag("1.0.0");
+        assert_eq!(rel_tag.as_str(), "release/1.0.0");
+
+        // TagName::strip_prefix
+        assert_eq!(formatted.strip_prefix(&prefix_v), Some("1.2.3"));
+        assert_eq!(formatted.strip_prefix(&empty_prefix), Some("v1.2.3"));
+        assert_eq!(formatted.strip_prefix(&rel_prefix), None);
+
+        // TagName::normalize_version
+        assert_eq!(formatted.normalize_version(&prefix_v), "1.2.3");
+        assert_eq!(
+            TagName::parse("v1.2.3").unwrap().normalize_version(&empty_prefix),
+            "1.2.3"
+        );
+        assert_eq!(
+            TagName::parse("V1.2.3").unwrap().normalize_version(&empty_prefix),
+            "1.2.3"
+        );
+        assert_eq!(
+            TagName::parse("1.2.3").unwrap().normalize_version(&empty_prefix),
+            "1.2.3"
+        );
+        assert_eq!(rel_tag.normalize_version(&rel_prefix), "1.0.0");
+        let rel_v_tag = rel_prefix.format_tag("v1.0.0");
+        assert_eq!(rel_v_tag.normalize_version(&rel_prefix), "1.0.0");
+
+        // TagName::is_floating_major
+        assert!(TagName::parse("v1").unwrap().is_floating_major(&prefix_v));
+        assert!(TagName::parse("v10").unwrap().is_floating_major(&prefix_v));
+        assert!(!TagName::parse("v1.0.0").unwrap().is_floating_major(&prefix_v));
+        assert!(!TagName::parse("v1.2").unwrap().is_floating_major(&prefix_v));
+        assert!(!TagName::parse("app-v1").unwrap().is_floating_major(&prefix_v));
+
+        let app_prefix = TagPrefix::new("app-");
+        assert!(TagName::parse("app-1").unwrap().is_floating_major(&app_prefix));
+        assert!(!TagName::parse("app-1.0.0").unwrap().is_floating_major(&app_prefix));
+
+        assert!(TagName::parse("v1").unwrap().is_floating_major(&empty_prefix));
+        assert!(TagName::parse("V2").unwrap().is_floating_major(&empty_prefix));
+        assert!(TagName::parse("1").unwrap().is_floating_major(&empty_prefix));
+        assert!(!TagName::parse("1.0.0").unwrap().is_floating_major(&empty_prefix));
     }
 
     #[test]

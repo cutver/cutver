@@ -5,7 +5,7 @@ use std::path::PathBuf;
 #[derive(Parser, Debug)]
 #[command(name = "cutver", version, about)]
 pub struct Cli {
-    /// Path to configuration file (defaults to discovering cutver.toml or release.toml walking up from current directory)
+    /// Path to configuration file (defaults to discovering cutver.toml walking up from current directory)
     #[arg(short, long, global = true, value_name = "PATH")]
     pub config: Option<PathBuf>,
     #[command(subcommand)]

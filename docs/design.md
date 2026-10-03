@@ -2,7 +2,7 @@
 
 > Outcome first: `cutver` is a standalone Rust CLI that replaces per-project
 > release scripts with one declarative, cross-language release tool driven by
-> `cutver.toml` (with fallback to `release.toml`). This document captures the
+> `cutver.toml`. This document captures the
 > agreed design and the evolution roadmap; implementation follows task plans
 > in `odd/tasks/`.
 
@@ -51,8 +51,7 @@ Invocation is intentionally terse: `cutver bump minor` or `cutver bump auto`.
 
 ### Discovery Precedence
 1. `cutver.toml` in current directory or walking up ancestor directories (canonical).
-2. `release.toml` walking up ancestor directories (backward-compatible fallback).
-3. Explicit override with `-c <path>`.
+2. Explicit override with `-c <path>`.
 
 ### Full Declarative Specification
 
@@ -156,7 +155,7 @@ src/
 ## Evolution Roadmap
 
 ### Phase 1: Declarative Foundation & Conventional Intelligence
-- Canonical `cutver.toml` support with fallback to `release.toml`.
+- Canonical `cutver.toml` support.
 - Primary manifest convention (first manifest is source of truth, `primary = true` override, backward-compatible `current_source`).
 - Conventional Commits parsing (`cutver bump auto`).
 - Structured changelog categorization (`feat`, `fix`, `perf`, `BREAKING CHANGE`).

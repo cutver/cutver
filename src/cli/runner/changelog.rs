@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use crate::changelog::ReleaseContext;
 use crate::cli::args::ChangelogCommands;
 use crate::cli::changelog::{self, ChangelogFormat};
+use crate::cli::path::relativize_path;
 use crate::cli::style::Theme;
 use crate::config;
 
@@ -26,10 +27,8 @@ pub fn resolve_latest_target_info(
 ) -> Result<ReleaseTargetInfo, i32> {
     let mut versions = crate::changelog::list_versions(content);
     if versions.is_empty() {
-        print_error(format!(
-            "no release section found in changelog '{}'",
-            target_path.display()
-        ));
+        let display_path = relativize_path(&target_path.to_string_lossy(), Some(root_dir));
+        print_error(format!("no release section found in changelog '{display_path}'"));
         return Err(1);
     }
 
@@ -60,9 +59,9 @@ pub fn resolve_show_target_info(
         .iter()
         .position(|v| v.trim_start_matches(['v', 'V']) == target_norm)
     else {
+        let display_path = relativize_path(&target_path.to_string_lossy(), Some(root_dir));
         print_error(format!(
-            "version '{requested_version}' not found in changelog '{}'",
-            target_path.display()
+            "version '{requested_version}' not found in changelog '{display_path}'"
         ));
         return Err(1);
     };

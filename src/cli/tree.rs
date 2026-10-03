@@ -1,10 +1,11 @@
 use crate::bump::Summary;
+use crate::cli::path::relativize_path;
 use crate::cli::style::Theme;
 
 /// Renders the simulation mode banner box for `--dry-run`.
 pub fn render_simulation_banner(theme: &Theme) -> String {
-    let title = format!("{} {}", theme.info_icon(), theme.bold("SIMULATION MODE"));
-    let top = format!("┌─ {title} {}┐", theme.warning("─".repeat(48)));
+    let title = theme.bold("SIMULATION MODE");
+    let top = format!("┌─ {title} {}┐", theme.warning("─".repeat(50)));
     let middle = format!(
         "│ {}│",
         pad_right("No files, commits, or git tags will be modified.", 67)
@@ -32,20 +33,6 @@ fn format_plan_header(summary: &Summary, theme: &Theme) -> String {
     let transition = format!("{} {} {}", summary.current, theme.arrow(), theme.accent(&summary.next));
     let title = format!("Release Plan: {transition} ({bump_desc})");
     format!("{icon} {title}")
-}
-
-fn relativize_path(path: &str, root_dir: Option<&std::path::Path>) -> String {
-    let normalized_input = path.replace('\\', "/");
-    let p = std::path::Path::new(&normalized_input);
-    let rel_p = match root_dir {
-        Some(root) => {
-            let normalized_root_str = root.to_string_lossy().replace('\\', "/");
-            let norm_root = std::path::Path::new(&normalized_root_str);
-            p.strip_prefix(norm_root).unwrap_or(p)
-        }
-        None => p,
-    };
-    rel_p.to_string_lossy().replace('\\', "/")
 }
 
 fn render_manifests_node(summary: &Summary, theme: &Theme, is_last: bool) -> Vec<String> {
@@ -268,7 +255,7 @@ mod tests {
     fn test_simulation_banner_formatting() {
         let theme = Theme::new(false);
         let banner = render_simulation_banner(&theme);
-        assert!(banner.contains("┌─ ℹ SIMULATION MODE ─"));
+        assert!(banner.contains("┌─ SIMULATION MODE ─"));
         assert!(banner.contains("│ No files, commits, or git tags will be modified."));
         assert!(banner.ends_with("┘"));
     }

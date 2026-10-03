@@ -33,6 +33,7 @@ pub fn load(path: impl AsRef<Path>) -> Result<Config, ConfigError> {
     Ok(config)
 }
 
+// In `src/config/discovery.rs`: Remove checking for `release.toml` in `discover()`. Only check for `cutver.toml`.
 pub fn discover(start_dir: impl AsRef<Path>) -> Result<Config, ConfigError> {
     let start = start_dir.as_ref();
     let start = if start.is_absolute() {
@@ -46,10 +47,6 @@ pub fn discover(start_dir: impl AsRef<Path>) -> Result<Config, ConfigError> {
         let cutver_candidate = d.join("cutver.toml");
         if cutver_candidate.is_file() {
             return load(cutver_candidate);
-        }
-        let release_candidate = d.join("release.toml");
-        if release_candidate.is_file() {
-            return load(release_candidate);
         }
         if d.join(".git").exists() {
             break;
@@ -122,11 +119,11 @@ mod tests {
         let d = tmp("cutver-cfg-rel");
         write(
             &d,
-            "release.toml",
+            "cutver.toml",
             "[version]\ncurrent_source = \"a\"\n[[manifest]]\npath = \"a\"\nkind = \"cargo-package\"\n[changelog]\npath = \"CHANGELOG.md\"\n",
         );
         write(&d, "a", "");
-        let c = load(d.join("release.toml")).unwrap();
+        let c = load(d.join("cutver.toml")).unwrap();
         let a = d.join("a").to_string_lossy().replace('\\', "/");
         assert_eq!(
             (c.version.current_source.as_str(), c.manifest[0].path.as_str()),
@@ -141,11 +138,11 @@ mod tests {
         let a = d.join("a").to_string_lossy().replace('\\', "/");
         write(
             &d,
-            "release.toml",
+            "cutver.toml",
             &format!("[version]\ncurrent_source = '{a}'\n[[manifest]]\npath = '{a}'\nkind = \"cargo-package\"\n"),
         );
         write(&d, "a", "");
-        let c = load(d.join("release.toml")).unwrap();
+        let c = load(d.join("cutver.toml")).unwrap();
         assert_eq!(
             (c.version.current_source.as_str(), c.manifest[0].path.as_str()),
             (a.as_str(), a.as_str())
@@ -156,7 +153,7 @@ mod tests {
         fs::create_dir_all(&s).unwrap();
         write(
             &d,
-            "release.toml",
+            "cutver.toml",
             "[version]\ncurrent_source = \"a\"\n[[manifest]]\npath = \"a\"\nkind = \"cargo-package\"\n",
         );
         write(&d, "a", "");
@@ -173,7 +170,7 @@ mod tests {
         let parent = tmp("cutver-git-bound-parent");
         write(
             &parent,
-            "release.toml",
+            "cutver.toml",
             "[version]\ncurrent_source = \"a\"\n[[manifest]]\npath = \"a\"\nkind = \"cargo-package\"\n",
         );
         write(&parent, "a", "");
@@ -183,12 +180,12 @@ mod tests {
         let sub = repo.join("sub").join("nested");
         fs::create_dir_all(&sub).unwrap();
 
-        // When starting from sub inside a git repo that lacks release.toml,
-        // discovery must stop at repo/.git and NOT find parent/release.toml.
+        // When starting from sub inside a git repo that lacks cutver.toml,
+        // discovery must stop at repo/.git and NOT find parent/cutver.toml.
         let err = discover(&sub).unwrap_err();
         assert!(matches!(err, ConfigError::NotFound(_)));
 
-        // When starting directly at the repo root without release.toml
+        // When starting directly at the repo root without cutver.toml
         let err = discover(&repo).unwrap_err();
         assert!(matches!(err, ConfigError::NotFound(_)));
     }
@@ -198,7 +195,7 @@ mod tests {
         let parent = tmp("cutver-git-file-bound-parent");
         write(
             &parent,
-            "release.toml",
+            "cutver.toml",
             "[version]\ncurrent_source = \"a\"\n[[manifest]]\npath = \"a\"\nkind = \"cargo-package\"\n",
         );
         write(&parent, "a", "");
@@ -214,12 +211,12 @@ mod tests {
     }
 
     #[test]
-    fn discover_from_subdirectory_finds_release_toml() {
+    fn discover_from_subdirectory_finds_cutver_toml() {
         let repo = tmp("cutver-discover-sub");
         fs::create_dir_all(repo.join(".git")).unwrap();
         write(
             &repo,
-            "release.toml",
+            "cutver.toml",
             "[version]\ncurrent_source = \"a\"\n[[manifest]]\npath = \"a\"\nkind = \"cargo-package\"\n",
         );
         write(&repo, "a", "");
@@ -272,7 +269,7 @@ mod tests {
         fs::create_dir_all(repo.join(".git")).unwrap();
         write(
             &repo,
-            "release.toml",
+            "cutver.toml",
             "[version]\ncurrent_source = \"a\"\n[[manifest]]\npath = \"a\"\nkind = \"cargo-package\"\n",
         );
         write(&repo, "a", "");
@@ -282,7 +279,7 @@ mod tests {
         let _ = fs::remove_dir_all(&symlink_dir);
         std::os::unix::fs::symlink(&repo, &symlink_dir).unwrap();
 
-        let c = load(symlink_dir.join("release.toml")).unwrap();
+        let c = load(symlink_dir.join("cutver.toml")).unwrap();
         assert_eq!(c.root_dir, repo);
 
         let c = discover(&symlink_dir).unwrap();
@@ -303,31 +300,8 @@ mod tests {
     }
 
     #[test]
-    fn discover_prioritizes_cutver_toml_over_release_toml() {
-        let d = tmp("cutver-cfg-precedence");
-        write(
-            &d,
-            "cutver.toml",
-            "[[manifest]]\npath = \"cutver-manifest\"\nkind = \"cargo-package\"\n",
-        );
-        write(
-            &d,
-            "release.toml",
-            "[[manifest]]\npath = \"release-manifest\"\nkind = \"cargo-package\"\n",
-        );
-        write(&d, "cutver-manifest", "");
-        write(&d, "release-manifest", "");
-
-        let c = discover(&d).unwrap();
-        assert_eq!(
-            c.version.current_source,
-            d.join("cutver-manifest").to_string_lossy().replace('\\', "/")
-        );
-    }
-
-    #[test]
-    fn discover_falls_back_to_release_toml_when_cutver_toml_absent() {
-        let d = tmp("cutver-cfg-fallback");
+    fn discover_fails_when_only_release_toml_present() {
+        let d = tmp("cutver-cfg-release-toml-fails");
         write(
             &d,
             "release.toml",
@@ -335,10 +309,7 @@ mod tests {
         );
         write(&d, "release-manifest", "");
 
-        let c = discover(&d).unwrap();
-        assert_eq!(
-            c.version.current_source,
-            d.join("release-manifest").to_string_lossy().replace('\\', "/")
-        );
+        let err = discover(&d).unwrap_err();
+        assert!(matches!(err, ConfigError::NotFound(_)));
     }
 }

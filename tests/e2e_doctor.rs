@@ -54,6 +54,10 @@ field = "version"
         "stdout does not contain 'Configuration   valid (cutver.toml)': {stdout}"
     );
     assert!(
+        stdout.contains("Manifests       1 tracked (package.json @ 1.1.0)"),
+        "stdout does not contain relative manifest path: {stdout}"
+    );
+    assert!(
         stdout.contains("Changelog       consistent with Git tags"),
         "stdout does not contain 'Changelog       consistent with Git tags': {stdout}"
     );

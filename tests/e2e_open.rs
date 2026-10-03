@@ -154,3 +154,29 @@ fn test_open_missing_remote_fails_cleanly() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("failed to determine repository remote URL"));
 }
+
+#[test]
+fn test_open_respects_browser_env() {
+    let guard = FixtureGuard::new("open-browser-env");
+    let fixture = guard.fixture();
+    init_git_repo(fixture);
+    fixture.write("README.md", "# Test");
+    initial_commit(fixture);
+
+    let res = Command::new("git")
+        .current_dir(&fixture.dir)
+        .args(["remote", "add", "origin", "https://github.com/Row0902/cutver.git"])
+        .status()
+        .expect("failed to add git remote");
+    assert!(res.success());
+
+    // Using "true" command as a dummy browser that immediately succeeds
+    let output = Command::new(env!("CARGO_BIN_EXE_cutver"))
+        .current_dir(&fixture.dir)
+        .env("BROWSER", "true")
+        .args(["open"])
+        .output()
+        .expect("failed to execute cutver open");
+
+    assert!(output.status.success());
+}

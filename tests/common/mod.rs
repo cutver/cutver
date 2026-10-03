@@ -214,10 +214,6 @@ require_clean_tree = true
     )
 }
 
-pub fn base_release_toml(preflight: &str) -> String {
-    base_cutver_toml(preflight)
-}
-
 pub fn write_fixture(guard: &FixtureGuard, preflight: &str) {
     let fixture = guard.fixture();
     fixture.write("package.json", PACKAGE_JSON);
@@ -225,17 +221,6 @@ pub fn write_fixture(guard: &FixtureGuard, preflight: &str) {
     fixture.write("android/build.gradle.kts", GRADLE_KTS);
     fixture.write("CHANGELOG.md", CHANGELOG_MD);
     fixture.write("cutver.toml", &base_cutver_toml(preflight));
-    init_git_repo(fixture);
-    initial_commit(fixture);
-}
-
-pub fn write_legacy_release_fixture(guard: &FixtureGuard, preflight: &str) {
-    let fixture = guard.fixture();
-    fixture.write("package.json", PACKAGE_JSON);
-    fixture.write("Cargo.toml", CARGO_TOML);
-    fixture.write("android/build.gradle.kts", GRADLE_KTS);
-    fixture.write("CHANGELOG.md", CHANGELOG_MD);
-    fixture.write("release.toml", &base_release_toml(preflight));
     init_git_repo(fixture);
     initial_commit(fixture);
 }

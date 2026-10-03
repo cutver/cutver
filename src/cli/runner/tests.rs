@@ -56,7 +56,7 @@ fn doctor_reports_valid_config() {
     write(&dir, "package.json", r#"{"version": "1.0.0"}"#);
     write(
         &dir,
-        "release.toml",
+        "cutver.toml",
         r#"
 [version]
 current_source = "package.json"
@@ -66,15 +66,15 @@ kind = "json"
 field = "version"
 "#,
     );
-    let args = Cli::try_parse_from(["cutver", "-c", &dir.join("release.toml").to_string_lossy(), "doctor"]).unwrap();
+    let args = Cli::try_parse_from(["cutver", "-c", &dir.join("cutver.toml").to_string_lossy(), "doctor"]).unwrap();
     assert_eq!(run(args), 0);
 }
 
 #[test]
 fn doctor_fails_for_invalid_config() {
     let dir = temp_dir("cutver-doc-bad");
-    write(&dir, "release.toml", "[version]\ncurrent_source = \"missing\"");
-    let args = Cli::try_parse_from(["cutver", "-c", &dir.join("release.toml").to_string_lossy(), "doctor"]).unwrap();
+    write(&dir, "cutver.toml", "[version]\ncurrent_source = \"missing\"");
+    let args = Cli::try_parse_from(["cutver", "-c", &dir.join("cutver.toml").to_string_lossy(), "doctor"]).unwrap();
     assert_eq!(run(args), 1);
 }
 
@@ -85,7 +85,7 @@ fn doctor_reports_drift_exit_code() {
     write(&dir, "Cargo.toml", "[package]\nversion = \"1.0.0\"\n");
     write(
         &dir,
-        "release.toml",
+        "cutver.toml",
         r#"
 [version]
 current_source = "package.json"
@@ -98,7 +98,7 @@ path = "Cargo.toml"
 kind = "cargo-package"
 "#,
     );
-    let args = Cli::try_parse_from(["cutver", "-c", &dir.join("release.toml").to_string_lossy(), "doctor"]).unwrap();
+    let args = Cli::try_parse_from(["cutver", "-c", &dir.join("cutver.toml").to_string_lossy(), "doctor"]).unwrap();
     assert_eq!(run(args), 2);
 }
 
@@ -114,7 +114,7 @@ fn doctor_with_check_changelog_consistent() {
     );
     write(
         &dir,
-        "release.toml",
+        "cutver.toml",
         r#"
 [version]
 current_source = "package.json"
@@ -130,7 +130,7 @@ field = "version"
     let args = Cli::try_parse_from([
         "cutver",
         "-c",
-        &dir.join("release.toml").to_string_lossy(),
+        &dir.join("cutver.toml").to_string_lossy(),
         "doctor",
         "--check-changelog",
     ])
@@ -150,7 +150,7 @@ fn doctor_with_check_changelog_drift_missing_in_changelog() {
     );
     write(
         &dir,
-        "release.toml",
+        "cutver.toml",
         r#"
 [version]
 current_source = "package.json"
@@ -167,7 +167,7 @@ field = "version"
     let args = Cli::try_parse_from([
         "cutver",
         "-c",
-        &dir.join("release.toml").to_string_lossy(),
+        &dir.join("cutver.toml").to_string_lossy(),
         "doctor",
         "--check-changelog",
     ])
@@ -187,7 +187,7 @@ fn doctor_with_check_changelog_orphan_section() {
     );
     write(
         &dir,
-        "release.toml",
+        "cutver.toml",
         r#"
 [version]
 current_source = "package.json"
@@ -203,7 +203,7 @@ field = "version"
     let args = Cli::try_parse_from([
         "cutver",
         "-c",
-        &dir.join("release.toml").to_string_lossy(),
+        &dir.join("cutver.toml").to_string_lossy(),
         "doctor",
         "--check-changelog",
     ])
@@ -218,7 +218,7 @@ fn doctor_with_check_changelog_error() {
     write(&dir, "package.json", r#"{"version": "1.0.0"}"#);
     write(
         &dir,
-        "release.toml",
+        "cutver.toml",
         r#"
 [version]
 current_source = "package.json"
@@ -233,7 +233,7 @@ field = "version"
     let args = Cli::try_parse_from([
         "cutver",
         "-c",
-        &dir.join("release.toml").to_string_lossy(),
+        &dir.join("cutver.toml").to_string_lossy(),
         "doctor",
         "--check-changelog",
     ])
@@ -249,7 +249,7 @@ fn bump_dry_run_does_not_mutate() {
     write(&dir, "Cargo.toml", "[package]\nversion = \"1.2.3\"\n");
     write(
         &dir,
-        "release.toml",
+        "cutver.toml",
         r#"
 [version]
 current_source = "package.json"
@@ -270,7 +270,7 @@ tests = "cargo test"
     let args = Cli::try_parse_from([
         "cutver",
         "-c",
-        &dir.join("release.toml").to_string_lossy(),
+        &dir.join("cutver.toml").to_string_lossy(),
         "bump",
         "minor",
         "--dry-run",
@@ -290,7 +290,7 @@ fn bump_auto_dry_run_with_feat() {
     write(&dir, "Cargo.toml", "[package]\nversion = \"1.2.3\"\n");
     write(
         &dir,
-        "release.toml",
+        "cutver.toml",
         r#"
 [version]
 current_source = "package.json"
@@ -324,7 +324,7 @@ require_clean_tree = false
     let args = Cli::try_parse_from([
         "cutver",
         "-c",
-        &dir.join("release.toml").to_string_lossy(),
+        &dir.join("cutver.toml").to_string_lossy(),
         "bump",
         "auto",
         "--dry-run",
@@ -338,11 +338,11 @@ fn config_defaults_and_preflight_order() {
     let dir = temp_dir("cutver-config-defaults");
     write(
         &dir,
-        "release.toml",
+        "cutver.toml",
         "[version]\ncurrent_source = \"a\"\n[[manifest]]\npath = \"a\"\nkind = \"cargo-package\"\n[preflight]\ntests = \"cargo test\"\nz = \"z\"\na = \"a\"\nm = \"m\"\n[changelog]\npath = \"CHANGELOG.md\"\n",
     );
     write(&dir, "a", "");
-    let cfg = config::load(dir.join("release.toml")).unwrap();
+    let cfg = config::load(dir.join("cutver.toml")).unwrap();
     assert_eq!(Path::new(&cfg.version.current_source).file_name().unwrap(), "a");
     assert_eq!(
         (cfg.manifest.len(), cfg.preflight.len(), cfg.git.tag_prefix.as_str()),

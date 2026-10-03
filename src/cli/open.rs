@@ -98,7 +98,7 @@ pub fn resolve_target_url(remote_url: &str, target: &OpenTarget, tag_prefix: &st
     }
 }
 
-/// Returns the platform default browser launcher program.
+/// Returns the platform default browser launcher program and arguments.
 pub fn default_browser_command() -> (&'static str, &'static [&'static str]) {
     #[cfg(target_os = "macos")]
     {
@@ -110,28 +110,54 @@ pub fn default_browser_command() -> (&'static str, &'static [&'static str]) {
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
-        ("xdg-open", &[])
+        if is_wsl() && has_wslview() {
+            ("wslview", &[])
+        } else {
+            ("xdg-open", &[])
+        }
     }
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+fn is_wsl() -> bool {
+    std::env::var_os("WSL_DISTRO_NAME").is_some()
+        || std::fs::read_to_string("/proc/version")
+            .map(|v| v.to_ascii_lowercase().contains("microsoft"))
+            .unwrap_or(false)
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+fn has_wslview() -> bool {
+    Path::new("/usr/sbin/wslview").exists()
+        || Path::new("/bin/wslview").exists()
+        || Path::new("/usr/bin/wslview").exists()
+}
+
+/// Resolves the browser command and arguments honoring overrides and environment.
+pub fn resolve_browser_command(browser_override: Option<&str>) -> (String, Vec<String>) {
+    if let Some(custom) = browser_override {
+        return (custom.to_string(), Vec::new());
+    }
+
+    if let Ok(env_browser) = std::env::var("BROWSER") {
+        let trimmed = env_browser.trim();
+        if !trimmed.is_empty() {
+            return (trimmed.to_string(), Vec::new());
+        }
+    }
+
+    let (prog, args) = default_browser_command();
+    (prog.to_string(), args.iter().map(|&s| s.to_string()).collect())
 }
 
 /// Execute browser opening command purely separated from URL logic.
 pub fn launch_browser(url: &str, browser_override: Option<&str>) -> Result<(), OpenError> {
-    let mut cmd;
-    let browser_name: String;
-
-    if let Some(custom) = browser_override {
-        browser_name = custom.to_string();
-        cmd = Command::new(custom);
-        cmd.arg(url);
-    } else {
-        let (prog, args) = default_browser_command();
-        browser_name = prog.to_string();
-        cmd = Command::new(prog);
-        for arg in args {
-            cmd.arg(arg);
-        }
-        cmd.arg(url);
+    let (browser_name, args) = resolve_browser_command(browser_override);
+    let mut cmd = Command::new(&browser_name);
+    for arg in &args {
+        cmd.arg(arg);
     }
+    cmd.arg(url);
 
     let status = cmd.status().map_err(|e| OpenError::BrowserLaunch {
         browser: browser_name.clone(),
@@ -244,5 +270,22 @@ mod tests {
             .unwrap(),
             "https://gitlab.com/group/cutver/-/compare/v1.0.0...v1.1.0"
         );
+    }
+
+    #[test]
+    fn test_resolve_browser_command() {
+        let (cmd, args) = resolve_browser_command(Some("my-browser"));
+        assert_eq!(cmd, "my-browser");
+        assert!(args.is_empty());
+
+        unsafe {
+            std::env::set_var("BROWSER", "custom-env-browser");
+        }
+        let (cmd, args) = resolve_browser_command(None);
+        assert_eq!(cmd, "custom-env-browser");
+        assert!(args.is_empty());
+        unsafe {
+            std::env::remove_var("BROWSER");
+        }
     }
 }

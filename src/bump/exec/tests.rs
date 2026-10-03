@@ -46,7 +46,7 @@ fn test_arbitrary_files_not_matched() {
         "unrelated.txt",
         "Cargo.toml",
         "package.json",
-        "release.toml",
+        "cutver.toml",
         "cutver.toml",
         "Cargo.lock.backup",
         "not-Cargo.lock",

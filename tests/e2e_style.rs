@@ -235,3 +235,71 @@ path = "CHANGELOG.md"
     assert!(stdout.contains("### Features"));
     assert!(stdout.contains("- **cli**: add changelog styling (#72)"));
 }
+
+#[test]
+fn test_style_changelog_osc8_links_and_footnotes() {
+    let guard = FixtureGuard::new("style-changelog-links");
+    let fixture = guard.fixture();
+    let cutver_toml = r#"[version]
+current_source = "package.json"
+
+[[manifest]]
+path = "package.json"
+kind = "json"
+field = "version"
+
+[changelog]
+path = "CHANGELOG.md"
+"#;
+    fixture.write("cutver.toml", cutver_toml);
+    fixture.write("package.json", r#"{"version": "1.2.0"}"#);
+    let changelog_content = r#"# Changelog
+
+## [1.2.0] - 2026-03-01
+
+### Features
+- **cli**: add links in [#85](https://github.com/Row0902/cutver/pull/85) ([abc1234](https://github.com/Row0902/cutver/commit/abc1234))
+"#;
+    fixture.write("CHANGELOG.md", changelog_content);
+
+    // With CLICOLOR_FORCE=1: OSC 8 hyperlinks and accessible footnotes rendered
+    let output = Command::new(env!("CARGO_BIN_EXE_cutver"))
+        .current_dir(&fixture.dir)
+        .env("CLICOLOR_FORCE", "1")
+        .args(["changelog", "latest", "-H"])
+        .output()
+        .expect("failed to execute cutver binary");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("\x1b]8;;https://github.com/Row0902/cutver/pull/85\x1b\\#85\x1b]8;;\x1b\\[^1]"),
+        "stdout missing OSC 8 PR link: {stdout}"
+    );
+    assert!(
+        stdout.contains("\x1b]8;;https://github.com/Row0902/cutver/commit/abc1234\x1b\\abc1234\x1b]8;;\x1b\\[^2]"),
+        "stdout missing OSC 8 commit link: {stdout}"
+    );
+    assert!(
+        stdout.contains("[^1]: https://github.com/Row0902/cutver/pull/85"),
+        "stdout missing PR footnote: {stdout}"
+    );
+    assert!(
+        stdout.contains("[^2]: https://github.com/Row0902/cutver/commit/abc1234"),
+        "stdout missing commit footnote: {stdout}"
+    );
+
+    // With NO_COLOR=1: pristine raw markdown, zero OSC 8 sequences, zero footnotes
+    let output_no_color = Command::new(env!("CARGO_BIN_EXE_cutver"))
+        .current_dir(&fixture.dir)
+        .env("NO_COLOR", "1")
+        .args(["changelog", "latest", "-H"])
+        .output()
+        .expect("failed to execute cutver binary");
+
+    assert!(output_no_color.status.success());
+    let stdout_nc = String::from_utf8_lossy(&output_no_color.stdout);
+    assert!(!stdout_nc.contains("\x1b]8;;"));
+    assert!(!stdout_nc.contains("[^1]:"));
+    assert!(stdout_nc.contains("in [#85](https://github.com/Row0902/cutver/pull/85)"));
+}

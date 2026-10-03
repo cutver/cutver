@@ -98,6 +98,22 @@ check = "true""#,
     assert_versions_at_123(guard.fixture());
     assert_eq!(commit_count(guard.fixture()), 1);
     assert!(!tag_exists(guard.fixture(), "v1.3.0"));
+
+    // Verify workspace-relative paths in CLI dry-run output
+    let output = Command::new(env!("CARGO_BIN_EXE_cutver"))
+        .current_dir(&guard.fixture().dir)
+        .args(["bump", "minor", "--dry-run"])
+        .output()
+        .expect("failed to execute cutver bump --dry-run");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let abs_prefix = guard.fixture().dir.to_string_lossy();
+    assert!(
+        !stdout.contains(&*abs_prefix),
+        "CLI output should not contain absolute path '{abs_prefix}', got:\n{stdout}"
+    );
+    assert!(stdout.contains("Cargo.toml (1.2.3 -> 1.3.0)"));
+    assert!(stdout.contains("CHANGELOG.md (prepends 1.3.0)"));
 }
 
 #[test]

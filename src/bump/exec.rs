@@ -328,6 +328,7 @@ pub fn run_with_first_release(
         publish_push_command,
         publish_commands,
         rationale,
+        root_dir: Some(config.root_dir.clone()),
     })
 }
 

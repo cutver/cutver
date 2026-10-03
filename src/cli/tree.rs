@@ -34,6 +34,20 @@ fn format_plan_header(summary: &Summary, theme: &Theme) -> String {
     format!("{icon} {title}")
 }
 
+fn relativize_path(path: &str, root_dir: Option<&std::path::Path>) -> String {
+    let normalized_input = path.replace('\\', "/");
+    let p = std::path::Path::new(&normalized_input);
+    let rel_p = match root_dir {
+        Some(root) => {
+            let normalized_root_str = root.to_string_lossy().replace('\\', "/");
+            let norm_root = std::path::Path::new(&normalized_root_str);
+            p.strip_prefix(norm_root).unwrap_or(p)
+        }
+        None => p,
+    };
+    rel_p.to_string_lossy().replace('\\', "/")
+}
+
 fn render_manifests_node(summary: &Summary, theme: &Theme, is_last: bool) -> Vec<String> {
     if summary.touched.is_empty() {
         return Vec::new();
@@ -48,7 +62,11 @@ fn render_manifests_node(summary: &Summary, theme: &Theme, is_last: bool) -> Vec
         let leaf = branch_prefix(i + 1 == count);
         let arrow = theme.arrow();
         let target = theme.accent(&t.new);
-        lines.push(format!("{child_prefix}{leaf}{} ({} {arrow} {target})", t.path, t.old));
+        let display_path = relativize_path(&t.path, summary.root_dir.as_deref());
+        lines.push(format!(
+            "{child_prefix}{leaf}{display_path} ({} {arrow} {target})",
+            t.old
+        ));
     }
     lines
 }
@@ -83,9 +101,10 @@ fn render_changelog_node(summary: &Summary, theme: &Theme, is_last: bool) -> Vec
     let child_prefix = child_indent(is_last);
     let leaf = branch_prefix(true);
     let target = theme.accent(&summary.next);
+    let display_path = relativize_path(cl, summary.root_dir.as_deref());
     vec![
         format!("{prefix}Changelog"),
-        format!("{child_prefix}{leaf}{cl} (prepends {target})"),
+        format!("{child_prefix}{leaf}{display_path} (prepends {target})"),
     ]
 }
 
@@ -241,6 +260,7 @@ mod tests {
             publish_push_command: Some("git push origin main --tags".into()),
             publish_commands: vec!["cargo publish".into()],
             rationale: None,
+            root_dir: None,
         }
     }
 
@@ -273,5 +293,47 @@ mod tests {
         assert!(plan.contains("    ├── push: git push origin main --tags"));
         assert!(plan.contains("    └── commands:"));
         assert!(plan.contains("        └── cargo publish"));
+    }
+
+    #[test]
+    fn test_relativize_path_nested() {
+        let root = std::path::Path::new("/workspace/project");
+        assert_eq!(
+            relativize_path("/workspace/project/crates/app/Cargo.toml", Some(root)),
+            "crates/app/Cargo.toml"
+        );
+    }
+
+    #[test]
+    fn test_relativize_path_root() {
+        let root = std::path::Path::new("/workspace/project");
+        assert_eq!(
+            relativize_path("/workspace/project/Cargo.toml", Some(root)),
+            "Cargo.toml"
+        );
+    }
+
+    #[test]
+    fn test_relativize_path_outside() {
+        let root = std::path::Path::new("/workspace/project");
+        assert_eq!(
+            relativize_path("/other/location/Cargo.toml", Some(root)),
+            "/other/location/Cargo.toml"
+        );
+        assert_eq!(relativize_path("Cargo.toml", None), "Cargo.toml");
+    }
+
+    #[test]
+    fn test_relativize_path_backslash_normalization() {
+        let root = std::path::Path::new("C:\\repo");
+        assert_eq!(
+            relativize_path("C:\\repo\\src\\Cargo.toml", Some(root)),
+            "src/Cargo.toml"
+        );
+        let root_forward = std::path::Path::new("C:/repo");
+        assert_eq!(
+            relativize_path("C:\\repo\\src\\Cargo.toml", Some(root_forward)),
+            "src/Cargo.toml"
+        );
     }
 }

@@ -869,3 +869,129 @@ require_clean_tree = false
     assert_eq!(commit_count(fixture), 2);
     assert!(!tag_exists(fixture, "v1.0.1"));
 }
+
+#[test]
+fn bump_aborts_in_phase1_when_changelog_body_template_syntax_fails() {
+    assert!(
+        git_available(),
+        "git CLI is required for e2e tests but was not found in PATH"
+    );
+    let guard = FixtureGuard::new("bump-body-tpl-syntax-fail");
+    let fixture = guard.fixture();
+
+    let package_json = r#"{
+  "name": "syntax-fail",
+  "version": "1.0.0"
+}
+"#;
+    let cutver_toml = r#"[[manifest]]
+path = "package.json"
+kind = "json"
+field = "version"
+
+[changelog]
+path = "CHANGELOG.md"
+template = "{{ invalid syntax"
+
+[git]
+require_clean_tree = false
+"#;
+    fixture.write("package.json", package_json);
+    fixture.write("cutver.toml", cutver_toml);
+    fixture.write(
+        "CHANGELOG.md",
+        "# Changelog\n\n## [v1.0.0] - 2026-01-01\n\n- Initial release\n",
+    );
+
+    init_git_repo(fixture);
+    initial_commit(fixture);
+    run_git_ok(&fixture.dir, &["tag", "v1.0.0"]);
+    run_git_ok(&fixture.dir, &["commit", "--allow-empty", "-m", "fix: small bug"]);
+
+    let cfg = config::load("cutver.toml").unwrap();
+    let err = cutver::bump::run(&cfg, cutver::cli::BumpLevel::Patch, false, &[]).unwrap_err();
+
+    assert!(
+        matches!(
+            err,
+            cutver::bump::Error::Changelog(cutver::changelog::Error::TemplateRender { .. })
+        ),
+        "expected Changelog(TemplateRender), got: {err:?}"
+    );
+
+    let pkg_content = fixture.read("package.json");
+    assert!(
+        pkg_content.contains("\"version\": \"1.0.0\""),
+        "package.json should remain at 1.0.0: {pkg_content}"
+    );
+    let cl_content = fixture.read("CHANGELOG.md");
+    assert!(
+        !cl_content.contains("v1.0.1"),
+        "CHANGELOG.md must not have been updated: {cl_content}"
+    );
+    assert_eq!(commit_count(fixture), 2);
+    assert!(!tag_exists(fixture, "v1.0.1"));
+}
+
+#[test]
+fn bump_aborts_in_phase1_when_changelog_template_file_missing() {
+    assert!(
+        git_available(),
+        "git CLI is required for e2e tests but was not found in PATH"
+    );
+    let guard = FixtureGuard::new("bump-tpl-file-missing-fail");
+    let fixture = guard.fixture();
+
+    let package_json = r#"{
+  "name": "missing-file-fail",
+  "version": "1.0.0"
+}
+"#;
+    let cutver_toml = r#"[[manifest]]
+path = "package.json"
+kind = "json"
+field = "version"
+
+[changelog]
+path = "CHANGELOG.md"
+template_file = "nonexistent/template.md"
+
+[git]
+require_clean_tree = false
+"#;
+    fixture.write("package.json", package_json);
+    fixture.write("cutver.toml", cutver_toml);
+    fixture.write(
+        "CHANGELOG.md",
+        "# Changelog\n\n## [v1.0.0] - 2026-01-01\n\n- Initial release\n",
+    );
+
+    init_git_repo(fixture);
+    initial_commit(fixture);
+    run_git_ok(&fixture.dir, &["tag", "v1.0.0"]);
+    run_git_ok(&fixture.dir, &["commit", "--allow-empty", "-m", "fix: small bug"]);
+
+    let cfg = config::load("cutver.toml").unwrap();
+    let err = cutver::bump::run(&cfg, cutver::cli::BumpLevel::Patch, false, &[]).unwrap_err();
+
+    assert!(
+        matches!(
+            err,
+            cutver::bump::Error::Changelog(cutver::changelog::Error::TemplateFileRead { .. })
+        ),
+        "expected Changelog(TemplateFileRead), got: {err:?}"
+    );
+
+    let pkg_content = fixture.read("package.json");
+    assert!(
+        pkg_content.contains("\"version\": \"1.0.0\""),
+        "package.json should remain at 1.0.0: {pkg_content}"
+    );
+    let cl_content = fixture.read("CHANGELOG.md");
+    assert!(
+        !cl_content.contains("v1.0.1"),
+        "CHANGELOG.md must not have been updated: {cl_content}"
+    );
+    assert_eq!(commit_count(fixture), 2);
+    assert!(!tag_exists(fixture, "v1.0.1"));
+}

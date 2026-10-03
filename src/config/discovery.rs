@@ -29,6 +29,9 @@ pub fn load(path: impl AsRef<Path>) -> Result<Config, ConfigError> {
     if let Some(ref mut p) = config.changelog.path {
         *p = resolve(&config.root_dir, p);
     }
+    if let Some(ref mut p) = config.changelog.template_file {
+        *p = resolve(&config.root_dir, p);
+    }
     validate(&config)?;
     Ok(config)
 }
@@ -297,6 +300,22 @@ mod tests {
 
         let _ = fs::remove_file(&symlink_dir);
         let _ = fs::remove_file(&symlink_sub);
+    }
+
+    #[test]
+    fn template_file_resolves_against_root_dir_from_deep_subdirectory() {
+        let root = tmp("cutver-cfg-template-rel");
+        let sub = root.join("nested").join("deep").join("dir");
+        fs::create_dir_all(&sub).unwrap();
+        write(
+            &root,
+            "cutver.toml",
+            "[version]\ncurrent_source = \"Cargo.toml\"\n[[manifest]]\npath = \"Cargo.toml\"\nkind = \"cargo-package\"\n[changelog]\npath = \"CHANGELOG.md\"\ntemplate_file = \"templates/release.md\"\n",
+        );
+        write(&root, "Cargo.toml", "");
+        let config = discover(&sub).expect("discover should find cutver.toml in root");
+        let expected = root.join("templates/release.md").to_string_lossy().replace('\\', "/");
+        assert_eq!(config.changelog.template_file, Some(expected));
     }
 
     #[test]

@@ -30,6 +30,9 @@ pub struct ReleaseContext {
     pub repo_name: Option<String>,
     pub forge: Option<String>,
     pub project_name: Option<String>,
+    pub year: u32,
+    pub month: u32,
+    pub day: u32,
 }
 
 impl serde::Serialize for ReleaseContext {
@@ -38,7 +41,7 @@ impl serde::Serialize for ReleaseContext {
         S: serde::Serializer,
     {
         use serde::ser::SerializeMap;
-        let mut map = serializer.serialize_map(Some(27))?;
+        let mut map = serializer.serialize_map(Some(34))?;
         map.serialize_entry("version", &self.version)?;
         map.serialize_entry("previous_version", &self.previous_version)?;
         map.serialize_entry("tag", &self.tag)?;
@@ -64,6 +67,10 @@ impl serde::Serialize for ReleaseContext {
         map.serialize_entry("is_prerelease", &self.is_prerelease)?;
         map.serialize_entry("prerelease", &self.prerelease)?;
         map.serialize_entry("build", &self.build)?;
+
+        map.serialize_entry("year", &self.year)?;
+        map.serialize_entry("month", &self.month)?;
+        map.serialize_entry("day", &self.day)?;
 
         map.serialize_entry("repo_owner", &self.repo_owner)?;
         map.serialize_entry("owner", &self.repo_owner)?;
@@ -128,14 +135,26 @@ impl<'de> serde::Deserialize<'de> for ReleaseContext {
             prerelease: Option<String>,
             #[serde(default)]
             build: Option<String>,
-            #[serde(default, alias = "owner")]
+            #[serde(default)]
+            year: Option<u32>,
+            #[serde(default)]
+            month: Option<u32>,
+            #[serde(default)]
+            day: Option<u32>,
+            #[serde(default)]
             repo_owner: Option<String>,
-            #[serde(default, alias = "repo")]
+            #[serde(default)]
+            owner: Option<String>,
+            #[serde(default)]
             repo_name: Option<String>,
             #[serde(default)]
+            repo: Option<String>,
+            #[serde(default)]
             forge: Option<String>,
-            #[serde(default, alias = "project")]
+            #[serde(default)]
             project_name: Option<String>,
+            #[serde(default)]
+            project: Option<String>,
         }
 
         let h = Helper::deserialize(deserializer)?;
@@ -152,10 +171,19 @@ impl<'de> serde::Deserialize<'de> for ReleaseContext {
         let forge_meta = h.repository.as_deref().map(super::parse::parse_repo_forge);
         let repo_owner = h
             .repo_owner
+            .or(h.owner)
             .or_else(|| forge_meta.as_ref().and_then(|f| f.owner.clone()));
-        let repo_name = h.repo_name.or_else(|| forge_meta.as_ref().and_then(|f| f.repo.clone()));
+        let repo_name = h
+            .repo_name
+            .or(h.repo)
+            .or_else(|| forge_meta.as_ref().and_then(|f| f.repo.clone()));
         let forge = h.forge.or_else(|| forge_meta.as_ref().and_then(|f| f.forge.clone()));
-        let project_name = h.project_name.or_else(|| repo_name.clone());
+        let project_name = h.project_name.or(h.project).or_else(|| repo_name.clone());
+
+        let (year, month, day) = match (h.year, h.month, h.day) {
+            (Some(y), Some(m), Some(d)) => (y, m, d),
+            _ => parse_date_components(&h.date),
+        };
 
         Ok(ReleaseContext {
             version: h.version,
@@ -186,6 +214,17 @@ impl<'de> serde::Deserialize<'de> for ReleaseContext {
             repo_name,
             forge,
             project_name,
+            year,
+            month,
+            day,
         })
     }
+}
+
+pub(crate) fn parse_date_components(date_str: &str) -> (u32, u32, u32) {
+    let mut parts = date_str.split('-');
+    let y = parts.next().and_then(|s| s.parse::<u32>().ok()).unwrap_or(0);
+    let m = parts.next().and_then(|s| s.parse::<u32>().ok()).unwrap_or(0);
+    let d = parts.next().and_then(|s| s.parse::<u32>().ok()).unwrap_or(0);
+    (y, m, d)
 }

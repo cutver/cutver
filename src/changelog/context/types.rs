@@ -180,6 +180,29 @@ impl InterpolationContext {
             project_name,
         }
     }
+
+    /// Build an `InterpolationContext` from a `ReleaseContext`.
+    pub fn from_release_context(ctx: &ReleaseContext, bump_level: &str, branch: Option<&str>) -> Self {
+        InterpolationContext {
+            version: ctx.version.clone(),
+            previous_version: ctx.previous_version.clone(),
+            tag: ctx.tag.clone(),
+            previous_tag: ctx.previous_tag.clone(),
+            bump_level: bump_level.to_string(),
+            is_prerelease: ctx.is_prerelease,
+            prerelease: ctx.prerelease.clone(),
+            build: ctx.build.clone(),
+            major: ctx.major,
+            minor: ctx.minor,
+            patch: ctx.patch,
+            date: ctx.date.clone(),
+            branch: branch.map(String::from),
+            repo_owner: ctx.repo_owner.clone(),
+            repo_name: ctx.repo_name.clone(),
+            forge: ctx.forge.clone(),
+            project_name: ctx.project_name.clone(),
+        }
+    }
 }
 
 pub struct AssembleContextParams<'a> {

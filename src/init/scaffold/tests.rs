@@ -59,6 +59,7 @@ fn fresh_init_creates_files_and_config() {
     assert!(cfg_text.contains("kind = \"cargo-package\""));
     assert!(cfg_text.contains("check = \"cargo check --workspace\""));
     assert!(cfg_text.contains("post_bump = \"cargo check --workspace\""));
+    assert!(cfg_text.contains("mode = \"template\""));
     assert!(cfg_text.contains("template_file = \".github/templates/cutver/RELEASE.md\""));
 
     let changelog = td.read("CHANGELOG.md");
@@ -80,6 +81,7 @@ fn fresh_init_no_template_flag() {
     assert!(!td.path.join(".github/templates/cutver/RELEASE.md").exists());
 
     let cfg_text = td.read("cutver.toml");
+    assert!(cfg_text.contains("mode = \"conventional\""));
     assert!(!cfg_text.contains("template_file"));
 }
 

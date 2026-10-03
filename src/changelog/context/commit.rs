@@ -7,6 +7,8 @@ pub struct CommitContext {
     pub description: String,
     pub clean_description: String,
     pub is_breaking: bool,
+    pub body: Option<String>,
+    pub breaking_description: Option<String>,
     pub hash: Option<String>,
     pub short_hash: Option<String>,
     pub author: Option<String>,
@@ -25,13 +27,16 @@ impl serde::Serialize for CommitContext {
         S: serde::Serializer,
     {
         use serde::ser::SerializeMap;
-        let mut map = serializer.serialize_map(Some(16))?;
+        let mut map = serializer.serialize_map(Some(19))?;
         map.serialize_entry("type", &self.commit_type)?;
         map.serialize_entry("commit_type", &self.commit_type)?;
         map.serialize_entry("scope", &self.scope)?;
         map.serialize_entry("description", &self.description)?;
         map.serialize_entry("clean_description", &self.clean_description)?;
         map.serialize_entry("is_breaking", &self.is_breaking)?;
+        map.serialize_entry("body", &self.body)?;
+        map.serialize_entry("breaking_description", &self.breaking_description)?;
+        map.serialize_entry("breaking_change_description", &self.breaking_description)?;
         map.serialize_entry("hash", &self.hash)?;
         map.serialize_entry("short_hash", &self.short_hash)?;
         map.serialize_entry("author", &self.author)?;
@@ -53,14 +58,20 @@ impl<'de> serde::Deserialize<'de> for CommitContext {
     {
         #[derive(serde::Deserialize)]
         struct Helper {
-            #[serde(alias = "commit_type")]
-            r#type: String,
+            #[serde(default)]
+            r#type: Option<String>,
+            #[serde(default)]
+            commit_type: Option<String>,
             scope: Option<String>,
             description: String,
             #[serde(default)]
             clean_description: Option<String>,
             #[serde(default)]
             is_breaking: bool,
+            #[serde(default)]
+            body: Option<String>,
+            #[serde(default)]
+            breaking_description: Option<String>,
             #[serde(default)]
             hash: Option<String>,
             #[serde(default)]
@@ -78,6 +89,8 @@ impl<'de> serde::Deserialize<'de> for CommitContext {
             #[serde(default)]
             commit_url: Option<String>,
             #[serde(default)]
+            breaking_change_description: Option<String>,
+            #[serde(default)]
             line: Option<String>,
             #[serde(default)]
             bullet: Option<String>,
@@ -86,6 +99,8 @@ impl<'de> serde::Deserialize<'de> for CommitContext {
         let (clean, prs) = super::parse::strip_trailing_pr_numbers(&h.description);
         let clean_desc = h.clean_description.unwrap_or(clean);
         let pr_num = h.pr_number.or_else(|| prs.first().copied());
+        let breaking_desc = h.breaking_description.or(h.breaking_change_description);
+        let commit_type = h.r#type.or(h.commit_type).unwrap_or_default();
         let mut issues = h.issue_numbers;
         if prs.len() > 1 {
             for &num in &prs[1..] {
@@ -96,11 +111,13 @@ impl<'de> serde::Deserialize<'de> for CommitContext {
         }
 
         let mut ctx = CommitContext {
-            commit_type: h.r#type,
+            commit_type,
             scope: h.scope,
             description: h.description,
             clean_description: clean_desc,
             is_breaking: h.is_breaking,
+            body: h.body,
+            breaking_description: breaking_desc,
             hash: h.hash,
             short_hash: h.short_hash,
             author: h.author,
@@ -130,6 +147,8 @@ impl From<&ConventionalCommit> for CommitContext {
             description: c.description.clone(),
             clean_description: clean,
             is_breaking: c.is_breaking,
+            body: c.body.clone(),
+            breaking_description: extract_breaking_description(c),
             hash: None,
             short_hash: None,
             author: None,
@@ -144,5 +163,37 @@ impl From<&ConventionalCommit> for CommitContext {
         ctx.line = super::enrich::format_commit_line(&ctx, true);
         ctx.bullet = format!("- {}", ctx.line);
         ctx
+    }
+}
+
+pub(crate) fn extract_breaking_description(c: &ConventionalCommit) -> Option<String> {
+    for (k, v) in &c.footers {
+        if k == "BREAKING CHANGE" || k == "BREAKING-CHANGE" {
+            let trimmed = v.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
+    }
+    if let Some(body) = &c.body {
+        for prefix in [
+            "BREAKING CHANGE:",
+            "BREAKING-CHANGE:",
+            "BREAKING CHANGE :",
+            "BREAKING-CHANGE :",
+        ] {
+            if let Some(pos) = body.find(prefix) {
+                let rest = body[pos + prefix.len()..].trim();
+                let desc = rest.lines().next().unwrap_or("").trim();
+                if !desc.is_empty() {
+                    return Some(desc.to_string());
+                }
+            }
+        }
+    }
+    if c.is_breaking {
+        Some(c.description.clone())
+    } else {
+        None
     }
 }

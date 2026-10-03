@@ -135,6 +135,8 @@ fn test_format_commit_line_without_urls() {
         description: "resolve bug".to_string(),
         clean_description: "resolve bug".to_string(),
         is_breaking: false,
+        body: None,
+        breaking_description: None,
         hash: None,
         short_hash: Some("abc1234".to_string()),
         author: Some("Bob".to_string()),
@@ -613,6 +615,9 @@ fn test_interpolation_context_build_and_serialization() {
             repo_name: None,
             forge: None,
             project_name: Some("cutver".into()),
+            year: 2026,
+            month: 3,
+            day: 30,
         },
         "major",
         Some("main"),
@@ -651,4 +656,63 @@ fn test_template_rendering_with_project_and_project_name() {
         rendered,
         "Project: custom-project, Alias: custom-project, Repo: my-repo"
     );
+}
+
+#[test]
+fn test_commit_context_body_and_breaking_description() {
+    let msg = "feat(parser)!: rewrite parser\n\nDetailed body explaining why.\n\nBREAKING CHANGE: AST structure changed completely";
+    let c = ConventionalCommit::parse(msg).unwrap();
+    let ctx = CommitContext::from(&c);
+
+    assert_eq!(ctx.body.as_deref(), Some("Detailed body explaining why."));
+    assert_eq!(
+        ctx.breaking_description.as_deref(),
+        Some("AST structure changed completely")
+    );
+
+    let serialized = serde_json::to_value(&ctx).unwrap();
+    assert_eq!(serialized["body"], "Detailed body explaining why.");
+    assert_eq!(serialized["breaking_description"], "AST structure changed completely");
+    assert_eq!(
+        serialized["breaking_change_description"],
+        "AST structure changed completely"
+    );
+
+    let deserialized: CommitContext = serde_json::from_value(serialized).unwrap();
+    assert_eq!(deserialized.body.as_deref(), Some("Detailed body explaining why."));
+    assert_eq!(
+        deserialized.breaking_description.as_deref(),
+        Some("AST structure changed completely")
+    );
+}
+
+#[test]
+fn test_release_context_date_parts() {
+    let ctx = build_context_with_filter(
+        "1.2.3",
+        None,
+        "v1.2.3",
+        None,
+        "2026-04-15",
+        None,
+        &[],
+        vec![],
+        true,
+        "entry",
+        true,
+        &[],
+    );
+    assert_eq!(ctx.year, 2026);
+    assert_eq!(ctx.month, 4);
+    assert_eq!(ctx.day, 15);
+
+    let serialized = serde_json::to_value(&ctx).unwrap();
+    assert_eq!(serialized["year"], 2026);
+    assert_eq!(serialized["month"], 4);
+    assert_eq!(serialized["day"], 15);
+
+    let deserialized: ReleaseContext = serde_json::from_value(serialized).unwrap();
+    assert_eq!(deserialized.year, 2026);
+    assert_eq!(deserialized.month, 4);
+    assert_eq!(deserialized.day, 15);
 }

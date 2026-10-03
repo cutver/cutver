@@ -1,30 +1,5 @@
-use super::types::{AssembleContextParams, CommitContext, InterpolationContext, ReleaseContext};
+use super::types::{AssembleContextParams, CommitContext, ReleaseContext};
 use crate::conventional::ConventionalCommit;
-
-impl InterpolationContext {
-    /// Build an `InterpolationContext` from a `ReleaseContext`.
-    pub fn from_release_context(ctx: &ReleaseContext, bump_level: &str, branch: Option<&str>) -> Self {
-        InterpolationContext {
-            version: ctx.version.clone(),
-            previous_version: ctx.previous_version.clone(),
-            tag: ctx.tag.clone(),
-            previous_tag: ctx.previous_tag.clone(),
-            bump_level: bump_level.to_string(),
-            is_prerelease: ctx.is_prerelease,
-            prerelease: ctx.prerelease.clone(),
-            build: ctx.build.clone(),
-            major: ctx.major,
-            minor: ctx.minor,
-            patch: ctx.patch,
-            date: ctx.date.clone(),
-            branch: branch.map(String::from),
-            repo_owner: ctx.repo_owner.clone(),
-            repo_name: ctx.repo_name.clone(),
-            forge: ctx.forge.clone(),
-            project_name: ctx.project_name.clone(),
-        }
-    }
-}
 
 /// Helper to parse SemVer breakdown components.
 fn parse_semver_components(version: &str) -> (u64, u64, u64, bool, Option<String>, Option<String>) {
@@ -110,8 +85,10 @@ pub fn build_context_with_raw_and_filter(
             None
         };
 
-        let enriched =
+        let mut enriched =
             super::enrich::enrich_commit_context(CommitContext::from(c), matching_raw, Some(c), repository.as_deref());
+        enriched.body = c.body.clone();
+        enriched.breaking_description = super::commit::extract_breaking_description(c);
         let item = format!("- {}", super::enrich::format_commit_line(&enriched, include_scopes));
         commit_contexts.push(enriched);
 
@@ -159,6 +136,7 @@ pub fn build_context_with_raw_and_filter(
     };
 
     let (major, minor, patch, is_prerelease, prerelease, build) = parse_semver_components(version);
+    let (year, month, day) = super::release::parse_date_components(date);
 
     let forge_meta = repository.as_deref().map(super::parse::parse_repo_forge);
     let repo_owner = forge_meta.as_ref().and_then(|f| f.owner.clone());
@@ -195,6 +173,9 @@ pub fn build_context_with_raw_and_filter(
         repo_name,
         forge,
         project_name,
+        year,
+        month,
+        day,
     }
 }
 

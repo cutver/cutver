@@ -70,9 +70,11 @@ pub fn generate_fresh_config(discovery: &DiscoveryResult, no_template: bool) -> 
     out.push_str("\n[changelog]\n");
     out.push_str("path = \"CHANGELOG.md\"\n");
     out.push_str("format = \"keep-a-changelog\"\n");
-    out.push_str("mode = \"conventional\"\n");
     if !no_template {
+        out.push_str("mode = \"template\"\n");
         out.push_str("template_file = \".github/templates/cutver/RELEASE.md\"\n");
+    } else {
+        out.push_str("mode = \"conventional\"\n");
     }
 
     out.push_str("\n[git]\n");

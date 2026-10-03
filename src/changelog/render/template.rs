@@ -1,10 +1,67 @@
 use crate::changelog::Error;
 use crate::changelog::context::{InterpolationContext, ReleaseContext};
+use minijinja::Value;
+use std::collections::BTreeMap;
+
+fn env_global(key: &str) -> Option<String> {
+    std::env::var(key).ok()
+}
+
+fn group_by_scope_filter(seq: Vec<Value>) -> Value {
+    let mut named_groups: BTreeMap<String, Vec<Value>> = BTreeMap::new();
+    let mut other_items: Vec<Value> = Vec::new();
+
+    for item in seq {
+        let scope_str = item.get_attr("scope").ok().and_then(|v| v.as_str().map(String::from));
+        match scope_str {
+            Some(s) if !s.trim().is_empty() => {
+                named_groups.entry(s).or_default().push(item);
+            }
+            _ => {
+                other_items.push(item);
+            }
+        }
+    }
+
+    let mut result: Vec<(String, Vec<Value>)> = named_groups.into_iter().collect();
+    if !other_items.is_empty() {
+        result.push((String::new(), other_items));
+    }
+    Value::from_serialize(result)
+}
+
+fn group_by_type_filter(seq: Vec<Value>) -> Value {
+    let mut ordered_types: Vec<String> = Vec::new();
+    let mut groups: BTreeMap<String, Vec<Value>> = BTreeMap::new();
+
+    for item in seq {
+        let type_str = item
+            .get_attr("type")
+            .ok()
+            .or_else(|| item.get_attr("commit_type").ok())
+            .and_then(|v| v.as_str().map(String::from))
+            .unwrap_or_default();
+
+        if !groups.contains_key(&type_str) {
+            ordered_types.push(type_str.clone());
+        }
+        groups.entry(type_str).or_default().push(item);
+    }
+
+    let res: Vec<(String, Vec<Value>)> = ordered_types
+        .into_iter()
+        .filter_map(|t| groups.remove(&t).map(|items| (t, items)))
+        .collect();
+    Value::from_serialize(res)
+}
 
 /// Create a configured MiniJinja environment with custom globals.
 pub fn create_environment() -> minijinja::Environment<'static> {
     let mut env = minijinja::Environment::new();
     env.set_auto_escape_callback(|_| minijinja::AutoEscape::None);
+    env.add_function("env", env_global);
+    env.add_filter("group_by_scope", group_by_scope_filter);
+    env.add_filter("group_by_type", group_by_type_filter);
     env
 }
 

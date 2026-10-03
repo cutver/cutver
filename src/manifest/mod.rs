@@ -54,12 +54,12 @@ pub fn editor_for(entry: &config::Manifest) -> Result<Box<dyn ManifestEditor>, E
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{Manifest, ManifestKind};
+    use crate::config::{Manifest, ManifestKind, ManifestPath};
 
     #[test]
     fn editor_for_pyproject() {
         let entry = Manifest {
-            path: "pyproject.toml".into(),
+            path: ManifestPath::parse("pyproject.toml").unwrap(),
             primary: true,
             kind: ManifestKind::Pyproject { table: None },
         };
@@ -72,7 +72,7 @@ mod tests {
     #[test]
     fn editor_for_pyproject_with_table() {
         let entry = Manifest {
-            path: "pyproject.toml".into(),
+            path: ManifestPath::parse("pyproject.toml").unwrap(),
             primary: true,
             kind: ManifestKind::Pyproject {
                 table: Some("tool.poetry".into()),

@@ -15,7 +15,7 @@ pub(crate) fn deduce_current_source(config: &mut Config) -> Result<(), ConfigErr
         if let Some(p) = primary_path {
             config.version.current_source = p.to_string();
         } else {
-            config.version.current_source = config.manifest[0].path.clone();
+            config.version.current_source = config.manifest[0].path.to_string();
         }
     } else if let Some(p) = primary_path
         && config.version.current_source != p
@@ -35,7 +35,7 @@ pub(crate) fn validate(config: &Config) -> Result<(), ConfigError> {
     let mut seen = HashSet::new();
     for m in &config.manifest {
         if !seen.insert(&m.path) {
-            return Err(ConfigError::DuplicateManifestPath(m.path.clone()));
+            return Err(ConfigError::DuplicateManifestPath(m.path.to_string()));
         }
     }
     if !config.manifest.iter().any(|m| m.path == config.version.current_source) {

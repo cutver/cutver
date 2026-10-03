@@ -40,7 +40,7 @@ fn format_manifest_summary(config: &Config, theme: &crate::cli::style::Theme) ->
     let (path_str, ver_str) = match primary {
         Some(m) => {
             let ver = read_manifest_version(&config.root_dir, m).unwrap_or_else(|| "unknown".into());
-            (m.path.replace('\\', "/"), ver)
+            (m.path.as_str().to_string(), ver)
         }
         None => return "0 tracked".to_string(),
     };
@@ -171,7 +171,7 @@ fn pad_right(text: &str, width: usize) -> String {
 mod tests {
     use super::*;
     use crate::cli::style::Theme;
-    use crate::config::{Config, Manifest, ManifestKind, PreflightCommand, VersionSection};
+    use crate::config::{Config, Manifest, ManifestKind, ManifestPath, PreflightCommand, VersionSection};
     use std::path::PathBuf;
 
     #[test]
@@ -193,7 +193,7 @@ mod tests {
                 strategy: "manual".into(),
             },
             manifest: vec![Manifest {
-                path: "Cargo.toml".into(),
+                path: ManifestPath::parse("Cargo.toml").unwrap(),
                 primary: true,
                 kind: ManifestKind::CargoPackage,
             }],

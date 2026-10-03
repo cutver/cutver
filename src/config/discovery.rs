@@ -3,7 +3,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use super::preflight::parse_preflight;
-use super::types::{Config, ConfigError};
+use super::types::{Config, ConfigError, ManifestPath};
 use super::validation::{deduce_current_source, validate};
 
 pub fn load(path: impl AsRef<Path>) -> Result<Config, ConfigError> {
@@ -23,7 +23,8 @@ pub fn load(path: impl AsRef<Path>) -> Result<Config, ConfigError> {
     deduce_current_source(&mut config)?;
     config.version.current_source = resolve(&config.root_dir, &config.version.current_source);
     for m in &mut config.manifest {
-        m.path = resolve(&config.root_dir, &m.path);
+        let resolved = resolve(&config.root_dir, m.path.as_str());
+        m.path = ManifestPath::parse(resolved)?;
     }
     if let Some(ref mut p) = config.changelog.path {
         *p = resolve(&config.root_dir, p);
@@ -125,8 +126,11 @@ mod tests {
         );
         write(&d, "a", "");
         let c = load(d.join("release.toml")).unwrap();
-        let a = d.join("a").to_string_lossy().to_string();
-        assert_eq!((c.version.current_source, c.manifest[0].path.clone()), (a.clone(), a));
+        let a = d.join("a").to_string_lossy().replace('\\', "/");
+        assert_eq!(
+            (c.version.current_source.as_str(), c.manifest[0].path.as_str()),
+            (a.as_str(), a.as_str())
+        );
         assert_eq!(
             c.changelog.path,
             Some(d.join("CHANGELOG.md").to_string_lossy().to_string())
@@ -141,7 +145,10 @@ mod tests {
         );
         write(&d, "a", "");
         let c = load(d.join("release.toml")).unwrap();
-        assert_eq!((c.version.current_source, c.manifest[0].path.clone()), (a.clone(), a));
+        assert_eq!(
+            (c.version.current_source.as_str(), c.manifest[0].path.as_str()),
+            (a.as_str(), a.as_str())
+        );
 
         let d = tmp("cutver-cfg-discover");
         let s = d.join("sub");

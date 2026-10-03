@@ -20,7 +20,7 @@ pub fn doctor(config: &Config) -> Result<Vec<Drift>, Error> {
             let (_editor, _content, actual) = read_manifest(m)?;
             if actual != expected {
                 Ok(Some(Drift {
-                    path: m.path.clone(),
+                    path: m.path.to_string(),
                     expected: expected.to_string(),
                     actual: actual.to_string(),
                 }))

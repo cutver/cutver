@@ -87,11 +87,12 @@ pub(crate) fn strip_verbatim_prefix(path: PathBuf) -> PathBuf {
 
 fn resolve(root: &Path, path: &str) -> String {
     let p = Path::new(path);
-    if p.is_absolute() {
-        path.into()
+    let resolved = if p.is_absolute() {
+        strip_verbatim_prefix(p.to_path_buf())
     } else {
-        root.join(p).display().to_string()
-    }
+        strip_verbatim_prefix(root.join(p))
+    };
+    resolved.to_string_lossy().replace('\\', "/")
 }
 
 #[cfg(test)]

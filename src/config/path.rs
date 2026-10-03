@@ -117,37 +117,37 @@ impl From<ManifestPath> for String {
 
 impl PartialEq<str> for ManifestPath {
     fn eq(&self, other: &str) -> bool {
-        self.0 == other
+        self.0 == other || (other.contains('\\') && self.0 == other.replace('\\', "/"))
     }
 }
 
 impl PartialEq<&str> for ManifestPath {
     fn eq(&self, other: &&str) -> bool {
-        self.0 == *other
+        self.0 == *other || (other.contains('\\') && self.0 == other.replace('\\', "/"))
     }
 }
 
 impl PartialEq<String> for ManifestPath {
     fn eq(&self, other: &String) -> bool {
-        self.0 == *other
+        self.0 == *other || (other.contains('\\') && self.0 == other.replace('\\', "/"))
     }
 }
 
 impl PartialEq<ManifestPath> for str {
     fn eq(&self, other: &ManifestPath) -> bool {
-        self == other.as_str()
+        other == self
     }
 }
 
 impl PartialEq<ManifestPath> for &str {
     fn eq(&self, other: &ManifestPath) -> bool {
-        *self == other.as_str()
+        other == *self
     }
 }
 
 impl PartialEq<ManifestPath> for String {
     fn eq(&self, other: &ManifestPath) -> bool {
-        self.as_str() == other.as_str()
+        other == self
     }
 }
 

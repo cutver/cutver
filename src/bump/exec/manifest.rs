@@ -9,26 +9,43 @@ use crate::bump::{Change, Error, Touched};
 use crate::config::Config;
 use crate::manifest;
 
+pub struct SourceEntry<'a> {
+    pub manifest: &'a crate::config::Manifest,
+    pub path: String,
+}
+
+impl<'a> std::ops::Deref for SourceEntry<'a> {
+    type Target = crate::config::Manifest;
+
+    fn deref(&self) -> &Self::Target {
+        self.manifest
+    }
+}
+
 /// Single source of truth for mapping `config.version.current_source` to its
 /// manifest entry, editor, and current version. Used by both `run` and `doctor`
 /// to eliminate the previously duplicated lookup and error-mapping blocks.
 pub(crate) fn current_source(
     config: &Config,
-) -> Result<(&crate::config::Manifest, Box<dyn manifest::ManifestEditor>, Version), Error> {
+) -> Result<(SourceEntry<'_>, Box<dyn manifest::ManifestEditor>, Version), Error> {
     let entry = config.primary_manifest().ok_or_else(|| Error::Read {
         path: config.version.current_source.clone(),
         source: io::Error::new(io::ErrorKind::NotFound, "current_source manifest entry not found"),
     })?;
     let content = read(&entry.path)?;
     let editor = manifest::editor_for(entry).map_err(|e| Error::CurrentSource {
-        path: entry.path.clone(),
+        path: entry.path.to_string(),
         source: e,
     })?;
     let version = editor.read_version(&content).map_err(|e| Error::CurrentSource {
-        path: entry.path.clone(),
+        path: entry.path.to_string(),
         source: e,
     })?;
-    Ok((entry, editor, version))
+    let source_entry = SourceEntry {
+        manifest: entry,
+        path: entry.path.to_string(),
+    };
+    Ok((source_entry, editor, version))
 }
 
 pub(crate) fn read_manifest(
@@ -36,11 +53,11 @@ pub(crate) fn read_manifest(
 ) -> Result<(Box<dyn manifest::ManifestEditor>, String, Version), Error> {
     let content = read(&m.path)?;
     let editor = manifest::editor_for(m).map_err(|e| Error::Manifest {
-        path: m.path.clone(),
+        path: m.path.to_string(),
         source: e,
     })?;
     let version = editor.read_version(&content).map_err(|e| Error::Manifest {
-        path: m.path.clone(),
+        path: m.path.to_string(),
         source: e,
     })?;
     Ok((editor, content, version))
@@ -53,12 +70,12 @@ pub(crate) fn compute(config: &Config, next: &Version) -> Result<Vec<Change>, Er
         .map(|m| {
             let (editor, content, old) = read_manifest(m)?;
             let new = editor.write_version(&content, next).map_err(|e| Error::Manifest {
-                path: m.path.clone(),
+                path: m.path.to_string(),
                 source: e,
             })?;
             let changed = content != new;
             Ok(Change {
-                path: m.path.clone(),
+                path: m.path.to_string(),
                 old,
                 original: content,
                 new,

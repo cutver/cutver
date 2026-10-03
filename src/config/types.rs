@@ -3,6 +3,8 @@ use std::io;
 use std::path::PathBuf;
 use thiserror::Error;
 
+pub use super::path::ManifestPath;
+
 #[derive(Debug, Error)]
 pub enum ConfigError {
     #[error("failed to read config file: {0}")]
@@ -11,6 +13,8 @@ pub enum ConfigError {
     Parse(#[from] toml::de::Error),
     #[error("failed to parse config document: {0}")]
     DocumentParse(#[from] toml_edit::TomlError),
+    #[error("manifest path must not be empty")]
+    EmptyManifestPath,
     #[error("duplicate manifest path: {0}")]
     DuplicateManifestPath(String),
     #[error("current_source '{0}' is not declared as a manifest path")]
@@ -142,7 +146,7 @@ pub enum ManifestKind {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Manifest {
-    pub path: String,
+    pub path: ManifestPath,
     #[serde(default)]
     pub primary: bool,
     #[serde(flatten)]
@@ -422,12 +426,12 @@ kind = "cargo-package"
         assert!(cfg.primary_manifest().is_none());
 
         cfg.manifest.push(Manifest {
-            path: "Cargo.toml".into(),
+            path: ManifestPath::parse("Cargo.toml").unwrap(),
             primary: false,
             kind: ManifestKind::CargoPackage,
         });
         cfg.manifest.push(Manifest {
-            path: "package.json".into(),
+            path: ManifestPath::parse("package.json").unwrap(),
             primary: false,
             kind: ManifestKind::Json {
                 field: "version".into(),

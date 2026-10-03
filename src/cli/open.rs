@@ -61,10 +61,12 @@ pub fn resolve_target_url(remote_url: &str, target: &OpenTarget, tag_prefix: &st
     let base = remote_url.trim().trim_end_matches('/');
     let is_gitlab = base.contains("gitlab.com") || base.contains("/-/");
 
+    let prefix = crate::git::TagPrefix::new(tag_prefix);
+
     match target {
         OpenTarget::Repo => Ok(base.to_string()),
         OpenTarget::Release(ver) => {
-            let tag = normalize_tag(ver, tag_prefix);
+            let tag = prefix.format_tag(ver);
             let url = if is_gitlab {
                 format!("{base}/-/releases/{tag}")
             } else {
@@ -73,10 +75,10 @@ pub fn resolve_target_url(remote_url: &str, target: &OpenTarget, tag_prefix: &st
             Ok(url)
         }
         OpenTarget::Compare { base: b_opt, head } => {
-            let head_tag = normalize_tag(head, tag_prefix);
+            let head_tag = prefix.format_tag(head);
             let url = match b_opt {
                 Some(b) => {
-                    let base_tag = normalize_tag(b, tag_prefix);
+                    let base_tag = prefix.format_tag(b);
                     if is_gitlab {
                         format!("{base}/-/compare/{base_tag}...{head_tag}")
                     } else {
@@ -93,15 +95,6 @@ pub fn resolve_target_url(remote_url: &str, target: &OpenTarget, tag_prefix: &st
             };
             Ok(url)
         }
-    }
-}
-
-/// Helper to normalize tag using the project tag prefix if needed.
-fn normalize_tag(val: &str, prefix: &str) -> String {
-    if val == "HEAD" || val.starts_with(prefix) {
-        val.to_string()
-    } else {
-        format!("{prefix}{val}")
     }
 }
 

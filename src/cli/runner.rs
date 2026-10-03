@@ -254,29 +254,36 @@ fn resolve_release_tag_and_prefix(
     root_dir: &Path,
     content: &str,
     version: &str,
-) -> (String, String) {
-    let clean_ver = version.trim_start_matches(['v', 'V']);
+) -> (crate::git::TagName, crate::git::TagPrefix) {
+    let clean_ver = crate::git::TagName::parse(version)
+        .map(|t| t.normalize_version(&crate::git::TagPrefix::default()).to_string())
+        .unwrap_or_else(|_| version.trim_start_matches(['v', 'V']).to_string());
+
     if let Some(c) = cfg {
-        let prefix = c.git.tag_prefix.clone();
-        let tag = format!("{prefix}{clean_ver}");
+        let prefix = crate::git::TagPrefix::new(&c.git.tag_prefix);
+        let tag = prefix.format_tag(&clean_ver);
         return (tag, prefix);
     }
 
-    let v_tag = format!("v{clean_ver}");
-    if crate::git::tag_exists(root_dir, &v_tag).unwrap_or(false) {
-        return (v_tag, "v".to_string());
-    }
-    if crate::git::tag_exists(root_dir, clean_ver).unwrap_or(false) {
-        return (clean_ver.to_string(), String::new());
+    let v_prefix = crate::git::TagPrefix::new("v");
+    let v_tag = v_prefix.format_tag(&clean_ver);
+    if crate::git::tag_exists(root_dir, v_tag.as_str()).unwrap_or(false) {
+        return (v_tag, v_prefix);
     }
 
-    if let Some(raw) = find_raw_heading_version(content, clean_ver)
+    let empty_prefix = crate::git::TagPrefix::default();
+    let bare_tag = empty_prefix.format_tag(&clean_ver);
+    if crate::git::tag_exists(root_dir, bare_tag.as_str()).unwrap_or(false) {
+        return (bare_tag, empty_prefix);
+    }
+
+    if let Some(raw) = find_raw_heading_version(content, &clean_ver)
         && raw.starts_with(['v', 'V'])
     {
-        return (format!("v{clean_ver}"), "v".to_string());
+        return (v_tag, v_prefix);
     }
 
-    (clean_ver.to_string(), String::new())
+    (bare_tag, empty_prefix)
 }
 
 struct ReleaseTargetInfo {

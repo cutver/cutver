@@ -492,15 +492,19 @@ pub fn doctor_changelog(config: &Config) -> Result<ChangelogDrift, Error> {
     let mut missing_in_changelog = Vec::new();
     let mut normalized_tags = HashSet::new();
 
+    let prefix = git::TagPrefix::new(&config.git.tag_prefix);
     for tag in &git_tags {
-        if git::is_floating_major_tag(tag, Some(config.git.tag_prefix.as_str())) {
+        let Ok(tag_name) = git::TagName::parse(tag) else {
+            continue;
+        };
+        if tag_name.is_floating_major(&prefix) {
             continue;
         }
-        let normalized = normalize_tag(tag, &config.git.tag_prefix);
+        let normalized = tag_name.normalize_version(&prefix);
         if !changelog_set.contains(normalized) {
             missing_in_changelog.push(tag.clone());
         }
-        normalized_tags.insert(normalized);
+        normalized_tags.insert(normalized.to_string());
     }
 
     let mut orphan_sections = Vec::new();
@@ -514,19 +518,6 @@ pub fn doctor_changelog(config: &Config) -> Result<ChangelogDrift, Error> {
         missing_in_changelog,
         orphan_sections,
     })
-}
-
-fn normalize_tag<'a>(tag: &'a str, prefix: &str) -> &'a str {
-    let mut norm = tag.trim();
-    if !prefix.is_empty()
-        && let Some(rest) = norm.strip_prefix(prefix)
-    {
-        norm = rest;
-    }
-    if let Some(rest) = norm.strip_prefix(['v', 'V']) {
-        norm = rest;
-    }
-    norm
 }
 
 fn read(path: impl AsRef<Path>) -> Result<String, Error> {

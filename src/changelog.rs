@@ -8,9 +8,9 @@ mod render;
 mod update;
 
 pub use context::{
-    CommitContext, ForgeMetadata, InterpolationContext, ReleaseContext, build_context, build_context_auto,
-    build_context_with_filter, build_context_with_raw, build_context_with_raw_and_filter, enrich_commit_context,
-    filter_commits, parse_repo_forge,
+    AssembleContextParams, CommitContext, ForgeMetadata, InterpolationContext, ReleaseContext,
+    assemble_release_context, build_context, build_context_auto, build_context_with_filter, build_context_with_raw,
+    build_context_with_raw_and_filter, enrich_commit_context, filter_commits, parse_repo_forge,
 };
 pub use extract::{extract_latest, extract_version, list_versions, read_latest, read_version};
 pub use render::{create_environment, interpolate_string, render_body, render_body_with_context, render_template};

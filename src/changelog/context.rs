@@ -1240,9 +1240,67 @@ pub fn build_context_auto(
     )
 }
 
+pub struct AssembleContextParams<'a> {
+    pub version: &'a str,
+    pub prev_version: Option<&'a str>,
+    pub tag: &'a str,
+    pub prev_tag: Option<&'a str>,
+    pub date: &'a str,
+    pub repository: Option<String>,
+    pub parsed_commits: &'a [crate::conventional::ConventionalCommit],
+    pub raw_commits: Option<&'a [crate::git::RawCommit]>,
+    pub contributors: Vec<String>,
+    pub changelog_config: &'a crate::config::ChangelogConfig,
+}
+
+pub fn assemble_release_context(params: AssembleContextParams<'_>) -> ReleaseContext {
+    build_context_with_raw_and_filter(
+        params.version,
+        params.prev_version,
+        params.tag,
+        params.prev_tag,
+        params.date,
+        params.repository,
+        params.parsed_commits,
+        params.raw_commits,
+        params.contributors,
+        params.changelog_config.include_scopes,
+        &params.changelog_config.fallback_entry,
+        params.changelog_config.ignore_release_commits,
+        &params.changelog_config.ignore_scopes,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_assemble_release_context() {
+        let changelog_config = crate::config::Changelog::default();
+        let commits = vec![crate::conventional::ConventionalCommit::parse("feat: add feature").unwrap()];
+        let params = AssembleContextParams {
+            version: "1.2.0",
+            prev_version: Some("1.1.0"),
+            tag: "v1.2.0",
+            prev_tag: Some("v1.1.0"),
+            date: "2025-01-01",
+            repository: Some("https://github.com/owner/repo".into()),
+            parsed_commits: &commits,
+            raw_commits: None,
+            contributors: vec!["Alice".into()],
+            changelog_config: &changelog_config,
+        };
+        let ctx = assemble_release_context(params);
+        assert_eq!(ctx.version, "1.2.0");
+        assert_eq!(ctx.previous_version.as_deref(), Some("1.1.0"));
+        assert_eq!(ctx.tag, "v1.2.0");
+        assert_eq!(ctx.previous_tag.as_deref(), Some("v1.1.0"));
+        assert_eq!(ctx.date, "2025-01-01");
+        assert_eq!(ctx.repository.as_deref(), Some("https://github.com/owner/repo"));
+        assert_eq!(ctx.contributors, vec!["Alice"]);
+        assert_eq!(ctx.features, "- add feature");
+    }
 
     #[test]
     fn test_filter_commits_release_commits() {

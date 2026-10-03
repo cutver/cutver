@@ -366,11 +366,8 @@ fn resolve_changelog_context(
         .and_then(|p| config::load(p).ok())
         .or_else(|| std::env::current_dir().ok().and_then(|d| config::discover(d).ok()));
 
-    let include_scopes = cfg.as_ref().map(|c| c.changelog.include_scopes).unwrap_or(true);
-    let fallback_entry = cfg
-        .as_ref()
-        .map(|c| c.changelog.fallback_entry.as_str())
-        .unwrap_or("Maintenance and updates.");
+    let default_changelog = crate::config::Changelog::default();
+    let changelog_config = cfg.as_ref().map(|c| &c.changelog).unwrap_or(&default_changelog);
     let dummy_root = PathBuf::from(".");
     let root_dir = cfg
         .as_ref()
@@ -391,23 +388,18 @@ fn resolve_changelog_context(
     let date_str = extract_heading_date(content, &target.version)
         .unwrap_or_else(|| crate::changelog::format_date(std::time::SystemTime::now()));
 
-    let mut ctx = crate::changelog::build_context_with_raw_and_filter(
-        &target.version,
-        target.prev_version.as_deref(),
-        &tag,
-        prev_tag.as_deref(),
-        &date_str,
+    let mut ctx = crate::changelog::assemble_release_context(crate::changelog::AssembleContextParams {
+        version: &target.version,
+        prev_version: target.prev_version.as_deref(),
+        tag: &tag,
+        prev_tag: prev_tag.as_deref(),
+        date: &date_str,
         repository,
-        &parsed_commits,
-        Some(&target.raw_commits),
+        parsed_commits: &parsed_commits,
+        raw_commits: Some(&target.raw_commits),
         contributors,
-        include_scopes,
-        fallback_entry,
-        cfg.as_ref().map(|c| c.changelog.ignore_release_commits).unwrap_or(true),
-        &cfg.as_ref()
-            .map(|c| c.changelog.ignore_scopes.clone())
-            .unwrap_or_default(),
-    );
+        changelog_config,
+    });
 
     if parsed_commits.is_empty()
         && let Some(body) = crate::changelog::extract_version(content, &target.version, false)

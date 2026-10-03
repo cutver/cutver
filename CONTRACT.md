@@ -128,8 +128,10 @@ Every error surfaced to the user must answer three questions:
 - Components must validate themselves upon parsing (*Parse, Don't Validate*).
 
 ### 4. Atomic Primitives & Strict Single Responsibility
-- **Function Budget**: Functions must not exceed 35-40 lines of effective code. A function does exactly one thing: compute, parse, validate, or perform boundary I/O. Mixing responsibilities is forbidden.
-- **Module Budget**: Files must remain under 250-300 lines. When a module approaches this threshold, it must be decomposed into focused submodules.
+- **Function Budget**: Functions must not exceed 35–40 lines of effective code. A function does exactly one thing: compute, parse, validate, or perform boundary I/O. Mixing responsibilities is forbidden.
+- **Module Budget**: Production source files (`src/**/*.rs`) target $\le$ 300 lines with a strict hard ceiling of $\le$ 400 lines. When a file approaches 350 lines, decomposition into focused submodules via the Facade pattern (`foo.rs` + `foo/`) is mandatory.
+- **Thin CLI `main.rs` Budget**: $\le$ 50 lines (ideal $\le$ 20 lines). It only parses CLI arguments and delegates immediately to runner dispatch.
+- **Integration Test Suite Budget**: $\le$ 500 lines per domain suite (`tests/e2e_*.rs`), sharing common test fixtures and setup helpers in `tests/common/mod.rs`.
 - Functions must be pure, deterministic, and composable without hidden side-effects.
 
 ### 5. Invariants by Construction (Type-State & No Primitive Obsession)

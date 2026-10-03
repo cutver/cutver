@@ -21,6 +21,7 @@ toml_edit = "0.23"
 serde_json = "1"
 regex = "1"
 minijinja = { version = "2", features = ["builtins"] }
+rayon = "1"
 
 [profile.release]
 opt-level = 3

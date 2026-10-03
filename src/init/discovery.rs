@@ -1,3 +1,4 @@
+use rayon::prelude::*;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -44,6 +45,15 @@ pub struct EcosystemHints {
     pub has_node: bool,
     pub has_python: bool,
     pub has_uv_lock: bool,
+}
+
+impl EcosystemHints {
+    fn merge(&mut self, other: &EcosystemHints) {
+        self.has_rust |= other.has_rust;
+        self.has_node |= other.has_node;
+        self.has_python |= other.has_python;
+        self.has_uv_lock |= other.has_uv_lock;
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -191,8 +201,19 @@ fn scan_dir(
         }
     }
 
-    for subdir in subdirs {
-        scan_dir(root, &subdir, depth + 1, manifests, hints)?;
+    let child_results: Vec<(Vec<DiscoveredManifest>, EcosystemHints)> = subdirs
+        .par_iter()
+        .map(|subdir| {
+            let mut sub_manifests = Vec::new();
+            let mut sub_hints = EcosystemHints::default();
+            scan_dir(root, subdir, depth + 1, &mut sub_manifests, &mut sub_hints)?;
+            Ok((sub_manifests, sub_hints))
+        })
+        .collect::<io::Result<Vec<_>>>()?;
+
+    for (sub_manifests, sub_hints) in child_results {
+        manifests.extend(sub_manifests);
+        hints.merge(&sub_hints);
     }
 
     Ok(())

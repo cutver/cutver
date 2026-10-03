@@ -28,8 +28,15 @@ Every command that mutates files or Git state must adhere to a strict two-phase 
    - If any calculation, syntax check, or validation fails, abort immediately without touching a single byte on disk.
 2. **Phase 2: Apply & Rollback (Atomic I/O)**:
    - Apply mutations using atomic file writes (`crate::atomic::write_atomic`).
-   - If any write, hook, or staging step fails, trigger a best-effort rollback restoring every touched file to its original byte-for-byte content.
+   - **RAII Transaction Guarantee**: Rollback must be guaranteed structurally by the type system or RAII guards (e.g., transaction drop guards), never by scattering manual procedural `rollback()` invocations across error return paths.
+   - If any write, hook, or staging step fails, rollback restores every touched file to its original byte-for-byte content.
    - Never leave a workspace or Git repository in a half-mutated, corrupted state.
+
+### 3. Concurrency Boundaries & Mutation Serialization
+- **Strict Serialization of Mutations**: Mutating Git history (`stage`, `commit`, `tag`, `push`) or the workspace filesystem must be **strictly sequential**. Git enforces exclusive process locks (`.git/index.lock`); spawning concurrent tasks or threads during the mutation phase is strictly forbidden.
+- **Bounded Parallelism for Pure Read/Compute**: Concurrency (e.g., via `rayon` or parallel iterators) is strictly limited to:
+  1. Read-only filesystem discovery (traversing monorepo directories with hundreds of packages).
+  2. Pure in-memory computation (AST parsing across multiple manifests in `compute()` or drift analysis in `doctor()`).
 
 ---
 
@@ -52,9 +59,14 @@ Every command that mutates files or Git state must adhere to a strict two-phase 
 
 ## 💎 Pillar III: Type Rigor & Error Observability
 
-### 1. Parse, Don't Validate
-- Do not pass unstructured primitive types (`String`, `&str`) across domain boundaries.
-- Parse inputs at boundaries into rich domain types (`Version`, `BumpLevel`, `ManifestPath`, `ConventionalCommit`).
+### 1. Parse, Don't Validate & Mandatory Domain Newtypes
+- Do not pass unstructured primitive types (`String`, `&str`, `PathBuf`) across domain boundaries.
+- **Mandatory Domain Newtypes**:
+  - `TagName`: Must be validated upon creation against Git ref-format invariants (`git-check-ref-format`); unvalidated strings must never represent a Git tag.
+  - `TagPrefix`: Strongly typed tag prefix (e.g. `"v"` or custom namespace).
+  - `CommitSha`: Strongly typed Git commit hash with hexadecimal and length validation.
+  - `ManifestPath`: Workspace-relative or canonicalized repository path with strictly normalized forward slashes (`/`).
+- Parse inputs at boundaries into rich domain types (`Version`, `BumpLevel`, `ManifestPath`, `TagName`, `ConventionalCommit`).
 - Make invalid states unrepresentable through the type system.
 
 ### 2. Zero `unwrap()` or `expect()` in Production Code
@@ -123,4 +135,8 @@ Every error surfaced to the user must answer three questions:
 ### 5. Invariants by Construction (Type-State & No Primitive Obsession)
 - Critical workflows must represent valid states through the type system (Type-State pattern: `UnverifiedPlan -> ValidatedPlan -> StagedPlan`), making invalid transitions unrepresentable at compile time.
 - Primitive Obsession is forbidden: Domain-significant concepts (e.g., Git tags, commit hashes, paths) must use typed *Newtypes* rather than bare `String` primitives.
+
+### 6. Single Source of Truth & Zero Cross-Subcommand Duplication
+- **Single Canonical Domain Authority**: Critical domain heuristics (such as tag prefix normalization, changelog context assembly, author resolution, and primary manifest version deduction) must reside in exactly one canonical domain module (`crate::git`, `crate::changelog::context`, `crate::config`).
+- **Prohibition of Command-Level Logic Duplication**: CLI subcommands (`bump`, `doctor`, `changelog`, `open`) must never re-implement or clone parsing, filtering, or normalization heuristics. All subcommands must consume the same shared domain services.
 

@@ -184,25 +184,24 @@ pub fn run_with_first_release(
     };
 
     // Phase 2: write all changed manifests atomically, then write computed changelog atomically.
-    // On failure, best-effort rollback restores previously written files to their original content.
-    let (touched, mut paths_to_stage) = apply(&computed, &next, dry_run)?;
+    // An RAII MutationTransaction drop guard guarantees atomic rollback upon any early return or error.
+    let mut transaction = MutationTransaction::new(repo);
+    let (touched, mut paths_to_stage) = apply(&computed, &next, dry_run, &mut transaction)?;
 
-    let original_changelog = if let Some((cl_path, original, updated)) = changelog_update {
-        if !dry_run
-            && let Some(new_content) = updated
-            && let Err(e) = atomic::write_atomic(&cl_path, &new_content)
-        {
-            rollback(&computed, &paths_to_stage, None);
-            return Err(Error::Changelog(changelog::Error::Write {
-                path: cl_path.clone(),
-                source: e,
-            }));
+    if let Some((cl_path, original, updated)) = changelog_update {
+        if !dry_run && let Some(new_content) = updated {
+            if let Some(orig) = original {
+                transaction.record_backup(cl_path.clone(), orig);
+            }
+            if let Err(e) = atomic::write_atomic(&cl_path, &new_content) {
+                return Err(Error::Changelog(changelog::Error::Write {
+                    path: cl_path,
+                    source: e,
+                }));
+            }
         }
-        paths_to_stage.push(cl_path.clone());
-        original.map(|orig| (cl_path.clone(), orig))
-    } else {
-        None
-    };
+        paths_to_stage.push(cl_path);
+    }
 
     let summary_post_bump = if let Some(raw_post_bump) = &config.hooks.post_bump {
         let cmd = format_command(raw_post_bump, &interp_ctx)?;
@@ -213,24 +212,14 @@ pub fn run_with_first_release(
                 .arg(&cmd)
                 .current_dir(&config.root_dir)
                 .status()
-                .map_err(|e| {
-                    rollback(&computed, &paths_to_stage, original_changelog.as_ref());
-                    Error::PostBumpHookSpawn {
-                        command: cmd.clone(),
-                        source: e,
-                    }
+                .map_err(|e| Error::PostBumpHookSpawn {
+                    command: cmd.clone(),
+                    source: e,
                 })?;
             if !status.success() {
-                rollback(&computed, &paths_to_stage, original_changelog.as_ref());
                 return Err(Error::PostBumpHookFailed { command: cmd, status });
             }
-            let modified = match git::status_files(repo) {
-                Ok(m) => m,
-                Err(e) => {
-                    rollback(&computed, &paths_to_stage, original_changelog.as_ref());
-                    return Err(Error::Git(e));
-                }
-            };
+            let modified = git::status_files(repo).map_err(Error::Git)?;
             for f in modified {
                 let rel_f = Path::new(&f);
                 if !is_known_lockfile(rel_f) {
@@ -251,16 +240,12 @@ pub fn run_with_first_release(
         None
     };
 
-    git::stage(repo, &paths_to_stage, dry_run).map_err(|e| {
-        rollback(&computed, &paths_to_stage, original_changelog.as_ref());
-        unstage(repo);
-        Error::Stage(e)
-    })?;
-    git::commit_ext(repo, &commit_message, dry_run, paths_to_stage.is_empty()).map_err(|e| {
-        rollback(&computed, &paths_to_stage, original_changelog.as_ref());
-        unstage(repo);
-        Error::Commit(e)
-    })?;
+    git::stage(repo, &paths_to_stage, dry_run).map_err(Error::Stage)?;
+    if !dry_run {
+        transaction.mark_staged();
+    }
+    git::commit_ext(repo, &commit_message, dry_run, paths_to_stage.is_empty()).map_err(Error::Commit)?;
+    transaction.commit();
     let tag_report = git::tag(repo, &tag, &next.to_string(), dry_run).map_err(|e| Error::Tag {
         tag: tag.clone(),
         source: e,
@@ -388,11 +373,15 @@ fn compute(config: &Config, next: &Version) -> Result<Vec<Change>, Error> {
     Ok(out)
 }
 
-fn apply(computed: &[Change], next: &Version, dry_run: bool) -> Result<(Vec<Touched>, Vec<String>), Error> {
+fn apply(
+    computed: &[Change],
+    next: &Version,
+    dry_run: bool,
+    transaction: &mut MutationTransaction<'_>,
+) -> Result<(Vec<Touched>, Vec<String>), Error> {
     let mut touched = Vec::new();
     let mut paths = Vec::new();
-    let mut written: Vec<usize> = Vec::new();
-    for (i, c) in computed.iter().enumerate() {
+    for c in computed {
         touched.push(Touched {
             path: c.path.clone(),
             old: c.old.to_string(),
@@ -402,40 +391,59 @@ fn apply(computed: &[Change], next: &Version, dry_run: bool) -> Result<(Vec<Touc
             continue;
         }
         if !dry_run {
-            if let Err(e) = atomic::write_atomic(&c.path, &c.new) {
-                let mut rollback = String::new();
-                for &wi in &written {
-                    if let Err(re) = atomic::write_atomic(&computed[wi].path, &computed[wi].original) {
-                        rollback.push_str(&format!("failed to restore {}: {}; ", computed[wi].path, re));
-                    }
-                }
-                if rollback.is_empty() {
-                    rollback = "all restored.".into();
-                }
-                return Err(Error::WriteRollback {
-                    path: c.path.clone(),
-                    source: e,
-                    rollback,
-                });
-            }
-            written.push(i);
+            transaction.record_backup(c.path.clone(), c.original.clone());
+            atomic::write_atomic(&c.path, &c.new).map_err(|e| Error::WriteRollback {
+                path: c.path.clone(),
+                source: e,
+                rollback: "transaction rollback on drop.".into(),
+            })?;
         }
         paths.push(c.path.clone());
     }
     Ok((touched, paths))
 }
 
-fn rollback(computed: &[Change], paths: &[String], changelog: Option<&(String, String)>) {
-    let set: HashSet<&str> = paths.iter().map(|s| s.as_str()).collect();
-    for c in computed {
-        if set.contains(c.path.as_str()) {
-            let _ = atomic::write_atomic(&c.path, &c.original);
+pub struct MutationTransaction<'a> {
+    repo: &'a Path,
+    backups: Vec<(String, String)>,
+    needs_unstage: bool,
+    active: bool,
+}
+
+impl<'a> MutationTransaction<'a> {
+    pub fn new(repo: &'a Path) -> Self {
+        Self {
+            repo,
+            backups: Vec::new(),
+            needs_unstage: false,
+            active: true,
         }
     }
-    if let Some((path, orig)) = changelog
-        && set.contains(path.as_str())
-    {
-        let _ = atomic::write_atomic(path, orig);
+
+    pub fn record_backup(&mut self, path: String, original: String) {
+        self.backups.push((path, original));
+    }
+
+    pub fn mark_staged(&mut self) {
+        self.needs_unstage = true;
+    }
+
+    pub fn commit(mut self) {
+        self.active = false;
+    }
+}
+
+impl<'a> Drop for MutationTransaction<'a> {
+    fn drop(&mut self) {
+        if !self.active {
+            return;
+        }
+        for (path, original) in self.backups.iter().rev() {
+            let _ = atomic::write_atomic(path, original);
+        }
+        if self.needs_unstage {
+            unstage(self.repo);
+        }
     }
 }
 

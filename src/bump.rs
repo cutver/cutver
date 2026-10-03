@@ -469,4 +469,38 @@ mod tests {
         perms.set_readonly(false);
         let _ = fs::set_permissions(&b, perms);
     }
+
+    #[test]
+    #[cfg_attr(not(unix), ignore)]
+    #[allow(clippy::permissions_set_readonly_false)]
+    fn changelog_write_failure_restores_previously_written_manifests() {
+        let dir = tmp("cutver-bump-cl-rollback");
+        let a = dir.join("a");
+        let cl_dir = dir.join("cl");
+        fs::create_dir_all(&a).unwrap();
+        fs::create_dir_all(&cl_dir).unwrap();
+        write(&a, "package.json", r#"{"version": "1.2.3"}"#);
+        let pkg = a.join("package.json").to_string_lossy().to_string();
+        let cl_path = cl_dir.join("CHANGELOG.md").to_string_lossy().to_string();
+        write(&cl_dir, "CHANGELOG.md", "# Changelog\n\n## [1.2.3] - 2024-01-01\n");
+        write(
+            &dir,
+            "release.toml",
+            &format!(
+                "[version]\ncurrent_source = \"{pkg}\"\n[git]\nrequire_clean_tree = false\n[changelog]\npath = \"{cl_path}\"\n[[manifest]]\npath = \"{pkg}\"\nkind = \"json\"\nfield = \"version\"\n"
+            ),
+        );
+        let mut perms = fs::metadata(&cl_dir).unwrap().permissions();
+        perms.set_readonly(true);
+        fs::set_permissions(&cl_dir, perms).unwrap();
+        let cfg = config::load(dir.join("release.toml")).unwrap();
+        assert!(run(&cfg, Bump::Minor, false, &[]).is_err());
+        assert_eq!(
+            fs::read_to_string(a.join("package.json")).unwrap(),
+            r#"{"version": "1.2.3"}"#
+        );
+        let mut perms = fs::metadata(&cl_dir).unwrap().permissions();
+        perms.set_readonly(false);
+        let _ = fs::set_permissions(&cl_dir, perms);
+    }
 }

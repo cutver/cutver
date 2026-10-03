@@ -23,3 +23,6 @@ Goal: Implement Issue #125 adhering strictly to `CONTRACT.md` Pillars I, II, III
 - Fail-fast Phase 1 changelog template verification tested via `tests/e2e_bump.rs`.
 - Native MiniJinja filters `group_by_scope`, `group_by_type`, and `env` tested in `src/changelog/render/tests.rs`.
 - `CommitContext` (`body`, `breaking_description`) and `ReleaseContext` (`year`, `month`, `day`) tested with JSON roundtripping in `src/changelog/context/tests.rs`.
+
+### Work-Unit Commit
+- Commit: `a1133db` (`feat(changelog): template resolution against root_dir, fail-fast template errors, commit body/breaking details, and MiniJinja helpers (#125)`)

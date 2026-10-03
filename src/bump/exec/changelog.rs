@@ -66,7 +66,7 @@ pub(crate) fn prepare_changelog(params: ChangelogPlanParams<'_>) -> Result<Optio
             contributors,
             changelog_config: &params.config.changelog,
         });
-        let body = changelog::render_body_with_context(&params.config.changelog, &commits, &context);
+        let body = changelog::render_body_with_context(&params.config.changelog, &commits, &context)?;
         let orig_content = original.as_deref().unwrap_or_default();
         changelog::compute_update(
             orig_content,

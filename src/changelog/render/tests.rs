@@ -64,7 +64,7 @@ fn test_render_body_template_mode() {
         ..Default::default()
     };
     let commits = vec![ConventionalCommit::parse("feat: something").unwrap()];
-    let body = render_body(&config, &commits, None);
+    let body = render_body(&config, &commits, None).unwrap();
     assert_eq!(body, "Static release notes template.");
 }
 
@@ -87,7 +87,7 @@ fn test_render_body_inline_template() {
         true,
         "Maintenance and updates.",
     );
-    let body = render_body(&config, &commits, Some(&ctx));
+    let body = render_body(&config, &commits, Some(&ctx)).unwrap();
     assert!(body.starts_with("Version 1.0.0"));
     assert!(body.contains("- new cool thing"));
 }
@@ -111,7 +111,7 @@ fn test_render_body_with_context_helper() {
         true,
         "Maintenance and updates.",
     );
-    let body = render_body_with_context(&config, &commits, &ctx);
+    let body = render_body_with_context(&config, &commits, &ctx).unwrap();
     assert!(body.starts_with("Version 2.5.0"));
     assert!(body.contains("- helper feature"));
 }
@@ -129,7 +129,7 @@ fn test_render_body_conventional_groups() {
         ConventionalCommit::parse("custom: something else").unwrap(),
         ConventionalCommit::parse("feat!: breaking change").unwrap(),
     ];
-    let body = render_body(&config, &commits, None);
+    let body = render_body(&config, &commits, None).unwrap();
     let expected = "\
 ### ⚠️ Breaking Changes
 - breaking change
@@ -168,7 +168,7 @@ fn test_render_body_scopes() {
         include_scopes: true,
         ..Default::default()
     };
-    let body_with_scopes = render_body(&config_with_scopes, &commits, None);
+    let body_with_scopes = render_body(&config_with_scopes, &commits, None).unwrap();
     assert!(body_with_scopes.contains("- **core**: parser rewrite"));
     assert!(body_with_scopes.contains("- general fix"));
 
@@ -176,7 +176,7 @@ fn test_render_body_scopes() {
         include_scopes: false,
         ..Default::default()
     };
-    let body_without_scopes = render_body(&config_without_scopes, &commits, None);
+    let body_without_scopes = render_body(&config_without_scopes, &commits, None).unwrap();
     assert!(body_without_scopes.contains("- parser rewrite"));
     assert!(!body_without_scopes.contains("**core**"));
 }
@@ -187,7 +187,7 @@ fn test_render_body_fallback_when_empty() {
         fallback_entry: "Custom fallback notes.".into(),
         ..Default::default()
     };
-    let body = render_body(&config, &[], None);
+    let body = render_body(&config, &[], None).unwrap();
     assert_eq!(body, "- Custom fallback notes.");
 }
 
@@ -266,4 +266,68 @@ fn test_interpolate_string_with_legacy_and_minijinja() {
     // Fails fast on malformed template syntax without swallowing error
     let malformed = "release: {{ tag [unclosed";
     assert!(interpolate_string(malformed, &ctx).is_err());
+}
+
+#[test]
+fn test_minijinja_filters_and_env_global() {
+    unsafe {
+        std::env::set_var("CUTVER_TEST_ENV_VAR", "cutver_awesome_val");
+    }
+
+    let commits = vec![
+        ConventionalCommit::parse("feat(api): add endpoint\n\nBody details.").unwrap(),
+        ConventionalCommit::parse("fix: patch bug").unwrap(),
+        ConventionalCommit::parse("feat(core): core engine\n\nBREAKING CHANGE: broke api").unwrap(),
+        ConventionalCommit::parse("fix(api): fix endpoint typo").unwrap(),
+    ];
+
+    let ctx = build_context(
+        "2.0.0",
+        None,
+        "v2.0.0",
+        None,
+        "2026-04-01",
+        None,
+        &commits,
+        vec![],
+        true,
+        "fallback",
+    );
+
+    let tpl = r#"
+Env: {{ env("CUTVER_TEST_ENV_VAR") }}
+Date: {{ year }}-{{ month }}-{{ day }}
+{% for scope, scoped_commits in commits | group_by_scope %}
+Scope: [{{ scope }}]
+{% for c in scoped_commits %}
+  - {{ c.type }}: {{ c.description }} | body: {{ c.body }} | breaking: {{ c.breaking_description }}
+{% endfor %}
+{% endfor %}
+{% for type, typed_commits in commits | group_by_type %}
+Type: [{{ type }}]
+{% for c in typed_commits %}
+  - {{ c.description }}
+{% endfor %}
+{% endfor %}
+"#;
+
+    let res = render_template(tpl, &ctx).unwrap();
+    assert!(res.contains("Env: cutver_awesome_val"));
+    assert!(res.contains("Date: 2026-4-1"));
+
+    // Scopes should be ordered: "api", "core", then "" (other)
+    let pos_api = res.find("Scope: [api]").unwrap();
+    let pos_core = res.find("Scope: [core]").unwrap();
+    let pos_empty = res.find("Scope: []").unwrap();
+    assert!(pos_api < pos_core);
+    assert!(pos_core < pos_empty);
+
+    // Check body and breaking_description in rendered output
+    assert!(res.contains("body: Body details."));
+    assert!(res.contains("breaking: broke api"));
+
+    // Types ordered as first seen: feat, then fix
+    let pos_feat = res.find("Type: [feat]").unwrap();
+    let pos_fix = res.find("Type: [fix]").unwrap();
+    assert!(pos_feat < pos_fix);
 }

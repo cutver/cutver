@@ -1,9 +1,40 @@
 use super::template::render_template;
+use crate::changelog::Error;
 use crate::changelog::context::ReleaseContext;
 use crate::config::Changelog;
 use crate::conventional::ConventionalCommit;
 use std::fs;
 use std::path::Path;
+
+fn resolve_template_path(file_path: &str) -> std::path::PathBuf {
+    let p = Path::new(file_path);
+    if p.is_relative() {
+        if p.exists() {
+            p.to_path_buf()
+        } else {
+            match std::env::current_dir() {
+                Ok(cd) => cd.join(p),
+                Err(_) => p.to_path_buf(),
+            }
+        }
+    } else {
+        p.to_path_buf()
+    }
+}
+
+fn load_template_string(config: &Changelog) -> Result<String, Error> {
+    if let Some(ref t) = config.template {
+        Ok(t.clone())
+    } else if let Some(ref file_path) = config.template_file {
+        let full_path = resolve_template_path(file_path);
+        fs::read_to_string(&full_path).map_err(|e| Error::TemplateFileRead {
+            path: full_path.display().to_string(),
+            source: e,
+        })
+    } else {
+        Ok(config.entry_template.clone())
+    }
+}
 
 /// Render the Keep-a-Changelog section body for a release based on `config`, parsed `commits`,
 /// and an optional authoritative `ReleaseContext`.
@@ -11,34 +42,9 @@ pub fn render_body(
     config: &Changelog,
     commits: &[ConventionalCommit],
     context_override: Option<&ReleaseContext>,
-) -> String {
+) -> Result<String, Error> {
     if config.template.is_some() || config.template_file.is_some() || config.mode == "template" {
-        let template_str = if let Some(ref t) = config.template {
-            t.clone()
-        } else if let Some(ref file_path) = config.template_file {
-            let p = Path::new(file_path);
-            let full_path = if p.is_relative() {
-                if p.exists() {
-                    p.to_path_buf()
-                } else {
-                    match std::env::current_dir() {
-                        Ok(cd) => cd.join(p),
-                        Err(_) => p.to_path_buf(),
-                    }
-                }
-            } else {
-                p.to_path_buf()
-            };
-            match fs::read_to_string(&full_path) {
-                Ok(content) => content,
-                Err(e) => {
-                    return format!("<!-- Error reading template file '{}': {} -->", full_path.display(), e);
-                }
-            }
-        } else {
-            config.entry_template.clone()
-        };
-
+        let template_str = load_template_string(config)?;
         let fallback_ctx;
         let context = match context_override {
             Some(ctx) => ctx,
@@ -62,14 +68,9 @@ pub fn render_body(
             }
         };
 
-        match render_template(&template_str, context) {
-            Ok(rendered) => rendered,
-            Err(e) => {
-                format!("<!-- Template render error: {e} -->\n{}", context.all_changes)
-            }
-        }
+        render_template(&template_str, context)
     } else {
-        render_conventional(config, commits)
+        Ok(render_conventional(config, commits))
     }
 }
 
@@ -78,7 +79,7 @@ pub fn render_body_with_context(
     config: &Changelog,
     commits: &[ConventionalCommit],
     context: &ReleaseContext,
-) -> String {
+) -> Result<String, Error> {
     render_body(config, commits, Some(context))
 }
 

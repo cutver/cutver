@@ -111,6 +111,7 @@ pub struct Summary {
     pub publish_push_command: Option<String>,
     pub publish_commands: Vec<String>,
     pub rationale: Option<crate::conventional::BumpRationale>,
+    pub root_dir: Option<std::path::PathBuf>,
 }
 
 #[derive(Debug)]

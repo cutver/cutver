@@ -4,55 +4,32 @@
 ### ⚠️ Breaking Changes
 {% for c in commits if c.is_breaking -%}
 - {{ c.line }}
+{%- if c.breaking_description %}
+  > ⚠️ **Migration**: {{ c.breaking_description }}
+{%- endif %}
 {% endfor %}
 {%- endif %}
 
-{%- if features %}
+{%- for type, type_commits in commits | group_by_type %}
+{%- if type == 'feat' %}
 ### 🚀 Features & Enhancements
-{% for c in commits if c.commit_type == 'feat' and not c.is_breaking -%}
-- {{ c.line }}
-{% endfor %}
-{%- endif %}
-
-{%- if fixes %}
+{%- elif type == 'fix' %}
 ### 🐛 Bug Fixes
-{% for c in commits if c.commit_type == 'fix' and not c.is_breaking -%}
-- {{ c.line }}
-{% endfor %}
-{%- endif %}
-
-{%- if perf %}
+{%- elif type == 'perf' %}
 ### ⚡ Performance Improvements
-{% for c in commits if c.commit_type == 'perf' and not c.is_breaking -%}
-- {{ c.line }}
-{% endfor %}
-{%- endif %}
-
-{%- if refactor %}
+{%- elif type == 'refactor' %}
 ### 🔄 Code Refactoring
-{% for c in commits if c.commit_type == 'refactor' and not c.is_breaking -%}
-- {{ c.line }}
-{% endfor %}
-{%- endif %}
-
-{%- if docs %}
+{%- elif type == 'docs' %}
 ### 📚 Documentation
-{% for c in commits if c.commit_type == 'docs' and not c.is_breaking -%}
-- {{ c.line }}
-{% endfor %}
-{%- endif %}
-
-{%- if maintenance %}
+{%- elif type in ['chore', 'build', 'ci', 'test', 'style', 'revert'] %}
 ### 🛠️ Maintenance & Dependencies
-{% for c in commits if c.commit_type in ['chore', 'build', 'ci', 'test'] and not c.is_breaking -%}
+{%- else %}
+### 📦 {{ type | title }}
+{%- endif %}
+{% for c in type_commits if not c.is_breaking -%}
 - {{ c.line }}
 {% endfor %}
-{%- endif %}
-
-{%- if other %}
-### 📦 Other Changes
-{{ other }}
-{%- endif %}
+{%- endfor %}
 
 {%- if contributors %}
 ### 👥 Contributors
@@ -61,7 +38,8 @@
 {% endfor %}
 {%- endif %}
 
-{%- if compare_url %}
 ---
+{%- if compare_url %}
 **Full Changelog**: {{ compare_url }}
 {%- endif %}
+{%- if env("GITHUB_RUN_NUMBER") %} • *CI Build #{{ env("GITHUB_RUN_NUMBER") }}*{%- endif %}

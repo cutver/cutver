@@ -100,18 +100,36 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
+            slug: linux-x86_64
             archive: tar.gz
           - os: ubuntu-latest
             target: x86_64-unknown-linux-musl
+            slug: linux-musl-x86_64
             archive: tar.gz
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            slug: linux-arm64
+            archive: tar.gz
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-musl
+            slug: linux-musl-arm64
+            archive: tar.gz
+            use_cross: true
           - os: macos-latest
             target: x86_64-apple-darwin
+            slug: macos-x86_64
             archive: tar.gz
           - os: macos-latest
             target: aarch64-apple-darwin
+            slug: macos-arm64
             archive: tar.gz
           - os: windows-latest
             target: x86_64-pc-windows-msvc
+            slug: windows-x86_64
+            archive: zip
+          - os: windows-latest
+            target: aarch64-pc-windows-msvc
+            slug: windows-arm64
             archive: zip
     runs-on: ${{ matrix.os }}
     steps:
@@ -129,15 +147,30 @@ jobs:
         if: matrix.target == 'x86_64-unknown-linux-musl'
         run: sudo apt-get update && sudo apt-get install -y musl-tools
 
+      - name: Install aarch64 gcc compiler
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Install cross
+        if: matrix.use_cross == true
+        uses: taiki-e/install-action@cross
+
+      - name: Build (cross)
+        if: matrix.use_cross == true
+        run: cross build --locked --release --target ${{ matrix.target }}
+
       - name: Build
+        if: matrix.use_cross != true
         run: cargo build --locked --release --target ${{ matrix.target }}
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: ${{ matrix.target == 'aarch64-unknown-linux-gnu' && 'aarch64-linux-gnu-gcc' || '' }}
 
       - name: Package (unix)
         if: matrix.archive == 'tar.gz'
         run: |
           TAG="${{ needs.version.outputs.tag }}"
           VERSION="${TAG#v}"
-          OUT="cutver-${VERSION}-${{ matrix.target }}"
+          OUT="cutver-${VERSION}-${{ matrix.slug }}"
           mkdir "$OUT"
           cp target/${{ matrix.target }}/release/cutver "$OUT/"
           tar -czf "${OUT}.tar.gz" "$OUT"
@@ -150,7 +183,7 @@ jobs:
         run: |
           $tag = "${{ needs.version.outputs.tag }}"
           $version = $tag.Substring(1)
-          $out = "cutver-$version-${{ matrix.target }}"
+          $out = "cutver-$version-${{ matrix.slug }}"
           New-Item -ItemType Directory -Path $out | Out-Null
           Copy-Item "target/${{ matrix.target }}/release/cutver.exe" "$out/"
           Compress-Archive -Path $out -DestinationPath "$out.zip"
@@ -160,7 +193,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v5
         with:
-          name: asset-${{ matrix.target }}
+          name: asset-${{ matrix.slug }}
           path: dist/*
 
   publish:

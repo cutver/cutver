@@ -14,8 +14,8 @@ Goal: Provide official multi-architecture OCI container packaging for `cutver` v
 
 | Task | Commit | Checks |
 | --- | --- | --- |
-| 1 | verified | `podman build -t cutver:test -f Containerfile .` completed successfully; verified multi-stage static musl binary build + Alpine 3.24 runtime with git, ca-certificates, openssh-client, and safe.directory '*' |
-| 2 | verified | `.github/workflows/container.yml` created with QEMU, Buildx, GHCR login, docker/metadata-action@v6, and docker/build-push-action@v7 targeting `linux/amd64,linux/arm64` with GHA caching |
-| 3 | verified | Podman execution verified: `cutver --version` -> `cutver 0.10.0`, `cutver doctor` -> `✔ cutver.toml is valid`, and `cutver changelog show 0.10.0` inside container with workspace volume mount |
-| 4 | verified | Updated `README.md` with install section OCI references and comprehensive guide covering Podman, Docker, GitHub Actions `docker://`, and GitLab CI |
-| 5 | verified | `cargo test` (385 passed; 0 failed), `cargo clippy --all-targets -- -D warnings` (clean), `cargo fmt -- --check` (clean) |
+| 1 | f6388a6 | `podman build -t cutver:test -f Containerfile .` completed successfully; verified multi-stage static musl binary build + Alpine 3.24 runtime with git, ca-certificates, openssh-client, and safe.directory '*' |
+| 2 | f6388a6 | `.github/workflows/container.yml` created with QEMU, Buildx, GHCR login, docker/metadata-action@v6, and docker/build-push-action@v7 targeting `linux/amd64,linux/arm64` with GHA caching |
+| 3 | f6388a6 | Podman execution verified: `cutver --version` -> `cutver 0.10.0`, `cutver doctor` -> `✔ cutver.toml is valid`, and `cutver changelog show 0.10.0` inside container with workspace volume mount |
+| 4 | f6388a6 | Updated `README.md` with install section OCI references and comprehensive guide covering Podman, Docker, GitHub Actions `docker://`, and GitLab CI |
+| 5 | f6388a6 | `cargo test` (385 passed; 0 failed), `cargo clippy --all-targets -- -D warnings` (clean), `cargo fmt -- --check` (clean) |

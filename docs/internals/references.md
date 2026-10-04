@@ -163,11 +163,11 @@ Filtered commits do not appear under conventional sections (e.g. `### Maintenanc
 
 ---
 
-## Dynamic Changelog & Release Notes Templating (MiniJinja)
+## Dynamic Changelog & Release Notes Templating
 
-`cutver` supports expressive, dynamic release notes and changelog templating powered by [MiniJinja](https://github.com/mitsuhiko/minijinja). Templates can be defined inline via `[changelog] template`, loaded from an external file via `[changelog] template_file`, or supplied on the command line via `--template <PATH>`.
+`cutver` supports expressive, dynamic release notes and changelog templating. Templates can be defined inline via `[changelog] template`, loaded from an external file via `[changelog] template_file`, or supplied on the command line via `--template <PATH>`.
 
-Auto-escaping is disabled (`AutoEscape::None`) so Markdown characters (`*`, `<`, `>`, `&`, `#`) are never HTML-escaped.
+Auto-escaping is disabled so Markdown characters (`*`, `<`, `>`, `&`, `#`) are never HTML-escaped.
 
 ### Available Template Variables
 
@@ -217,7 +217,7 @@ Each object in `commits` provides rich Git and forge metadata:
 ### Full Templates & Header Configuration
 
 - **`full_template`**: When set to `true` (or when the template content begins with `# ` or `## `), `cutver` treats the template as generating the complete release section including its heading, bypassing the default `## [{version}] - {date}` heading prefix.
-- **`header_template`**: Custom MiniJinja template string used to format the release heading (e.g. `"## Release candidate {{ tag }} (v{{ version }})"`), evaluated with `version`, `tag`, and `date`.
+- **`header_template`**: Custom template string used to format the release heading (e.g. `"## Release candidate {{ tag }} (v{{ version }})"`), evaluated with `version`, `tag`, and `date`.
 
 ### Template Invariants
 
@@ -376,7 +376,7 @@ cutver changelog latest [OPTIONS]
 - `-H, --include-header`: Includes the release title header (e.g. `## [0.3.1] - 2026-09-20`) in the output (default: emits only the markdown body, ideal for `--notes`).
 - `-p, --path <PATH>`: Explicit path to the changelog file (bypasses configuration discovery).
 - `-c, --config <PATH>`: Explicit path to `cutver.toml`.
-- `--template <PATH>`: Optional path to an arbitrary MiniJinja template file to format the output.
+- `--template <PATH>`: Optional path to an arbitrary template file to format the output.
 
 #### Exit Codes
 - `0`: Success. Emitted release notes to `stdout`.
@@ -399,7 +399,7 @@ cutver changelog show <VERSION> [OPTIONS]
 - `-H, --include-header`: Includes the release title header (e.g. `## [0.2.0] - 2026-09-19`) in the output (default: emits only the markdown body, ideal for `--notes`).
 - `-p, --path <PATH>`: Explicit path to the changelog file (bypasses configuration discovery).
 - `-c, --config <PATH>`: Explicit path to `cutver.toml`.
-- `--template <PATH>`: Optional path to an arbitrary MiniJinja template file to format the output.
+- `--template <PATH>`: Optional path to an arbitrary template file to format the output.
 
 #### Exit Codes
 - `0`: Success. Emitted release notes to `stdout`.

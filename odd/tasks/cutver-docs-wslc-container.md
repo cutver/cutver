@@ -8,6 +8,7 @@ Goal: Document native execution of `cutver` container images on Windows using WS
 - [x] Task 3: Commit and record verification evidence
 
 ## Verification Evidence
+- Commit: `15d0763` merged into `main` via PR #138
 - Line count check: `wc -l docs/integrations/containers.md` -> 125 lines (within budget 110-150 lines).
 - Formatting check: `cargo fmt -- --check` -> pass (clean exit 0).
 - Linter check: `cargo clippy --all-targets -- -D warnings` -> pass (clean exit 0).

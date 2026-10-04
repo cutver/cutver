@@ -77,7 +77,22 @@ podman pull ghcr.io/cutver/cutver:latest
 ```
 
 **Via Precompiled Binaries:**
-Download cryptographic Cosign-signed binaries directly from [GitHub Releases](https://github.com/cutver/cutver/releases) for Linux (GNU/Musl), macOS (Apple Silicon/Intel), and Windows.
+Download cryptographic Cosign-signed binaries directly from [GitHub Releases](https://github.com/cutver/cutver/releases) using declarative asset names (`cutver-<version>-<slug>.<ext>`) covering 8 modern 64-bit platforms:
+
+| Platform | Target Slug | Target Triple | Archive |
+| :--- | :--- | :--- | :--- |
+| **Linux x86_64** (glibc) | `linux-x86_64` | `x86_64-unknown-linux-gnu` | `.tar.gz` |
+| **Linux x86_64** (musl) | `linux-musl-x86_64` | `x86_64-unknown-linux-musl` | `.tar.gz` |
+| **Linux ARM64** (glibc) | `linux-arm64` | `aarch64-unknown-linux-gnu` | `.tar.gz` |
+| **Linux ARM64** (musl) | `linux-musl-arm64` | `aarch64-unknown-linux-musl` | `.tar.gz` |
+| **macOS Intel** | `macos-x86_64` | `x86_64-apple-darwin` | `.tar.gz` |
+| **macOS Apple Silicon** | `macos-arm64` | `aarch64-apple-darwin` | `.tar.gz` |
+| **Windows x86_64** | `windows-x86_64` | `x86_64-pc-windows-msvc` | `.zip` |
+| **Windows ARM64** | `windows-arm64` | `aarch64-pc-windows-msvc` | `.zip` |
+
+Example asset names:
+- `cutver-0.10.0-linux-arm64.tar.gz`
+- `cutver-0.10.0-windows-arm64.zip`
 
 ---
 

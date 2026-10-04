@@ -3,6 +3,49 @@
 All notable changes to this project are documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com).
 
+## [v0.10.0] - 2026-10-04
+### 🔄 Code Refactoring
+- **changelog**: upgrade release template with group_by_type, breaking migration details, and env helpers ([fcf00b5](https://github.com/cutver/cutver/commit/fcf00b58e7681f884e0997db3a2548c703fd916f)) by @Row0902
+- **cli**: drop release.toml, workspace-relative diagnostics, dry-run polish, and WSL browser support in [#124](https://github.com/cutver/cutver/pull/124) ([44d0860](https://github.com/cutver/cutver/commit/44d0860f94aa55b5bd7b113561c5ccdf8131db83)) by @Row0902
+- **domain**: introduce ManifestPath domain newtype and enforce forward-slash normalization in [#122](https://github.com/cutver/cutver/pull/122) ([27e89cb](https://github.com/cutver/cutver/commit/27e89cb48125c1c5ed2d735612f7693408206144)) by @Row0902
+- **changelog**: modularize template evaluation, body rendering, and tests in [#120](https://github.com/cutver/cutver/pull/120) ([7b88787](https://github.com/cutver/cutver/commit/7b887872727a4240ab45361d60be375055b34a98)) by @Row0902
+- **bump**: modularize bump domain types, errors, and test suite in [#118](https://github.com/cutver/cutver/pull/118) ([559c073](https://github.com/cutver/cutver/commit/559c07303ddff1bdcbcf54a956bb92eb00c3c8e6)) by @Row0902
+- **init**: modularize configuration scaffolding, templates, and runner in [#116](https://github.com/cutver/cutver/pull/116) ([59ddf23](https://github.com/cutver/cutver/commit/59ddf2391c8cc62b10eedaf8c5919d4630682a2d)) by @Row0902
+- **cli**: modularize CLI args definitions and normalization in [#114](https://github.com/cutver/cutver/pull/114) ([d12f0be](https://github.com/cutver/cutver/commit/d12f0be3afb710e2c6c149554cd8263e5195ceca)) by @Row0902
+- **changelog**: modularize historical extraction engine and tests in [#112](https://github.com/cutver/cutver/pull/112) ([3dc55d6](https://github.com/cutver/cutver/commit/3dc55d6b0eeb4802f7107f5e60c4be397dba56bf)) by @Row0902
+- **conventional**: modularize commit parser, types, and bump deduction in [#110](https://github.com/cutver/cutver/pull/110) ([f1fe45b](https://github.com/cutver/cutver/commit/f1fe45b537f195fa86428eb9b1b43eaa48b44b55)) by @Row0902
+- **bump**: modularize mutation execution engine and doctor checks in [#108](https://github.com/cutver/cutver/pull/108) ([6386dc1](https://github.com/cutver/cutver/commit/6386dc1fb04a4d0961a74706c5a85e2b9bc061b1)) by @Row0902
+- **cli**: modularize runner orchestration into focused handlers in [#106](https://github.com/cutver/cutver/pull/106) ([93d6118](https://github.com/cutver/cutver/commit/93d6118f25db09b2301951d99ee7de285ffc8182)) by @Row0902
+- **git**: modularize git engine and introduce CommitSha newtype in [#104](https://github.com/cutver/cutver/pull/104) ([d90c423](https://github.com/cutver/cutver/commit/d90c423781da5a840bfab48c8818060320a6e662)) by @Row0902
+- **changelog**: modularize context module and deduplicate chained PR references in [#102](https://github.com/cutver/cutver/pull/102) ([6cf1498](https://github.com/cutver/cutver/commit/6cf1498fb77de6636c6951bb1ce5976344dee34f)) by @Row0902
+- **bump**: implement RAII MutationTransaction guard and eliminate procedural rollbacks in [#98](https://github.com/cutver/cutver/pull/98) ([e452998](https://github.com/cutver/cutver/commit/e45299856260335569bd4eb6a9bc8c6a59533552)) by @Row0902
+- **changelog**: centralize ReleaseContext resolution and primary manifest version lookup in [#96](https://github.com/cutver/cutver/pull/96) ([154e176](https://github.com/cutver/cutver/commit/154e176b0d0681ba3a21e1cb15b8f5d688e6ba70)) by @Row0902
+- **domain**: introduce TagName and TagPrefix newtypes and unify tag normalization in [#94](https://github.com/cutver/cutver/pull/94) ([d3915b8](https://github.com/cutver/cutver/commit/d3915b832d9d89332aee56f6350552b39504ed4d)) by @Row0902
+- **bump**: compute changelog update in memory during phase 1 before disk mutation in [#89](https://github.com/cutver/cutver/pull/89) ([7d64178](https://github.com/cutver/cutver/commit/7d64178091ce7056fa0cfa87071cd2c4fe6af5f4)) by @Row0902
+
+### 🚀 Features & Enhancements
+- **changelog**: template resolution against root_dir, fail-fast template errors, commit body/breaking details, and MiniJinja helpers in [#126](https://github.com/cutver/cutver/pull/126) ([84b67f1](https://github.com/cutver/cutver/commit/84b67f18a60ae284dee3945dff7fe4fb833c7a93)) by @Row0902
+- **cli**: terminal UX & accessibility: workspace-relative paths, OSC 8 hyperlinks, and 'cutver open' command in [#90](https://github.com/cutver/cutver/pull/90) ([b02b081](https://github.com/cutver/cutver/commit/b02b08142fbddcb6094b86cd2eb8a3a5a1ef496e)) by @Row0902
+
+### 📚 Documentation
+- **contract**: align quantitative line budgets with rust-craft global skill ([286154a](https://github.com/cutver/cutver/commit/286154a6b0ab024e4b04e0c3b0316912fdeeb0b2)) by @Row0902
+- **contract**: formalize concurrency boundaries, RAII rollback, newtypes, and single-source-of-truth invariants ([1646ee8](https://github.com/cutver/cutver/commit/1646ee8d4f336bc45ac4ff8a3d744f82001073e3)) by @Row0902
+
+### ⚡ Performance Improvements
+- **engine**: parallelize read-only manifest compute, drift checks, and directory discovery with rayon in [#100](https://github.com/cutver/cutver/pull/100) ([3a20844](https://github.com/cutver/cutver/commit/3a208443e8d92cd8065193e50820a48abfe0f4dc)) by @Row0902
+- **git**: adopt Rust 1.99 in-place zero-allocation string conversions and set MSRV in [#92](https://github.com/cutver/cutver/pull/92) ([3fd2000](https://github.com/cutver/cutver/commit/3fd20002d80f267169923e1b315da6d9228dac6a)) by @Row0902
+
+### 🐛 Bug Fixes
+- **git**: check remote tag collisions in preflight before mutating workspace in [#88](https://github.com/cutver/cutver/pull/88) ([bbe7e4d](https://github.com/cutver/cutver/commit/bbe7e4d2ddb94244b99aa57a8cc264ca22a9d7e3)) by @Row0902
+- **changelog**: preserve original file line endings (LF vs CRLF) in changelog updates in [#87](https://github.com/cutver/cutver/pull/87) ([3cd1bf3](https://github.com/cutver/cutver/commit/3cd1bf37ab4c819ed12abcf7786ae45c8c8a4f6a)) by @Row0902
+- **manifest**: eliminate expect() in production code for GradleEditor in [#86](https://github.com/cutver/cutver/pull/86) ([9e35a95](https://github.com/cutver/cutver/commit/9e35a95d085729d9bfbdc8e80c52a8ab29aba36a)) by @Row0902
+
+### 👥 Contributors
+- @Row0902
+
+
+---
+**Full Changelog**: https://github.com/cutver/cutver/compare/v0.9.1...v0.10.0 • *CI Build #14*
 ## [v0.9.1] - 2026-09-28
 ### 🐛 Bug Fixes
 - **cli**: enrich raw git commits in changelog commands and build release binary from source (#84) in [#84](https://github.com/cutver/cutver/pull/84) ([36e7e16](https://github.com/cutver/cutver/commit/36e7e16e47a877b894b8221592daea3306b39040)) by @Row0902

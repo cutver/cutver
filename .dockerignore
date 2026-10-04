@@ -1,0 +1,7 @@
+target/
+.git/
+odd/
+.github/
+.idea/
+.vscode/
+*.md

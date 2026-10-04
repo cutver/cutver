@@ -69,6 +69,13 @@ scoop install cutver
 cargo install cutver
 ```
 
+**Via OCI Container (Docker / Podman):**
+```bash
+# Pull official image from GitHub Container Registry
+docker pull ghcr.io/cutver/cutver:latest
+podman pull ghcr.io/cutver/cutver:latest
+```
+
 **Via Precompiled Binaries:**
 Download cryptographic Cosign-signed binaries directly from [GitHub Releases](https://github.com/cutver/cutver/releases) for Linux (GNU/Musl), macOS (Apple Silicon/Intel), and Windows.
 
@@ -325,6 +332,64 @@ jobs:
 
 - **[`cutver/setup@v1`](https://github.com/cutver/setup)**: Installs the official, Cosign-verified `cutver` binary matching the runner platform into `$PATH`.
 - **[`cutver/release@v1`](https://github.com/cutver/release)**: Executes the release lifecycle, runs preflight verification, performs automated SemVer deduction, and outputs generated release notes.
+
+---
+
+## OCI Container Images (Docker & Podman)
+
+Official, minimal multi-architecture container images (`linux/amd64`, `linux/arm64`) are published to the GitHub Container Registry (`ghcr.io/cutver/cutver`) on Alpine 3.24 with Git, CA certificates, OpenSSH, and `git config --system safe.directory '*'` preconfigured for hermetic CI/CD pipelines.
+
+### Local Execution (Docker & Podman)
+
+Mount your repository workspace into `/workspace`:
+
+```bash
+# Podman
+podman run --rm -v "$PWD:/workspace" ghcr.io/cutver/cutver:latest doctor
+podman run --rm -v "$PWD:/workspace" ghcr.io/cutver/cutver:latest bump auto --dry-run
+
+# Docker
+docker run --rm -v "$PWD:/workspace" ghcr.io/cutver/cutver:latest doctor
+docker run --rm -v "$PWD:/workspace" ghcr.io/cutver/cutver:latest bump auto --dry-run
+```
+
+### GitHub Actions Container Action (`docker://`)
+
+You can run `cutver` directly inside GitHub Actions without downloading or compiling binaries using the `docker://` protocol:
+
+```yaml
+name: Check Version Drift
+
+on:
+  pull_request:
+
+jobs:
+  doctor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Verify Workspace Drift
+        uses: docker://ghcr.io/cutver/cutver:latest
+        with:
+          args: doctor
+```
+
+### GitLab CI/CD
+
+Run `cutver` inside GitLab CI pipelines using the container image directly:
+
+```yaml
+stages:
+  - verify
+
+cutver:doctor:
+  stage: verify
+  image:
+    name: ghcr.io/cutver/cutver:latest
+    entrypoint: [""]
+  script:
+    - /usr/local/bin/cutver doctor
+```
 
 ---
 

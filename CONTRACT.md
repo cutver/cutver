@@ -108,6 +108,18 @@ Every error surfaced to the user must answer three questions:
 - Code, tests, and documentation must accompany the behavior within the same commit.
 - Pull requests must strive to remain under 300–400 lines of effective code to protect human review focus.
 
+### 5. Cognitive Documentation & Human-Centered Design
+- **Strict Cognitive Line Budgets**: All repository documentation files (`README.md`, `docs/**/*.md`) must adhere to human attention horizons (Nielsen Norman 3–5 minute reading threshold). Target: 100–150 lines per document; strict hard ceiling $\le$ 200 lines. Documents approaching limits must decompose into focused submodules under `docs/`.
+- **Direct Companion Tone**: Documentation speaks directly from engineer to engineer. Lead with executable snippets, explain concisely afterwards, and highlight gotchas via visible callouts. Marketing hype (*"blazing fast"*, *"revolutionary"*) and corporate bureaucratic prose are strictly forbidden.
+- **Semantic Link Hygiene**: Hyperlink anchor text must communicate conceptual destinations and value. Exposing raw file paths (`docs/...`), file extensions (`.md`), or generic phrases (*"click here"*) in visible link text is strictly forbidden.
+- **Domain-First Abstraction**: Frame features around user outcomes (e.g. *"Release Templates"*, *"Manifest Synchronization"*), treating underlying implementation libraries (e.g. MiniJinja, toml_edit) as secondary technical notes.
+
+### 6. Transversal Skill & Workflow Governance
+- **Proactive Identification**: When project-specific adaptations, recurring workflow patterns, or transversal capabilities emerge with reusability potential across repositories, agents must proactively surface them as candidate skills.
+- **Explicit Rationale ("The Why")**: Every skill proposal must articulate the concrete problem it solves, why it is transversal, and the value it brings.
+- **Human Authorization Gate**: Agents must never author, generate, or register new skills unprompted. Implementation requires explicit human authorization.
+- **Precondition of Stability**: Skill creation can only be proposed or initiated after the active feature work is 100% functional, verified, and green.
+
 ---
 
 ## 🏛️ Pillar V: Structural Purity & Complexity Control

@@ -4,6 +4,8 @@
 
 **Cut a release. Bump SemVer. Every project, every language.**
 
+> *cutver versions itself, tests itself, generates its own changelogs, and publishes itself.*
+
 [![CI](https://github.com/cutver/cutver/actions/workflows/ci.yml/badge.svg)](https://github.com/cutver/cutver/actions/workflows/ci.yml)
 [![Release](https://github.com/cutver/cutver/actions/workflows/release.yml/badge.svg)](https://github.com/cutver/cutver/actions/workflows/release.yml)
 [![GitHub Release](https://img.shields.io/github/v/release/cutver/cutver?logo=github&color=blue)](https://github.com/cutver/cutver/releases)
@@ -21,9 +23,9 @@
 
 ---
 
-`cutver` is a standalone, format-preserving release engine written in Rust. It synchronizes version numbers across any set of manifests, runs your project's verification pipeline with process-tree timeouts, updates structured changelogs with dynamic MiniJinja templating, commits, tags, and publishes — all driven by one declarative `cutver.toml` configuration.
+`cutver` is a standalone, format-preserving release orchestration engine written in pure Rust. It synchronizes version numbers across any set of manifests, runs verification checks with process-tree timeouts, renders changelogs with expressive MiniJinja templates, commits, tags, and publishes — all driven by one declarative `cutver.toml` configuration.
 
-No Node.js runtime. No heavyweight CI dependencies. No broken formatting or stripped comments.
+**Zero Node.js runtime. Zero external dependencies. Zero broken comments or stripped formatting.**
 
 ---
 
@@ -31,12 +33,14 @@ No Node.js runtime. No heavyweight CI dependencies. No broken formatting or stri
 
 | Principle | Guarantee |
 | :--- | :--- |
-| **Universal & Polyglot** | The binary hardcodes zero frameworks. Manage Rust, Node, Tauri, Android, Python, Go, or monorepos with equal fidelity. |
+| **Universal & Polyglot** | No hardcoded frameworks. Manage Rust, Node, Tauri, Android, Python, Go, or complex monorepos with equal fidelity. |
 | **Format-Preserving** | Custom byte-span scanner for JSON and `toml_edit` for TOML. Comments, key order, quotes, indentation, and newlines stay untouched. Diffs are strictly 1 line per file. |
-| **Atomic & Resilient** | Two-phase release pipeline: all edits are computed in memory first. Writes use temp-and-rename with `fsync`, rolling back automatically on failure. |
+| **Atomic & Resilient** | Two-phase release pipeline: all edits are computed in memory first. Fail-safe RAII transaction guards ensure automatic rollback upon write, hook, or staging failure. |
 | **Automated SemVer** | `cutver bump auto` inspects Conventional Commits since the last release tag to deduce whether to cut a patch, minor, or major bump. |
-| **MiniJinja Release Notes** | Render changelogs and release notes with expressive MiniJinja templates, full commit categorization, author deduplication, and GitHub compare diff links. |
-| **Fail-Safe Preflight** | Runs verification checks before any mutation. Unix process-group termination (`SIGKILL`) ensures hung tasks never stall your pipeline. |
+| **MiniJinja Release Notes** | Built-in template engine with native filters (`group_by_type`, `group_by_scope`), migration guides (`breaking_description`), commit bodies, and CI/CD attribution (`env()`). |
+| **Accessible Terminal UX** | Interactive OSC 8 hyperlinks with accessible footnote references (`[^1]`, `[^2]`), clean noise-free companion banners for screen readers (NVDA), and workspace-relative diagnostics. |
+| **Browser Dispatch (`open`)** | Launch release pages, tags, and compare diffs in your default browser from the terminal, with `$BROWSER` resolution and native WSL `wslview` support. |
+| **Parallel & Fast** | Bounded parallel evaluation with `rayon` for instant read-only manifest computation, drift diagnostics, and monorepo discovery. |
 | **Automatic Lockfile Staging** | Declarative `post_bump` hooks automatically detect and stage lockfiles (`Cargo.lock`, `package-lock.json`, `pnpm-lock.yaml`, `bun.lock`, `uv.lock`, `poetry.lock`), followed by optional automated push. |
 
 ---
@@ -47,10 +51,10 @@ No Node.js runtime. No heavyweight CI dependencies. No broken formatting or stri
 
 **Via Homebrew (macOS & Linux):**
 ```bash
-# Recommended (automatically trusts and installs the formula in Homebrew 6.0+):
+# Recommended:
 brew install Row0902/tap/cutver
 
-# Or if you tap the repository separately:
+# Or tapping separately:
 brew tap Row0902/tap && brew trust Row0902/tap && brew install cutver
 ```
 
@@ -70,17 +74,12 @@ Download cryptographic Cosign-signed binaries directly from [GitHub Releases](ht
 
 ---
 
-### 2. Initialize or Configure `cutver.toml`
+### 2. Initialize `cutver.toml`
 
-Run `cutver init` to automatically discover your project manifests (`Cargo.toml`, `package.json`, `pyproject.toml`, Gradle, Tauri, etc.), scaffold a canonical rich MiniJinja release template at `.github/templates/cutver/RELEASE.md`, and generate an idiomatic `cutver.toml` and starter `CHANGELOG.md`:
+Run `cutver init` to discover your project manifests (`Cargo.toml`, `package.json`, `pyproject.toml`, Gradle, Tauri, etc.), scaffold a production-ready MiniJinja release template at `.github/templates/cutver/RELEASE.md`, and generate an idiomatic `cutver.toml` and starter `CHANGELOG.md`:
 
 ```bash
 cutver init
-```
-
-To opt out of template scaffolding and stick with pure built-in formatting:
-```bash
-cutver init --no-template # or -nt
 ```
 
 If you add new manifests or sub-crates later, update your existing configuration without losing custom settings:
@@ -108,7 +107,8 @@ kind = "pyproject"
 [changelog]
 path = "CHANGELOG.md"
 format = "keep-a-changelog"
-mode = "conventional"
+mode = "template"
+template_file = ".github/templates/cutver/RELEASE.md"
 
 [hooks]
 post_bump = "cargo check --workspace"
@@ -135,10 +135,7 @@ cutver bump auto
 
 For first/initial releases where manifests are already at `0.1.0` (or `1.0.0`) and should not be incremented:
 ```bash
-# Initial release: tags current version, gathers all initial commits into changelog
-cutver bump --first-release
-# or shorthand
-cutver bump -fr
+cutver bump --first-release # or -fr
 ```
 
 You can also specify explicit bump levels at any time:
@@ -150,9 +147,147 @@ cutver bump major
 
 ---
 
+### 4. Open in Browser (`cutver open`)
+
+Quickly inspect your releases, tags, or comparison ranges in the browser directly from your terminal:
+
+```bash
+# Open repository forge root
+cutver open
+
+# Open a specific release tag
+cutver open 0.10.0
+
+# Open a comparison diff between tags or HEAD
+cutver open compare
+cutver open v0.9.1...v0.10.0
+
+# Print the resolved URL to stdout without launching a browser
+cutver open 0.10.0 --print-url
+```
+
+> **Cross-Platform & WSL Parity**: Respects the standard `$BROWSER` environment variable and automatically detects WSL to dispatch to `/usr/sbin/wslview` without requiring X11.
+
+---
+
+### 5. Verify Health & Drift (`cutver doctor`)
+
+Check for version divergence across your declared manifests before cutting a release:
+
+```bash
+cutver doctor
+```
+
+<p align="center">
+  <img src="assets/cutver_doctor_showcase.png" alt="cutver doctor configuration and manifest verification" width="750">
+</p>
+
+- **Exit 0**: Configuration is valid and all manifests are synchronized.
+- **Exit 1**: Invalid configuration or manifest read error.
+- **Exit 2**: Version drift detected across manifests.
+
+You can also verify changelog consistency against Git release tags:
+```bash
+cutver doctor --check-changelog
+```
+
+---
+
+## Dynamic Release Notes with MiniJinja
+
+`cutver` features an expressive, embedded templating engine powered by [MiniJinja](https://github.com/mitsuhiko/minijinja). You can customize your release notes with `.github/templates/cutver/RELEASE.md` or custom templates:
+
+```jinja
+## [{{ tag }}] - {{ date }}
+
+{%- if breaking %}
+### ⚠️ Breaking Changes
+{% for c in commits if c.is_breaking -%}
+- {{ c.line }}
+{%- if c.breaking_description %}
+  > ⚠️ **Migration**: {{ c.breaking_description }}
+{%- endif %}
+{% endfor %}
+{%- endif %}
+
+{%- for type, type_commits in commits | group_by_type %}
+{%- if type == 'feat' %}
+### 🚀 Features & Enhancements
+{%- elif type == 'fix' %}
+### 🐛 Bug Fixes
+{%- elif type == 'perf' %}
+### ⚡ Performance Improvements
+{%- elif type == 'refactor' %}
+### 🔄 Code Refactoring
+{%- elif type == 'docs' %}
+### 📚 Documentation
+{%- elif type in ['chore', 'build', 'ci', 'test', 'style', 'revert'] %}
+### 🛠️ Maintenance & Dependencies
+{%- else %}
+### 📦 {{ type | title }}
+{%- endif %}
+{% for c in type_commits if not c.is_breaking -%}
+- {{ c.line }}
+{% endfor %}
+{%- endfor %}
+
+{%- if contributors %}
+### 👥 Contributors
+{% for author in contributors -%}
+- @{{ author }}
+{% endfor %}
+{%- endif %}
+
+---
+{%- if compare_url %}
+**Full Changelog**: {{ compare_url }}
+{%- endif %}
+{%- if env("GITHUB_RUN_NUMBER") %} • *CI Build #{{ env("GITHUB_RUN_NUMBER") }}*{%- endif %}
+```
+
+### Template Context & Filters
+
+| Variable / Filter | Description | Example |
+| :--- | :--- | :--- |
+| `tag`, `version` | Target tag name and SemVer string | `v0.10.0`, `0.10.0` |
+| `major`, `minor`, `patch` | Numeric SemVer components | `0`, `10`, `0` |
+| `year`, `month`, `day` | Numeric date components | `2026`, `10`, `4` |
+| `compare_url` | Computed GitHub/GitLab tag comparison link | `https://github.com/.../compare/v0.9.1...v0.10.0` |
+| `contributors` | Deduplicated list of commit authors | `["Row0902"]` |
+| `commits` | List of enriched commit objects (`type`, `scope`, `description`, `body`, `breaking_description`, `hash`, `short_hash`, `pr_number`, `pr_url`, `line`) | `for c in commits` |
+| `group_by_type` | Filter grouping commits by type | `commits \| group_by_type` |
+| `group_by_scope` | Filter grouping commits by component/scope | `commits \| group_by_scope` |
+| `env(name)` | Global function reading environment variables | `env("GITHUB_RUN_NUMBER")` |
+
+---
+
+## Extracting Release Notes in CI/CD
+
+Extract changelog bodies cleanly for release descriptions, Slack notifications, or webhook payloads:
+
+```bash
+# Extract the latest release notes body
+cutver changelog latest
+
+# Extract a specific historical release with full header
+cutver changelog show v0.9.1 --include-header
+
+# Render through a custom MiniJinja template on the fly
+cutver changelog latest --template .github/templates/cutver/RELEASE.md
+
+# Open changelog or compare view directly in the browser
+cutver changelog open
+```
+
+<p align="center">
+  <img src="assets/cutver_changelog_latest_showcase.png" alt="cutver changelog latest formatted output" width="850">
+</p>
+
+---
+
 ## Official GitHub Actions (CI/CD)
 
-Integrate `cutver` into your GitHub workflows with zero boilerplate using first-party actions:
+Integrate `cutver` into your GitHub workflows with zero boilerplate:
 
 ### `cutver/setup` & `cutver/release`
 
@@ -189,75 +324,13 @@ jobs:
 ```
 
 - **[`cutver/setup@v1`](https://github.com/cutver/setup)**: Installs the official, Cosign-verified `cutver` binary matching the runner platform into `$PATH`.
-- **[`cutver/release@v1`](https://github.com/cutver/release)**: Executes the release lifecycle, runs preflight verification, performs automated SemVer deduction, and outputs generated release notes for subsequent workflow jobs.
-
----
-
-## Dynamic Release Notes with MiniJinja
-
-`cutver` features a built-in templating engine powered by [MiniJinja](https://github.com/mitsuhiko/minijinja). You can customize your release notes or changelogs with arbitrary template files (e.g. `.github/templates/cutver/RELEASE.md`, `templates/notes.j2`, or inline in `cutver.toml`):
-
-```markdown
-**✨ What's Changed in {{ tag }}**
-{% if breaking %}
-### ⚠️ Breaking Changes
-{{ breaking }}
-{% endif %}
-{% if features %}
-### 🚀 Features & Enhancements
-{{ features }}
-{% endif %}
-{% if fixes %}
-### 🐛 Bug Fixes
-{{ fixes }}
-{% endif %}
-{% if contributors %}
-### 👥 Contributors
-{% for author in contributors -%}
-- @{{ author }}
-{% endfor %}
-{% endif %}
-
-**Full Diff**: {{ diff_url }}
-```
-
-Templates have full access to:
-- `tag`, `version`, `previous_tag`
-- `breaking`, `features`, `fixes`, `refactoring`, `perf`, `docs`, `maintenance`
-- `contributors` (deduplicated GitHub handles / commit authors)
-- `compare_url` (automatic GitHub/GitLab compare link)
-- `commits` (list of enriched commit objects with `hash`, `short_hash`, `author`, `author_email`, `pr_number`, `pr_url`, `issue_numbers`, `commit_url`, and `description`)
-
----
-
-## Extracting Release Notes in CI/CD
-
-Extract changelog bodies cleanly for release descriptions, Slack notifications, or webhook payloads:
-
-```bash
-# Extract the latest release notes body
-cutver changelog latest
-
-# Extract a specific historical release with full header
-cutver changelog show v0.5.0 --include-header
-
-# Render through a custom MiniJinja template on the fly
-cutver changelog latest --template .github/templates/cutver/RELEASE.md
-```
-
-<p align="center">
-  <img src="assets/cutver_changelog_latest_showcase.png" alt="cutver changelog latest formatted output" width="850">
-</p>
+- **[`cutver/release@v1`](https://github.com/cutver/release)**: Executes the release lifecycle, runs preflight verification, performs automated SemVer deduction, and outputs generated release notes.
 
 ---
 
 ## AI Coding Agent Skills
 
 Equip your AI coding assistants (Pi, Claude Code, Cursor, GitHub Copilot, Codex) with official release engineering skills from **[`cutver/skills`](https://github.com/cutver/skills)**:
-
-### Installation
-
-Install all Cutver skills into your agent's workspace using the Open Agent Skills standard:
 
 ```bash
 # npm
@@ -269,13 +342,6 @@ bunx skills add cutver/skills
 # pnpm
 pnpm dlx skills add cutver/skills
 ```
-
-You can also install individual skills:
-```bash
-npx skills add cutver/skills --skill cutver-release
-```
-
-### Available Skills
 
 | Skill | Description | Triggers |
 | :--- | :--- | :--- |
@@ -289,8 +355,6 @@ npx skills add cutver/skills --skill cutver-release
 ---
 
 ## Supported Manifest Ecosystems
-
-`cutver` treats every manifest with surgical precision:
 
 - **Rust / Cargo (`cargo-package` / `toml`)**: Preserves TOML comments, structure, and formatting via `toml_edit`.
 - **Node.js / Web (`json`)**: Modifies **only** the byte-span of the version value. Key order, tabs, spacing, and trailing newlines are 100% preserved.
@@ -314,37 +378,16 @@ When `post_bump` lifecycle hooks run (such as `cargo check`, `npm install`, or `
 | **Runtime Dependencies** | **None** (Native binary) | Node.js + plugins | Rust toolchain | Node.js |
 | **Polyglot / Multi-language** | **Yes** | Ecosystem plugins | Rust only | JS / TS only |
 | **Format-Preserving (Comments/Order)** | **Yes** | Varies | Partial | Partial |
-| **Two-Phase Atomic Rollback** | **Yes** | No | Partial | No |
+| **Two-Phase Atomic Rollback** | **Yes** (RAII transaction) | No | Partial | No |
 | **Preflight Process-Tree Kill** | **Yes** | No | No | No |
 | **Automatic Lockfile Staging** | **Yes** (Cargo, Bun, UV, Pnpm, etc.) | Varies | Yes (Cargo only) | Yes (NPM only) |
-| **Dynamic Templating** | **MiniJinja** | Plugin templates | Limited | Limited |
+| **Dynamic Templating** | **MiniJinja** (`group_by_type`, `group_by_scope`) | Plugin templates | Limited | Limited |
+| **Terminal UX & Accessibility** | **Yes** (OSC 8, footnotes, NVDA safe) | No | No | No |
+| **Browser Dispatch (`open`)** | **Yes** (macOS, Windows, Linux, WSL) | No | No | No |
 | **First-Party GitHub Actions** | **`cutver/setup`, `cutver/release`** | Actions available | None | Action available |
 | **AI Coding Agent Skills** | **Yes (`cutver/skills`)** | None | None | None |
 | **Native Floating Major Tags** | **Yes (`v1`, `v2`)** | Plugin / Script | Script | Script |
 | **Single Declarative Config** | **`cutver.toml`** | Multiple files/plugins | `Cargo.toml` | `.changeset/` |
-
----
-
-## Drift Detection (`cutver doctor`)
-
-Check for version divergence across your declared manifests before cutting a release:
-
-```bash
-cutver doctor
-```
-
-<p align="center">
-  <img src="assets/cutver_doctor_showcase.png" alt="cutver doctor configuration and manifest verification" width="750">
-</p>
-
-- **Exit 0**: Configuration is valid and all manifests are synchronized.
-- **Exit 1**: Invalid configuration or manifest read error.
-- **Exit 2**: Version drift detected across manifests.
-
-You can also verify changelog consistency against Git release tags:
-```bash
-cutver doctor --check-changelog
-```
 
 ---
 

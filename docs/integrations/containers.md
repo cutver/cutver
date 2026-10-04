@@ -14,7 +14,7 @@ Official minimal multi-architecture container images (`linux/amd64`, `linux/arm6
 
 ---
 
-## Local Execution (Podman & Docker)
+## Local Execution (Podman, Docker & WSLC)
 
 Mount your repository into `/workspace` inside the container:
 
@@ -34,6 +34,18 @@ docker run --rm -v "$PWD:/workspace" ghcr.io/cutver/cutver:latest doctor
 
 # Simulate automated release
 docker run --rm -v "$PWD:/workspace" ghcr.io/cutver/cutver:latest bump auto --dry-run
+```
+
+### WSL Containers (WSLC / Windows Native)
+
+Run directly from Windows PowerShell or Command Prompt without installing Docker Desktop or Podman:
+
+```powershell
+# Verify workspace health and manifest drift
+wslc run --rm -v "${PWD}:/workspace" ghcr.io/cutver/cutver:latest doctor
+
+# Simulate automated release
+wslc run --rm -v "${PWD}:/workspace" ghcr.io/cutver/cutver:latest bump auto --dry-run
 ```
 
 ---

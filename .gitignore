@@ -2,6 +2,9 @@
 # Local Pi runtime state
 .atl/
 .codegraph/
+.pi/*
+!.pi/skills/
+
 
 # Local drafts
 DISCORD_POST.md

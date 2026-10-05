@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "skills": {
+    "cutver-actions": {
+      "source": "cutver/skills",
+      "sourceType": "github",
+      "skillPath": "skills/cutver-actions/SKILL.md",
+      "computedHash": "f81b8f31700f50954b301fbaf2e95340ab456df6e344bbf3b259f92be3a36583"
+    },
+    "cutver-changelog": {
+      "source": "cutver/skills",
+      "sourceType": "github",
+      "skillPath": "skills/cutver-changelog/SKILL.md",
+      "computedHash": "2818276152a5f1f04c2388064031a8f8249810c30ff7d10510edaa30894e1e81"
+    },
+    "cutver-containers": {
+      "source": "cutver/skills",
+      "sourceType": "github",
+      "skillPath": "skills/cutver-containers/SKILL.md",
+      "computedHash": "e48a8ee3f88b22e4206cf92a197dcde055405ce1129ca1f159e332aeeb32e615"
+    },
+    "cutver-doctor": {
+      "source": "cutver/skills",
+      "sourceType": "github",
+      "skillPath": "skills/cutver-doctor/SKILL.md",
+      "computedHash": "4d311ecd5c8d85ebf9ec34398cfac993913019d9006432a7b92dd51b3f4b0ec6"
+    },
+    "cutver-init": {
+      "source": "cutver/skills",
+      "sourceType": "github",
+      "skillPath": "skills/cutver-init/SKILL.md",
+      "computedHash": "8b910c1a5458ea84a627d1df28f877c51a2a94cdac05330bdfc724455917f3ac"
+    },
+    "cutver-install": {
+      "source": "cutver/skills",
+      "sourceType": "github",
+      "skillPath": "skills/cutver-install/SKILL.md",
+      "computedHash": "a266628e6d905fc31301e690305452f756be2088c8358e89d7769a8780d1703e"
+    },
+    "cutver-open": {
+      "source": "cutver/skills",
+      "sourceType": "github",
+      "skillPath": "skills/cutver-open/SKILL.md",
+      "computedHash": "cdc77ea89b553bfcc9d2ae3ffcdf3fe3958e7d2eb517d8aaaf192f087935f8b9"
+    },
+    "cutver-release": {
+      "source": "cutver/skills",
+      "sourceType": "github",
+      "skillPath": "skills/cutver-release/SKILL.md",
+      "computedHash": "84cbfdf8049745c7146489cffb5985d730a34d3effd084d73cabc09fc53300bf"
+    }
+  }
+}

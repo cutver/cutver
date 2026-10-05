@@ -247,9 +247,22 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Update Homebrew tap formula
-        if: env.HOMEBREW_TAP_TOKEN != ''
+      - name: Generate distribution bot token
+        id: bot-token
+        if: env.CUTVER_APP_ID != '' && env.CUTVER_APP_PRIVATE_KEY != ''
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.CUTVER_APP_ID }}
+          private-key: ${{ secrets.CUTVER_APP_PRIVATE_KEY }}
+          owner: Row0902
         env:
+          CUTVER_APP_ID: ${{ secrets.CUTVER_APP_ID }}
+          CUTVER_APP_PRIVATE_KEY: ${{ secrets.CUTVER_APP_PRIVATE_KEY }}
+
+      - name: Update Homebrew tap formula
+        if: steps.bot-token.outputs.token != '' || env.HOMEBREW_TAP_TOKEN != ''
+        env:
+          DIST_TOKEN: ${{ steps.bot-token.outputs.token || secrets.HOMEBREW_TAP_TOKEN }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
           TAG="${{ needs.version.outputs.tag }}"
@@ -266,7 +279,7 @@ jobs:
             exit 1
           fi
 
-          git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/Row0902/homebrew-tap.git" tap
+          git clone "https://x-access-token:${DIST_TOKEN}@github.com/Row0902/homebrew-tap.git" tap
           cd tap
 
           cat <<EOF > Formula/cutver.rb
@@ -309,8 +322,8 @@ jobs:
 
           sed -i 's/^          //' Formula/cutver.rb
 
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "cutver-release[bot]"
+          git config user.email "${{ secrets.CUTVER_APP_ID }}+cutver-release[bot]@users.noreply.github.com"
           git add Formula/cutver.rb
 
           if git diff --staged --quiet; then
@@ -322,8 +335,9 @@ jobs:
           fi
 
       - name: Update Scoop bucket manifest
-        if: env.HOMEBREW_TAP_TOKEN != ''
+        if: steps.bot-token.outputs.token != '' || env.HOMEBREW_TAP_TOKEN != ''
         env:
+          DIST_TOKEN: ${{ steps.bot-token.outputs.token || secrets.HOMEBREW_TAP_TOKEN }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
           TAG="${{ needs.version.outputs.tag }}"
@@ -338,7 +352,7 @@ jobs:
             exit 1
           fi
 
-          git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/Row0902/scoop-bucket.git" scoop
+          git clone "https://x-access-token:${DIST_TOKEN}@github.com/Row0902/scoop-bucket.git" scoop
           cd scoop
 
           python3 -c "
@@ -376,8 +390,8 @@ jobs:
               f.write('\n')
           "
 
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "cutver-release[bot]"
+          git config user.email "${{ secrets.CUTVER_APP_ID }}+cutver-release[bot]@users.noreply.github.com"
           git add bucket/cutver.json
 
           if git diff --staged --quiet; then

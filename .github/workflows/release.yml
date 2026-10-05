@@ -26,9 +26,10 @@ jobs:
     name: Check & Version
     runs-on: ubuntu-latest
     outputs:
-      tag: ${{ steps.tag.outputs.tag }}
-      released: ${{ steps.check.outputs.released }}
-      notes: ${{ steps.cutver.outputs.notes }}
+      tag: ${{ steps.cutver.outputs.tag }}
+      released: ${{ steps.cutver.outputs.released }}
+      version: ${{ steps.cutver.outputs.version }}
+      notes: ${{ steps.cutver.outputs.notes-path }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -40,20 +41,12 @@ jobs:
           git config --global user.name "cutver-release[bot]"
           git config --global user.email "${{ secrets.CUTVER_APP_ID || 'github-actions' }}+cutver-release[bot]@users.noreply.github.com"
 
-      - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo build
-        uses: Swatinem/rust-cache@v2
-
-      - name: Build local Cutver binary
-        run: |
-          cargo build --release
-          echo "$GITHUB_WORKSPACE/target/release" >> "$GITHUB_PATH"
-
-      - name: Record HEAD commit before release
-        id: pre
-        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Setup Cutver CLI
+        uses: cutver/setup@v1
+        with:
+          version: "latest"
+          cache: "false"
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run Cutver Release
         id: cutver
@@ -67,24 +60,8 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
-      - name: Determine if release was produced
-        id: check
-        run: |
-          PRE_SHA="${{ steps.pre.outputs.sha }}"
-          POST_SHA="$(git rev-parse HEAD)"
-          if [ "$PRE_SHA" != "$POST_SHA" ]; then
-            echo "released=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "released=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Get latest release tag
-        id: tag
-        if: steps.check.outputs.released == 'true'
-        run: echo "tag=$(git describe --tags --match="v*.*.*" --abbrev=0)" >> "$GITHUB_OUTPUT"
-
       - name: Save Release Notes Artifact
-        if: steps.check.outputs.released == 'true'
+        if: steps.cutver.outputs.released == 'true'
         uses: actions/upload-artifact@v5
         with:
           name: release-notes
@@ -401,4 +378,14 @@ jobs:
             git push origin master
             echo "Successfully updated bucket/cutver.json to ${VERSION} in Row0902/scoop-bucket."
           fi
+
+      - name: Smoke test fresh Cutver installation
+        uses: cutver/setup@v1
+        with:
+          version: ${{ needs.version.outputs.tag }}
+          cache: "false"
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify installed binary
+        run: cutver --version
 

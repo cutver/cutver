@@ -321,3 +321,70 @@ jobs:
             echo "Successfully updated Formula/cutver.rb to ${TAG} in Row0902/homebrew-tap."
           fi
 
+      - name: Update Scoop bucket manifest
+        if: env.HOMEBREW_TAP_TOKEN != ''
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          TAG="${{ needs.version.outputs.tag }}"
+          VERSION="${TAG#v}"
+
+          # Extract Windows SHA-256 hashes generated in dist/SHA256SUMS
+          SHA_WIN_X64=$(grep "cutver-${VERSION}-windows-x86_64.zip" dist/SHA256SUMS | awk '{print $1}')
+          SHA_WIN_ARM=$(grep "cutver-${VERSION}-windows-arm64.zip" dist/SHA256SUMS | awk '{print $1}')
+
+          if [ -z "$SHA_WIN_X64" ] || [ -z "$SHA_WIN_ARM" ]; then
+            echo "::error::Failed to resolve all required Windows SHA-256 sums for Scoop manifest"
+            exit 1
+          fi
+
+          git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/Row0902/scoop-bucket.git" scoop
+          cd scoop
+
+          python3 -c "
+          import json
+
+          with open('bucket/cutver.json', 'r') as f:
+              data = json.load(f)
+
+          data['version'] = '${VERSION}'
+          data['architecture'] = {
+              '64bit': {
+                  'url': 'https://github.com/cutver/cutver/releases/download/${TAG}/cutver-${VERSION}-windows-x86_64.zip',
+                  'hash': '${SHA_WIN_X64}',
+                  'extract_dir': 'cutver-${VERSION}-windows-x86_64'
+              },
+              'arm64': {
+                  'url': 'https://github.com/cutver/cutver/releases/download/${TAG}/cutver-${VERSION}-windows-arm64.zip',
+                  'hash': '${SHA_WIN_ARM}',
+                  'extract_dir': 'cutver-${VERSION}-windows-arm64'
+              }
+          }
+          data['autoupdate']['architecture'] = {
+              '64bit': {
+                  'url': 'https://github.com/cutver/cutver/releases/download/v\$version/cutver-\$version-windows-x86_64.zip',
+                  'extract_dir': 'cutver-\$version-windows-x86_64'
+              },
+              'arm64': {
+                  'url': 'https://github.com/cutver/cutver/releases/download/v\$version/cutver-\$version-windows-arm64.zip',
+                  'extract_dir': 'cutver-\$version-windows-arm64'
+              }
+          }
+
+          with open('bucket/cutver.json', 'w') as f:
+              json.dump(data, f, indent=4)
+              f.write('\n')
+          "
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add bucket/cutver.json
+
+          if git diff --staged --quiet; then
+            echo "Scoop bucket manifest is already up to date with ${TAG}."
+          else
+            git commit -m "cutver: Update to version ${VERSION}"
+            git push origin master
+            echo "Successfully updated bucket/cutver.json to ${VERSION} in Row0902/scoop-bucket."
+          fi
+

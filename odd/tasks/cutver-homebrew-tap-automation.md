@@ -18,6 +18,6 @@ Goal: Automate Homebrew tap formula and Scoop bucket manifest synchronization di
 | 1 | 2c7aca6 (homebrew-tap) | Updated `Formula/cutver.rb` to v0.10.0 with accurate checksums for macOS (arm64, x86_64) and Linux (musl x86_64); removed `.github/workflows/autobump.yml`; Homebrew CI `brew test-bot` passed in run 37336875281 |
 | 2 | fa92f87 | Step added to `release.yml` in job `publish` after release asset upload, resolving SHA-256 sums from `dist/SHA256SUMS` and updating `Formula/cutver.rb` |
 | 3 | 89d90ed | Step added to `release.yml` in job `publish` updating `bucket/cutver.json` in `Row0902/scoop-bucket` with 64bit and arm64 architecture targets |
-| 4 | 9cb7d15 | Integrated `actions/create-github-app-token@v3` generating ephemeral tokens for `Row0902` repositories; commits authored as `cutver-release[bot]` |
-| 5 | 9cb7d15 | YAML syntax validated via `yaml-validator`; Rust suite passed cleanly (`cargo test`, 294 unit tests, 84 integration tests) |
-| 6 | 9cb7d15 | Work-unit commit on branch `ci/automate-homebrew-tap-release` |
+| 4 | 4b9b486 | Integrated `actions/create-github-app-token@v3` generating ephemeral tokens for `Row0902` repositories; commits in Cutver, tap, and bucket authored as `cutver-release[bot]` |
+| 5 | 4b9b486 | YAML syntax validated via `yaml-validator`; Rust suite passed cleanly (`cargo test`, 294 unit tests, 84 integration tests) |
+| 6 | 4b9b486 | Work-unit commit on branch `ci/automate-homebrew-tap-release` |

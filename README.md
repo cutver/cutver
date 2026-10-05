@@ -131,7 +131,7 @@ Equip coding assistants (Pi, Claude Code, Cursor, GitHub Copilot) with release s
 npx skills add cutver/skills
 ```
 
-Includes autonomous skills for `cutver-release` (with mandatory `--dry-run` simulation), `cutver-doctor`, `cutver-init`, and `cutver-changelog`.
+Includes 8 autonomous skills covering releases (`cutver-release`), diagnostics (`cutver-doctor`), onboarding (`cutver-init`), changelogs (`cutver-changelog`), CI/CD workflows (`cutver-actions`), OCI containers (`cutver-containers`), installation (`cutver-install`), and navigation (`cutver-open`).
 
 ---
 

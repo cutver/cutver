@@ -37,8 +37,8 @@ jobs:
 
       - name: Setup Git bot credentials
         run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "cutver-release[bot]"
+          git config --global user.email "${{ secrets.CUTVER_APP_ID || 'github-actions' }}+cutver-release[bot]@users.noreply.github.com"
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -246,3 +246,159 @@ jobs:
           files: dist/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate distribution bot token
+        id: bot-token
+        if: env.CUTVER_APP_ID != '' && env.CUTVER_APP_PRIVATE_KEY != ''
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.CUTVER_APP_ID }}
+          private-key: ${{ secrets.CUTVER_APP_PRIVATE_KEY }}
+          owner: Row0902
+        env:
+          CUTVER_APP_ID: ${{ secrets.CUTVER_APP_ID }}
+          CUTVER_APP_PRIVATE_KEY: ${{ secrets.CUTVER_APP_PRIVATE_KEY }}
+
+      - name: Update Homebrew tap formula
+        if: steps.bot-token.outputs.token != '' || env.HOMEBREW_TAP_TOKEN != ''
+        env:
+          DIST_TOKEN: ${{ steps.bot-token.outputs.token || secrets.HOMEBREW_TAP_TOKEN }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          TAG="${{ needs.version.outputs.tag }}"
+          VERSION="${TAG#v}"
+
+          # Extract SHA-256 hashes generated in dist/SHA256SUMS
+          SHA_MACOS_ARM=$(grep "cutver-${VERSION}-macos-arm64.tar.gz" dist/SHA256SUMS | awk '{print $1}')
+          SHA_MACOS_INTEL=$(grep "cutver-${VERSION}-macos-x86_64.tar.gz" dist/SHA256SUMS | awk '{print $1}')
+          SHA_LINUX_INTEL=$(grep "cutver-${VERSION}-linux-musl-x86_64.tar.gz" dist/SHA256SUMS | awk '{print $1}')
+          SHA_LINUX_ARM=$(grep "cutver-${VERSION}-linux-musl-arm64.tar.gz" dist/SHA256SUMS | awk '{print $1}')
+
+          if [ -z "$SHA_MACOS_ARM" ] || [ -z "$SHA_MACOS_INTEL" ] || [ -z "$SHA_LINUX_INTEL" ] || [ -z "$SHA_LINUX_ARM" ]; then
+            echo "::error::Failed to resolve all required SHA-256 sums for Homebrew formula"
+            exit 1
+          fi
+
+          git clone "https://x-access-token:${DIST_TOKEN}@github.com/Row0902/homebrew-tap.git" tap
+          cd tap
+
+          cat <<EOF > Formula/cutver.rb
+          class Cutver < Formula
+            desc "Cut a release. Bump SemVer. Every project, every language"
+            homepage "https://github.com/cutver/cutver"
+            license "MIT"
+
+            on_macos do
+              on_arm do
+                url "https://github.com/cutver/cutver/releases/download/${TAG}/cutver-${VERSION}-macos-arm64.tar.gz"
+                sha256 "${SHA_MACOS_ARM}"
+              end
+              on_intel do
+                url "https://github.com/cutver/cutver/releases/download/${TAG}/cutver-${VERSION}-macos-x86_64.tar.gz"
+                sha256 "${SHA_MACOS_INTEL}"
+              end
+            end
+
+            on_linux do
+              on_intel do
+                url "https://github.com/cutver/cutver/releases/download/${TAG}/cutver-${VERSION}-linux-musl-x86_64.tar.gz"
+                sha256 "${SHA_LINUX_INTEL}"
+              end
+              on_arm do
+                url "https://github.com/cutver/cutver/releases/download/${TAG}/cutver-${VERSION}-linux-musl-arm64.tar.gz"
+                sha256 "${SHA_LINUX_ARM}"
+              end
+            end
+
+            def install
+              bin.install "cutver"
+            end
+
+            test do
+              assert_match "cutver #{version}", shell_output("#{bin}/cutver --version")
+            end
+          end
+          EOF
+
+          sed -i 's/^          //' Formula/cutver.rb
+
+          git config user.name "cutver-release[bot]"
+          git config user.email "${{ secrets.CUTVER_APP_ID }}+cutver-release[bot]@users.noreply.github.com"
+          git add Formula/cutver.rb
+
+          if git diff --staged --quiet; then
+            echo "Homebrew tap formula is already up to date with ${TAG}."
+          else
+            git commit -m "feat(cutver): bump cutver to ${TAG}"
+            git push origin main
+            echo "Successfully updated Formula/cutver.rb to ${TAG} in Row0902/homebrew-tap."
+          fi
+
+      - name: Update Scoop bucket manifest
+        if: steps.bot-token.outputs.token != '' || env.HOMEBREW_TAP_TOKEN != ''
+        env:
+          DIST_TOKEN: ${{ steps.bot-token.outputs.token || secrets.HOMEBREW_TAP_TOKEN }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          TAG="${{ needs.version.outputs.tag }}"
+          VERSION="${TAG#v}"
+
+          # Extract Windows SHA-256 hashes generated in dist/SHA256SUMS
+          SHA_WIN_X64=$(grep "cutver-${VERSION}-windows-x86_64.zip" dist/SHA256SUMS | awk '{print $1}')
+          SHA_WIN_ARM=$(grep "cutver-${VERSION}-windows-arm64.zip" dist/SHA256SUMS | awk '{print $1}')
+
+          if [ -z "$SHA_WIN_X64" ] || [ -z "$SHA_WIN_ARM" ]; then
+            echo "::error::Failed to resolve all required Windows SHA-256 sums for Scoop manifest"
+            exit 1
+          fi
+
+          git clone "https://x-access-token:${DIST_TOKEN}@github.com/Row0902/scoop-bucket.git" scoop
+          cd scoop
+
+          python3 -c "
+          import json
+
+          with open('bucket/cutver.json', 'r') as f:
+              data = json.load(f)
+
+          data['version'] = '${VERSION}'
+          data['architecture'] = {
+              '64bit': {
+                  'url': 'https://github.com/cutver/cutver/releases/download/${TAG}/cutver-${VERSION}-windows-x86_64.zip',
+                  'hash': '${SHA_WIN_X64}',
+                  'extract_dir': 'cutver-${VERSION}-windows-x86_64'
+              },
+              'arm64': {
+                  'url': 'https://github.com/cutver/cutver/releases/download/${TAG}/cutver-${VERSION}-windows-arm64.zip',
+                  'hash': '${SHA_WIN_ARM}',
+                  'extract_dir': 'cutver-${VERSION}-windows-arm64'
+              }
+          }
+          data['autoupdate']['architecture'] = {
+              '64bit': {
+                  'url': 'https://github.com/cutver/cutver/releases/download/v\$version/cutver-\$version-windows-x86_64.zip',
+                  'extract_dir': 'cutver-\$version-windows-x86_64'
+              },
+              'arm64': {
+                  'url': 'https://github.com/cutver/cutver/releases/download/v\$version/cutver-\$version-windows-arm64.zip',
+                  'extract_dir': 'cutver-\$version-windows-arm64'
+              }
+          }
+
+          with open('bucket/cutver.json', 'w') as f:
+              json.dump(data, f, indent=4)
+              f.write('\n')
+          "
+
+          git config user.name "cutver-release[bot]"
+          git config user.email "${{ secrets.CUTVER_APP_ID }}+cutver-release[bot]@users.noreply.github.com"
+          git add bucket/cutver.json
+
+          if git diff --staged --quiet; then
+            echo "Scoop bucket manifest is already up to date with ${TAG}."
+          else
+            git commit -m "cutver: Update to version ${VERSION}"
+            git push origin master
+            echo "Successfully updated bucket/cutver.json to ${VERSION} in Row0902/scoop-bucket."
+          fi
+

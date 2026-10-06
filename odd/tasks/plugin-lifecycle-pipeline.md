@@ -26,3 +26,12 @@
 - [x] Task 4: Implement `on_post_release` hook execution after commit/tag.
 - [x] Task 5: Add comprehensive E2E tests in `tests/e2e_lifecycle.rs` for pre-bump rejection and post-bump rollback.
 - [x] Task 6: Verify full test suite, clippy `-D warnings`, fmt, and close with atomic Conventional Commit linked to #146.
+
+---
+
+## Evidence & Verification
+- **Commit**: `0a55776` (`feat(plugin): wire lifecycle hooks into two-phase mutation pipeline (#146)`)
+- **Unit & Integration Tests**: 316 library tests + 14 e2e_lifecycle tests + 25 e2e_bump + all other suites passing cleanly.
+- **Quality Gates**: `cargo clippy --all-targets -- -D warnings` (0 warnings), `cargo fmt -- --check` clean.
+- **RDD Review Receipt**: Lineage `review-b9861dd63a8d800e`, lens `review-reliability` approved, authority burned (`gentle-ai.review-acknowledged/v1`).
+

@@ -1,5 +1,5 @@
 use super::*;
-use crate::cli::args::{ChangelogCommands, Cli};
+use crate::cli::args::{ChangelogCommands, Cli, Commands};
 use crate::config;
 use clap::Parser;
 use std::fs;
@@ -603,4 +603,60 @@ fn run_init_success_and_fail_on_collision() {
     // Third run with force should succeed
     let args_force = Cli::try_parse_from(["cutver", "init", "-p", &dir.to_string_lossy(), "--force"]).unwrap();
     assert_eq!(run(args_force), 0);
+}
+
+#[test]
+fn test_external_subcommand_dispatch_and_exit_code() {
+    let dir = temp_dir("cutver-runner-ext-ok");
+    let script_path = dir.join("cutver-mock");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::write(&script_path, "#!/bin/sh\nexit 42\n").unwrap();
+        let mut perms = fs::metadata(&script_path).unwrap().permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&script_path, perms).unwrap();
+    }
+    #[cfg(windows)]
+    {
+        fs::write(dir.join("cutver-mock.bat"), "@echo off\r\nexit /b 42\r\n").unwrap();
+    }
+
+    let orig_path = std::env::var_os("PATH").unwrap_or_default();
+    let mut new_path = dir.clone().into_os_string();
+    let sep = if cfg!(windows) { ";" } else { ":" };
+    new_path.push(sep);
+    new_path.push(&orig_path);
+
+    unsafe {
+        std::env::set_var("PATH", &new_path);
+    }
+    let code = run_external(&["mock".to_string(), "--foo".to_string()]);
+    unsafe {
+        std::env::set_var("PATH", orig_path);
+    }
+
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn test_external_subcommand_empty_args() {
+    assert_eq!(run_external(&[]), 1);
+}
+
+#[test]
+fn test_external_subcommand_not_found() {
+    let code = run_external(&["nonexistent-plugin-command-xyz-123".to_string()]);
+    assert_eq!(code, 1);
+}
+
+#[test]
+fn test_cli_parsing_external_subcommand() {
+    let cli = Cli::try_parse_from(["cutver", "slack", "--channel", "general"]).unwrap();
+    match cli.command {
+        Commands::External(args) => {
+            assert_eq!(args, vec!["slack", "--channel", "general"]);
+        }
+        _ => panic!("expected Commands::External variant"),
+    }
 }

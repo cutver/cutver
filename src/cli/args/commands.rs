@@ -67,6 +67,9 @@ pub enum Commands {
         #[arg(long, value_name = "BROWSER")]
         browser: Option<String>,
     },
+    /// External plugin subcommand resolved as `cutver-<subcommand>` from $PATH
+    #[command(external_subcommand)]
+    External(Vec<String>),
 }
 
 #[derive(Subcommand, Debug, Clone, PartialEq, Eq)]

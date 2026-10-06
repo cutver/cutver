@@ -3,6 +3,7 @@ pub mod changelog;
 pub mod changelog_context;
 pub mod dispatch;
 pub mod doctor;
+pub mod external;
 pub mod open;
 
 #[cfg(test)]
@@ -20,5 +21,7 @@ pub use changelog::{
 pub use dispatch::{load_config, print_error, resolve_changelog_path, run};
 #[allow(unused_imports)]
 pub use doctor::run_doctor;
+#[allow(unused_imports)]
+pub use external::run_external;
 #[allow(unused_imports)]
 pub use open::run_open;

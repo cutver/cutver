@@ -25,4 +25,13 @@
 - [x] Task 3: Invert missing binary into actionable CONTRACT.md error message on stderr.
 - [x] Task 4: Add unit and integration tests verifying external binary execution.
 - [x] Task 5: Verify full test suite, clippy `-D warnings`, and fmt.
-- [ ] Task 6: Close with atomic Conventional Commit linked to #32.
+- [x] Task 6: Close with atomic Conventional Commit linked to #32.
+
+---
+
+## Evidence & Verification
+- **Commit**: `e7c8802` (`feat(cli): add Git-style external subcommand dispatch for cutver-* executables (#32)`)
+- **Unit & Integration Tests**: 320 unit tests, 2 e2e_external tests + all suites passing cleanly.
+- **Quality Gates**: `cargo clippy --all-targets -- -D warnings` (0 warnings), `cargo fmt -- --check` clean.
+- **RDD Review Receipt**: Lineage `review-e510c35b26f597c1`, lens `review-reliability` approved, authority burned (`gentle-ai.review-acknowledged/v1`).
+

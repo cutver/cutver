@@ -32,10 +32,13 @@
 ## Evidence & Verification
 - **Branch**: `feat/plugin-manifest-adapter-153`
 - **Issue**: [#153](https://github.com/cutver/cutver/issues/153)
+- **Commit**: `4935c89` (`feat(plugin): wire manifest.v1 capability into manifest discovery and mutation pipeline (#153)`)
+- **Pull Request**: [#156](https://github.com/cutver/cutver/pull/156)
 - **Validation**:
   - `cargo test`: passed (324 unit tests, all e2e suites green)
   - `cargo test --features plugins`: passed (329 unit tests, all e2e suites green)
   - `cargo clippy --all-targets --all-features -- -D warnings`: passed (0 warnings)
   - `cargo fmt -- --check`: passed (clean formatting)
 - **RDD Receipt**: Lineage `review-a053d9c404d3bb16`, state `approved`, authority burned with `burn_evidence: gentle-ai.review-acknowledged/v1`.
+
 

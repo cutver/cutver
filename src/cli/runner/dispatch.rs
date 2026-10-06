@@ -7,6 +7,7 @@ use crate::config;
 use super::bump::run_bump;
 use super::changelog::run_changelog;
 use super::doctor::run_doctor;
+use super::external::run_external;
 use super::open::run_open;
 
 pub fn print_error(msg: impl std::fmt::Display) {
@@ -53,6 +54,7 @@ pub fn run(args: Cli) -> i32 {
             print_url,
             browser,
         } => run_open(args.config.as_deref(), target.as_deref(), print_url, browser.as_deref()),
+        Commands::External(ref ext_args) => run_external(ext_args),
     }
 }
 

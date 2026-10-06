@@ -2,7 +2,7 @@
 
 > **Status**: Proposed / Under Review  
 > **Issue**: [#32](https://github.com/cutver/cutver/issues/32)  
-> **Target Version**: `v0.5.0` (Core Engine) / `v0.6.0` (Ecosystem Hooks)
+> **Target Version**: `v0.11.0` (Core Engine) / `v0.12.0` (Ecosystem Hooks)
 
 ---
 

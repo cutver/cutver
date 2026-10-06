@@ -679,3 +679,208 @@ commands = [
         "published 1.3.0 (tag v1.3.0) [forge: github repo: test-repo owner: test-owner]"
     );
 }
+
+#[test]
+fn test_plugin_pre_bump_rejection_aborts_without_mutating_files() {
+    assert!(git_available());
+    let guard = FixtureGuard::new("plugin-pre-bump-reject");
+    let fixture = guard.fixture();
+
+    let reject_script = fixture.dir.join("reject.sh");
+    fixture.write(
+        "reject.sh",
+        "#!/bin/sh\ncat >/dev/null\necho '{\"allow\": false, \"reason\": \"Pre-bump check failed\"}'\n",
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&reject_script).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&reject_script, perms).unwrap();
+    }
+
+    let script_path = reject_script.to_string_lossy().replace('\\', "/");
+    let toml = format!(
+        r#"[version]
+current_source = "package.json"
+
+[[manifest]]
+path = "package.json"
+kind = "json"
+field = "version"
+
+[[manifest]]
+path = "Cargo.toml"
+kind = "cargo-package"
+
+[changelog]
+path = "CHANGELOG.md"
+
+[git]
+require_clean_tree = true
+
+[plugins.verifier]
+runtime = "process"
+command = "{script_path}"
+capabilities = ["lifecycle.v1"]
+events = ["on_pre_bump"]
+"#
+    );
+
+    fixture.write("package.json", PACKAGE_JSON);
+    fixture.write("Cargo.toml", CARGO_TOML);
+    fixture.write("CHANGELOG.md", CHANGELOG_MD);
+    fixture.write("cutver.toml", &toml);
+    init_git_repo(fixture);
+    initial_commit(fixture);
+
+    let cfg = config::load("cutver.toml").unwrap();
+    let res = bump_run(&cfg, Bump::Minor, false, &[]);
+
+    let err = res.expect_err("bump must fail due to pre-bump rejection");
+    match err {
+        cutver::bump::Error::PreBumpRejected { plugin, reason } => {
+            assert_eq!(plugin.as_str(), "verifier");
+            assert_eq!(reason, "Pre-bump check failed");
+        }
+        other => panic!("expected PreBumpRejected, got {other:?}"),
+    }
+
+    // Manifests and changelog remain untouched
+    assert!(fixture.read("package.json").contains("\"version\": \"1.2.3\""));
+    assert!(fixture.read("Cargo.toml").contains("version = \"1.2.3\""));
+    assert!(!fixture.read("CHANGELOG.md").contains("1.3.0"));
+
+    // No commit or tag created
+    assert_eq!(commit_count(fixture), 1);
+    assert!(!tag_exists(fixture, "v1.3.0"));
+}
+
+#[test]
+fn test_plugin_post_bump_failure_triggers_transaction_rollback() {
+    assert!(git_available());
+    let guard = FixtureGuard::new("plugin-post-bump-rollback");
+    let fixture = guard.fixture();
+
+    let fail_script = fixture.dir.join("fail.sh");
+    fixture.write("fail.sh", "#!/bin/sh\ncat >/dev/null\nexit 1\n");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&fail_script).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&fail_script, perms).unwrap();
+    }
+
+    let script_path = fail_script.to_string_lossy().replace('\\', "/");
+    let toml = format!(
+        r#"[version]
+current_source = "package.json"
+
+[[manifest]]
+path = "package.json"
+kind = "json"
+field = "version"
+
+[[manifest]]
+path = "Cargo.toml"
+kind = "cargo-package"
+
+[changelog]
+path = "CHANGELOG.md"
+
+[git]
+require_clean_tree = true
+
+[plugins.failing-hook]
+runtime = "process"
+command = "{script_path}"
+capabilities = ["lifecycle.v1"]
+events = ["on_post_bump"]
+"#
+    );
+
+    fixture.write("package.json", PACKAGE_JSON);
+    fixture.write("Cargo.toml", CARGO_TOML);
+    fixture.write("CHANGELOG.md", CHANGELOG_MD);
+    fixture.write("cutver.toml", &toml);
+    init_git_repo(fixture);
+    initial_commit(fixture);
+
+    let cfg = config::load("cutver.toml").unwrap();
+    let res = bump_run(&cfg, Bump::Minor, false, &[]);
+    assert!(res.is_err(), "expected bump to fail due to post_bump plugin exit 1");
+
+    // Manifests rolled back to 1.2.3 byte-for-byte by MutationTransaction
+    assert_eq!(fixture.read("package.json"), PACKAGE_JSON);
+    assert_eq!(fixture.read("Cargo.toml"), CARGO_TOML);
+    assert_eq!(fixture.read("CHANGELOG.md"), CHANGELOG_MD);
+
+    // No commit or tag created
+    assert_eq!(commit_count(fixture), 1);
+    assert!(!tag_exists(fixture, "v1.3.0"));
+}
+
+#[test]
+fn test_plugin_lifecycle_happy_path() {
+    assert!(git_available());
+    let guard = FixtureGuard::new("plugin-lifecycle-happy");
+    let fixture = guard.fixture();
+
+    let hook_script = fixture.dir.join("hook.sh");
+    fixture.write("hook.sh", "#!/bin/sh\nread -r line\necho '{\"allow\": true}'\n");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&hook_script).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&hook_script, perms).unwrap();
+    }
+
+    let script_path = hook_script.to_string_lossy().replace('\\', "/");
+    let toml = format!(
+        r#"[version]
+current_source = "package.json"
+
+[[manifest]]
+path = "package.json"
+kind = "json"
+field = "version"
+
+[[manifest]]
+path = "Cargo.toml"
+kind = "cargo-package"
+
+[changelog]
+path = "CHANGELOG.md"
+
+[git]
+require_clean_tree = true
+
+[plugins.lifecycle-orchestrator]
+runtime = "process"
+command = "{script_path}"
+capabilities = ["lifecycle.v1"]
+events = ["on_pre_bump", "on_post_bump", "on_post_release"]
+"#
+    );
+
+    fixture.write("package.json", PACKAGE_JSON);
+    fixture.write("Cargo.toml", CARGO_TOML);
+    fixture.write("CHANGELOG.md", CHANGELOG_MD);
+    fixture.write("cutver.toml", &toml);
+    init_git_repo(fixture);
+    initial_commit(fixture);
+
+    let cfg = config::load("cutver.toml").unwrap();
+    let summary = bump_run(&cfg, Bump::Minor, false, &[]).unwrap();
+
+    assert_eq!(summary.next.to_string(), "1.3.0");
+    assert_eq!(summary.tag, "v1.3.0");
+    assert!(fixture.read("package.json").contains("\"version\": \"1.3.0\""));
+    assert!(fixture.read("Cargo.toml").contains("version = \"1.3.0\""));
+    assert!(fixture.read("CHANGELOG.md").contains("1.3.0"));
+
+    assert_eq!(commit_count(fixture), 2);
+    assert!(tag_exists(fixture, "v1.3.0"));
+}

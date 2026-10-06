@@ -80,6 +80,15 @@ pub enum Error {
         timeout: u64,
         elapsed_ms: u128,
     },
+    #[error("plugin error: {0}")]
+    Plugin(#[from] crate::plugin::PluginError),
+    #[error(
+        "plugin '{plugin}' rejected pre-bump checks: {reason}\n  Where: lifecycle hook 'on_pre_bump'\n  Fix: resolve the pre-bump condition reported above."
+    )]
+    PreBumpRejected {
+        plugin: crate::plugin::PluginName,
+        reason: String,
+    },
 }
 
 #[derive(Debug)]

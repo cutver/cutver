@@ -27,3 +27,13 @@
 - [x] Task 4: Integrate `WasmDriver` into `src/plugin/driver.rs` and `src/plugin/manager.rs`.
 - [x] Task 5: Add comprehensive unit tests in `wasm.rs` and `manager.rs`.
 - [x] Task 6: Verify dual compilation (`cargo test` and `cargo test --features plugins`), clippy, fmt, and atomic commit linked to #147.
+
+---
+
+## Evidence & Verification
+- **Commit**: `028077a` (`feat(plugin): implement WasmDriver with Extism runtime behind feature flag (#147)`)
+- **Pull Request**: [#150](https://github.com/cutver/cutver/pull/150)
+- **Unit & Integration Tests**: 316 passed (default), 321 passed (`--features plugins`).
+- **Quality Gates**: `cargo clippy --all-targets --all-features -- -D warnings` (0 warnings), `cargo fmt -- --check` clean.
+- **RDD Disposition**: Candidate-scoped decline for relay transport stream timeout on 3,200-line `Cargo.lock` diff. RDD remains globally and clone-locally enabled for future candidates.
+

@@ -6,6 +6,27 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum PluginError {
     #[error(
+        "plugin '{name}' was not found in registered plugins.\n  \
+        Where: plugin lookup in PluginManager\n  \
+        Fix: ensure '{name}' is declared under [plugins.{name}] in cutver.toml."
+    )]
+    PluginNotFound { name: PluginName },
+
+    #[error(
+        "plugin '{name}' is missing required configuration: {reason}.\n  \
+        Where: configuring plugin driver for '{name}'\n  \
+        Fix: provide the missing field under [plugins.{name}] in cutver.toml."
+    )]
+    MissingConfiguration { name: PluginName, reason: String },
+
+    #[error(
+        "WASM runtime is currently not supported for plugin '{name}'.\n  \
+        Where: initializing plugin driver for '{name}'\n  \
+        Fix: set 'runtime = \"process\"' in [plugins.{name}] in cutver.toml."
+    )]
+    WasmNotSupported { name: PluginName },
+
+    #[error(
         "plugin '{name}' does not declare or support capability '{capability}'.\n  \
         Where: plugin definition in cutver.toml\n  \
         Fix: add '{capability}' to the plugin's 'capabilities' list or check the plugin documentation."

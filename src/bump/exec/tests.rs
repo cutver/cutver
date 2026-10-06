@@ -1,7 +1,9 @@
 use std::path::Path;
+#[cfg(unix)]
 use std::time::{Duration, Instant};
 
 use super::*;
+#[cfg(unix)]
 use crate::bump::Error;
 
 #[test]

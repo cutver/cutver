@@ -56,6 +56,20 @@ impl PluginManager {
         self.drivers.keys()
     }
 
+    /// Returns an iterator over plugin names that declared `Capability::LifecycleV1`
+    /// and whose `events` list is empty or explicitly contains the specified `event`.
+    pub fn plugins_for_event<'a>(&'a self, event: &'a str) -> impl Iterator<Item = &'a PluginName> {
+        self.configs.iter().filter_map(move |(name, config)| {
+            let has_lifecycle = config.capabilities.contains(&Capability::LifecycleV1);
+            let matches_event = config.events.is_empty() || config.events.iter().any(|e| e == event);
+            if has_lifecycle && matches_event {
+                Some(name)
+            } else {
+                None
+            }
+        })
+    }
+
     /// Dispatches a `manifest.read` request to the target plugin.
     pub fn dispatch_manifest_read(
         &self,
@@ -449,5 +463,86 @@ mod tests {
             dry_run: false,
         };
         assert!(manager.dispatch_post_release(&name, &post_rel_payload).is_ok());
+    }
+
+    #[test]
+    fn test_plugins_for_event() {
+        let p_all = PluginName::new("all-events").unwrap();
+        let p_pre = PluginName::new("pre-bump-only").unwrap();
+        let p_post = PluginName::new("post-bump-only").unwrap();
+        let p_non_lc = PluginName::new("non-lifecycle").unwrap();
+
+        let cfg_all = PluginConfig {
+            runtime: RuntimeKind::Process,
+            source: None,
+            hash: None,
+            command: Some("cat".to_string()),
+            capabilities: vec![Capability::LifecycleV1],
+            events: vec![],
+            manifest_match: vec![],
+            permissions: Default::default(),
+            timeout_seconds: None,
+        };
+
+        let cfg_pre = PluginConfig {
+            runtime: RuntimeKind::Process,
+            source: None,
+            hash: None,
+            command: Some("cat".to_string()),
+            capabilities: vec![Capability::LifecycleV1],
+            events: vec!["on_pre_bump".to_string()],
+            manifest_match: vec![],
+            permissions: Default::default(),
+            timeout_seconds: None,
+        };
+
+        let cfg_post = PluginConfig {
+            runtime: RuntimeKind::Process,
+            source: None,
+            hash: None,
+            command: Some("cat".to_string()),
+            capabilities: vec![Capability::LifecycleV1],
+            events: vec!["on_post_bump".to_string()],
+            manifest_match: vec![],
+            permissions: Default::default(),
+            timeout_seconds: None,
+        };
+
+        let cfg_non_lc = PluginConfig {
+            runtime: RuntimeKind::Process,
+            source: None,
+            hash: None,
+            command: Some("cat".to_string()),
+            capabilities: vec![Capability::ManifestV1],
+            events: vec!["on_pre_bump".to_string()],
+            manifest_match: vec![],
+            permissions: Default::default(),
+            timeout_seconds: None,
+        };
+
+        let mut configs = HashMap::new();
+        configs.insert(p_all.clone(), cfg_all);
+        configs.insert(p_pre.clone(), cfg_pre);
+        configs.insert(p_post.clone(), cfg_post);
+        configs.insert(p_non_lc.clone(), cfg_non_lc);
+
+        let manager = PluginManager::new(HashMap::new(), configs);
+
+        let pre_plugins: HashSet<&PluginName> = manager.plugins_for_event("on_pre_bump").collect();
+        assert_eq!(pre_plugins.len(), 2);
+        assert!(pre_plugins.contains(&p_all));
+        assert!(pre_plugins.contains(&p_pre));
+        assert!(!pre_plugins.contains(&p_post));
+        assert!(!pre_plugins.contains(&p_non_lc));
+
+        let post_plugins: HashSet<&PluginName> = manager.plugins_for_event("on_post_bump").collect();
+        assert_eq!(post_plugins.len(), 2);
+        assert!(post_plugins.contains(&p_all));
+        assert!(post_plugins.contains(&p_post));
+        assert!(!post_plugins.contains(&p_pre));
+
+        let rel_plugins: HashSet<&PluginName> = manager.plugins_for_event("on_post_release").collect();
+        assert_eq!(rel_plugins.len(), 1);
+        assert!(rel_plugins.contains(&p_all));
     }
 }

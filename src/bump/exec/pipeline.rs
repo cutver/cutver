@@ -12,6 +12,8 @@ use crate::cli::BumpLevel;
 use crate::config::Config;
 use crate::conventional;
 use crate::git;
+use crate::plugin::PluginManager;
+use crate::plugin::dto::{PostBumpPayload, PostReleasePayload, PreBumpPayload};
 use crate::preflight;
 use crate::semver_bump::{self, Bump};
 
@@ -58,6 +60,9 @@ pub fn run_with_first_release(
         preflight::run(&preflight_plan)?;
     }
 
+    let plugin_manager = PluginManager::from_config(&config.plugins)?;
+    run_plugin_pre_bump(&plugin_manager, repo, &current, &next, bump_level, &tag, dry_run)?;
+
     let computed = compute(config, &next)?;
     let cl_params = ChangelogPlanParams {
         config,
@@ -74,6 +79,7 @@ pub fn run_with_first_release(
     let (touched, mut paths_to_stage) = apply(&computed, &next, dry_run, &mut transaction)?;
     apply_changelog(changelog_update, dry_run, &mut transaction, &mut paths_to_stage)?;
 
+    run_plugin_post_bump(&plugin_manager, repo, &current, &next, &tag, &paths_to_stage, dry_run)?;
     let summary_post_bump = run_post_bump_hook(config, repo, &interp_ctx, dry_run, &mut paths_to_stage)?;
 
     git::stage(repo, &paths_to_stage, dry_run).map_err(Error::Stage)?;
@@ -87,6 +93,8 @@ pub fn run_with_first_release(
         source: e,
     })?;
     let tag_skipped = tag_report.is_some() && !dry_run;
+
+    run_plugin_post_release(&plugin_manager, repo, &next, &tag, dry_run)?;
 
     let floating_tag = handle_floating_tag(config, repo, &next, dry_run)?;
     let publish_push_command = execute_publish_push(config, repo, floating_tag.as_ref(), dry_run)?;
@@ -305,4 +313,90 @@ fn run_publish_commands(
 
 pub(crate) fn format_command(template: &str, context: &changelog::InterpolationContext) -> Result<String, Error> {
     changelog::interpolate_string(template, context).map_err(Error::Changelog)
+}
+
+fn bump_level_name(bump_level: BumpLevel) -> &'static str {
+    match bump_level {
+        BumpLevel::Patch => "patch",
+        BumpLevel::Minor => "minor",
+        BumpLevel::Major => "major",
+        BumpLevel::Auto => "auto",
+    }
+}
+
+fn run_plugin_pre_bump(
+    manager: &PluginManager,
+    repo: &Path,
+    current: &Version,
+    next: &Version,
+    bump_level: BumpLevel,
+    tag: &str,
+    dry_run: bool,
+) -> Result<(), Error> {
+    let payload = PreBumpPayload {
+        root_dir: repo.to_string_lossy().replace('\\', "/"),
+        current_version: current.to_string(),
+        next_version: next.to_string(),
+        bump_level: bump_level_name(bump_level).to_string(),
+        tag_name: tag.to_string(),
+        dry_run,
+    };
+    for plugin_name in manager.plugins_for_event("on_pre_bump") {
+        let res = manager.dispatch_pre_bump(plugin_name, &payload)?;
+        if !res.allow {
+            return Err(Error::PreBumpRejected {
+                plugin: plugin_name.clone(),
+                reason: res.reason.unwrap_or_else(|| "pre-bump checks failed".to_string()),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn run_plugin_post_bump(
+    manager: &PluginManager,
+    repo: &Path,
+    current: &Version,
+    next: &Version,
+    tag: &str,
+    modified_files: &[String],
+    dry_run: bool,
+) -> Result<(), Error> {
+    let payload = PostBumpPayload {
+        root_dir: repo.to_string_lossy().replace('\\', "/"),
+        current_version: current.to_string(),
+        next_version: next.to_string(),
+        tag_name: tag.to_string(),
+        modified_files: modified_files.to_vec(),
+        dry_run,
+    };
+    for plugin_name in manager.plugins_for_event("on_post_bump") {
+        manager.dispatch_post_bump(plugin_name, &payload)?;
+    }
+    Ok(())
+}
+
+fn run_plugin_post_release(
+    manager: &PluginManager,
+    repo: &Path,
+    next: &Version,
+    tag: &str,
+    dry_run: bool,
+) -> Result<(), Error> {
+    let commit_sha = if dry_run {
+        "0000000000000000000000000000000000000000".to_string()
+    } else {
+        git::rev_parse(repo, "HEAD")?
+    };
+    let payload = PostReleasePayload {
+        root_dir: repo.to_string_lossy().replace('\\', "/"),
+        version: next.to_string(),
+        tag_name: tag.to_string(),
+        commit_sha,
+        dry_run,
+    };
+    for plugin_name in manager.plugins_for_event("on_post_release") {
+        manager.dispatch_post_release(plugin_name, &payload)?;
+    }
+    Ok(())
 }

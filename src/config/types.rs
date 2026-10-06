@@ -1,4 +1,5 @@
 use serde::Deserialize;
+use std::collections::HashMap;
 use std::io;
 use std::path::PathBuf;
 use thiserror::Error;
@@ -57,6 +58,8 @@ pub struct Config {
     pub hooks: Hooks,
     #[serde(default)]
     pub publish: Publish,
+    #[serde(default)]
+    pub plugins: HashMap<crate::plugin::PluginName, crate::plugin::PluginConfig>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
@@ -88,6 +91,7 @@ impl Default for Config {
             git: Git::default(),
             hooks: Hooks::default(),
             publish: Publish::default(),
+            plugins: HashMap::new(),
         }
     }
 }
@@ -446,5 +450,37 @@ kind = "cargo-package"
         // When current_source does not match any manifest, falls back to first manifest
         cfg.version.current_source = "nonexistent.json".into();
         assert_eq!(cfg.primary_manifest().map(|m| m.path.as_str()), Some("Cargo.toml"));
+    }
+
+    #[test]
+    fn plugins_table_parsing_and_defaults() {
+        let toml = r#"
+[[manifest]]
+path = "Cargo.toml"
+kind = "cargo-package"
+
+[plugins.helm-adapter]
+runtime = "process"
+command = "helm-plugin"
+capabilities = ["manifest.v1", "lifecycle.v1"]
+timeout_seconds = 15
+"#;
+        let c = load_str(toml).unwrap();
+        assert_eq!(c.plugins.len(), 1);
+        let helm_name = crate::plugin::PluginName::new("helm-adapter").unwrap();
+        let plugin_cfg = c.plugins.get(&helm_name).expect("plugin found");
+        assert_eq!(plugin_cfg.runtime, crate::plugin::RuntimeKind::Process);
+        assert_eq!(plugin_cfg.command.as_deref(), Some("helm-plugin"));
+        assert_eq!(plugin_cfg.timeout_seconds, Some(15));
+        assert_eq!(
+            plugin_cfg.capabilities,
+            vec![
+                crate::plugin::Capability::ManifestV1,
+                crate::plugin::Capability::LifecycleV1
+            ]
+        );
+
+        let default_cfg = load_str(&manifest("cargo-package", "")).unwrap();
+        assert!(default_cfg.plugins.is_empty());
     }
 }

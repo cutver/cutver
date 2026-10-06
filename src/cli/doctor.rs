@@ -200,6 +200,7 @@ mod tests {
             git: Default::default(),
             hooks: Default::default(),
             publish: Default::default(),
+            plugins: Default::default(),
         };
 
         let rendered = render_dashboard(&config, true, &theme);

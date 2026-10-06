@@ -165,31 +165,30 @@ pub fn plugin_cache_dir() -> PathBuf {
 }
 
 /// Resolves or loads WASM artifact bytes from a local file path or cache.
-pub fn load_wasm_bytes(source: &str, expected_hash: Option<&str>) -> Result<Vec<u8>, PluginError> {
+pub fn load_wasm_bytes(name: &PluginName, source: &str, expected_hash: Option<&str>) -> Result<Vec<u8>, PluginError> {
     let path = Path::new(source);
     let bytes = if path.is_file() {
         fs::read(path).map_err(|e| PluginError::MissingConfiguration {
-            name: PluginName::new("wasm-loader").unwrap(),
+            name: name.clone(),
             reason: format!("failed to read WASM file from '{source}': {e}"),
         })?
     } else {
         let cached = plugin_cache_dir().join(source);
         fs::read(&cached).map_err(|e| PluginError::MissingConfiguration {
-            name: PluginName::new("wasm-loader").unwrap(),
+            name: name.clone(),
             reason: format!("failed to read cached WASM artifact from '{source}': {e}"),
         })?
     };
 
     if let Some(expected) = expected_hash {
-        let dummy_name = PluginName::new("artifact").unwrap();
-        verify_sha256(&dummy_name, &bytes, Some(expected))?;
+        verify_sha256(name, &bytes, Some(expected))?;
     }
 
     Ok(bytes)
 }
 
 /// Helper caching a WASM artifact to the local plugin cache.
-pub fn cache_wasm_artifact(source: &str, expected_hash: Option<&str>) -> Result<PathBuf, PluginError> {
+pub fn cache_wasm_artifact(name: &PluginName, source: &str, expected_hash: Option<&str>) -> Result<PathBuf, PluginError> {
     let src_path = Path::new(source);
     if src_path.is_file() {
         return Ok(src_path.to_path_buf());
@@ -197,7 +196,7 @@ pub fn cache_wasm_artifact(source: &str, expected_hash: Option<&str>) -> Result<
 
     let cache_dir = plugin_cache_dir();
     fs::create_dir_all(&cache_dir).map_err(|e| PluginError::MissingConfiguration {
-        name: PluginName::new("wasm-cache").unwrap(),
+        name: name.clone(),
         reason: format!("failed to create plugin cache directory '{cache_dir:?}': {e}"),
     })?;
 
@@ -209,18 +208,17 @@ pub fn cache_wasm_artifact(source: &str, expected_hash: Option<&str>) -> Result<
 
     if dest_path.is_file() {
         let bytes = fs::read(&dest_path).map_err(|e| PluginError::MissingConfiguration {
-            name: PluginName::new("wasm-cache").unwrap(),
+            name: name.clone(),
             reason: format!("failed to read cached artifact at '{dest_path:?}': {e}"),
         })?;
         if let Some(expected) = expected_hash {
-            let dummy = PluginName::new("cached-artifact").unwrap();
-            verify_sha256(&dummy, &bytes, Some(expected))?;
+            verify_sha256(name, &bytes, Some(expected))?;
         }
         return Ok(dest_path);
     }
 
     Err(PluginError::MissingConfiguration {
-        name: PluginName::new("wasm-cache").unwrap(),
+        name: name.clone(),
         reason: format!("WASM artifact '{source}' was not found locally or in cache"),
     })
 }
@@ -307,7 +305,8 @@ mod tests {
         let file_path = temp_dir.join("cutver_test_minimal.wasm");
         fs::write(&file_path, MINIMAL_WASM).unwrap();
 
-        let loaded = load_wasm_bytes(file_path.to_str().unwrap(), None).unwrap();
+        let name = PluginName::new("test-load").unwrap();
+        let loaded = load_wasm_bytes(&name, file_path.to_str().unwrap(), None).unwrap();
         assert_eq!(loaded, MINIMAL_WASM);
 
         let _ = fs::remove_file(file_path);

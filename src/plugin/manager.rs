@@ -176,7 +176,7 @@ fn create_wasm_driver(name: &PluginName, config: &PluginConfig) -> Result<Box<dy
             reason: "'source' is required for wasm runtime and cannot be empty".to_string(),
         })?;
 
-    let bytes = crate::plugin::driver::wasm::load_wasm_bytes(source, config.hash.as_deref())?;
+    let bytes = crate::plugin::driver::wasm::load_wasm_bytes(name, source, config.hash.as_deref())?;
     let capabilities = config.capabilities.iter().copied().collect::<HashSet<_>>();
 
     let driver = crate::plugin::driver::WasmDriver::new(

@@ -66,6 +66,8 @@ Every command that mutates files or Git state must adhere to a strict two-phase 
   - `TagPrefix`: Strongly typed tag prefix (e.g. `"v"` or custom namespace).
   - `CommitSha`: Strongly typed Git commit hash with hexadecimal and length validation.
   - `ManifestPath`: Workspace-relative or canonicalized repository path with strictly normalized forward slashes (`/`).
+  - `PluginName`: Validated plugin identifier ensuring ASCII alphanumeric, hyphens, and underscores, strictly non-empty.
+  - `Capability`: Canonical enum representing decoupled microkernel capabilities (`ManifestV1`, `LifecycleV1`, `ChangelogV1`, `VersioningV1`).
 - Parse inputs at boundaries into rich domain types (`Version`, `BumpLevel`, `ManifestPath`, `TagName`, `ConventionalCommit`).
 - Make invalid states unrepresentable through the type system.
 
@@ -141,7 +143,7 @@ Every error surfaced to the user must answer three questions:
 
 ### 4. Atomic Primitives & Strict Single Responsibility
 - **Function Budget**: Functions must not exceed 35–40 lines of effective code. A function does exactly one thing: compute, parse, validate, or perform boundary I/O. Mixing responsibilities is forbidden.
-- **Module Budget**: Production source files (`src/**/*.rs`) target $\le$ 300 lines with a strict hard ceiling of $\le$ 400 lines. When a file approaches 350 lines, decomposition into focused submodules via the Facade pattern (`foo.rs` + `foo/`) is mandatory.
+- **Module Budget & No Legacy `mod.rs`**: Production source files (`src/**/*.rs`) target $\le$ 300 lines with a strict hard ceiling of $\le$ 400 lines. When a file approaches 350 lines, decomposition into focused submodules via the Facade pattern (`foo.rs` + `foo/`) is mandatory. Using legacy `mod.rs` files inside `src/` is strictly forbidden; modern Rust 2018/2021+ sibling files (`foo.rs` alongside `foo/`) are required.
 - **Thin CLI `main.rs` Budget**: $\le$ 50 lines (ideal $\le$ 20 lines). It only parses CLI arguments and delegates immediately to runner dispatch.
 - **Integration Test Suite Budget**: $\le$ 500 lines per domain suite (`tests/e2e_*.rs`), sharing common test fixtures and setup helpers in `tests/common/mod.rs`.
 - Functions must be pure, deterministic, and composable without hidden side-effects.
@@ -153,4 +155,26 @@ Every error surfaced to the user must answer three questions:
 ### 6. Single Source of Truth & Zero Cross-Subcommand Duplication
 - **Single Canonical Domain Authority**: Critical domain heuristics (such as tag prefix normalization, changelog context assembly, author resolution, and primary manifest version deduction) must reside in exactly one canonical domain module (`crate::git`, `crate::changelog::context`, `crate::config`).
 - **Prohibition of Command-Level Logic Duplication**: CLI subcommands (`bump`, `doctor`, `changelog`, `open`) must never re-implement or clone parsing, filtering, or normalization heuristics. All subcommands must consume the same shared domain services.
+
+---
+
+## 🔌 Pillar VI: Microkernel & Plugin Isolation Boundaries
+
+### 1. Dual-Runtime Parity & Single Protocol
+- The plugin engine must enforce a unified IPC contract across both execution runtimes: sandboxed WebAssembly (WASM via Extism/Wasmtime) and native process executables/scripts.
+- Communication across the host-guest boundary must rely exclusively on referentially transparent, schema-versioned JSON DTOs (`src/plugin/dto/`). Plugins must never access shared ambient memory or process pointers.
+
+### 2. Zero Ambient Authority (Explicit Capability Grants)
+- Plugins run with zero default authority.
+- Sandboxed WASM plugins must never access the host filesystem, network, or environment variables unless explicitly declared under `[plugins.<name>.permissions]` in `cutver.toml`.
+- Native process plugins must execute within strict timeout bounds (`timeout_seconds`), failing closed if execution hangs.
+
+### 3. Fail-Closed Lifecycle Guarantees
+- **In-Memory Pre-Flight (`on_pre_bump`)**: Must execute strictly during the in-memory compute phase, prior to initiating any filesystem I/O or opening a `MutationTransaction`. Any plugin error or timeout aborts the pipeline immediately, leaving the workspace in an untouched state.
+- **Transactional Rollback (`on_post_bump`)**: Must execute within the `MutationTransaction` boundary before the Git commit. If a post-mutation plugin fails, the RAII transaction drop guard must restore all modified manifests and unstaged Git files to their exact pre-run bytes.
+
+### 4. Zero Footprint Regressions
+- The WebAssembly runtime engine (Extism) must remain gated behind the optional Cargo feature flag `plugins` (`cargo build --features plugins`).
+- Minimal CLI installations without plugins must compile with zero external WASM dependencies and retain the ultra-lean binary size baseline (~4 MB).
+
 

@@ -7,5 +7,6 @@ pub mod conventional;
 pub mod git;
 pub mod init;
 pub mod manifest;
+pub mod plugin;
 pub mod preflight;
 pub mod semver_bump;

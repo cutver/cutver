@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use rayon::prelude::*;
 
@@ -9,15 +10,17 @@ use crate::bump::{ChangelogDrift, Drift, Error};
 use crate::changelog;
 use crate::config::Config;
 use crate::git;
+use crate::plugin::PluginManager;
 
 pub fn doctor(config: &Config) -> Result<Vec<Drift>, Error> {
-    let (source_entry, _editor, expected) = current_source(config)?;
+    let plugin_manager = Arc::new(PluginManager::from_config(&config.plugins)?);
+    let (source_entry, _editor, expected) = current_source(config, Some(&plugin_manager))?;
     let drifts: Vec<Option<Drift>> = config
         .manifest
         .par_iter()
         .filter(|m| m.path != source_entry.path)
         .map(|m| {
-            let (_editor, _content, actual) = read_manifest(m)?;
+            let (_editor, _content, actual) = read_manifest(m, Some(&plugin_manager))?;
             if actual != expected {
                 Ok(Some(Drift {
                     path: m.path.to_string(),

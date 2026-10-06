@@ -144,6 +144,10 @@ pub enum ManifestKind {
         #[serde(default)]
         table: Option<String>,
     },
+    Plugin {
+        #[serde(default)]
+        plugin: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -386,6 +390,20 @@ default_timeout = 60
     fn pyproject_manifest_alias() {
         let cfg = load_str(&manifest("pyproject-toml", "")).unwrap();
         assert_eq!(cfg.manifest[0].kind, ManifestKind::Pyproject { table: None });
+    }
+
+    #[test]
+    fn plugin_manifest_config_parsing() {
+        let cfg = load_str(&manifest("plugin", "")).unwrap();
+        assert_eq!(cfg.manifest[0].kind, ManifestKind::Plugin { plugin: None });
+
+        let cfg_with_plugin = load_str(&manifest("plugin", "plugin = \"custom-adapter\"\n")).unwrap();
+        assert_eq!(
+            cfg_with_plugin.manifest[0].kind,
+            ManifestKind::Plugin {
+                plugin: Some("custom-adapter".to_string()),
+            }
+        );
     }
 
     #[test]

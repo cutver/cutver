@@ -104,4 +104,19 @@ pub enum PluginError {
         Fix: grant '{resource}' in plugin permissions under [plugins.{name}.permissions] in cutver.toml."
     )]
     PermissionDenied { name: PluginName, resource: String },
+
+    #[error(
+        "multiple plugins matched manifest '{path}': {}.\n  \
+        Where: manifest plugin resolution\n  \
+        Fix: explicitly specify 'plugin = \"<name>\"' in [[manifest]] or disambiguate 'manifest_match' patterns in cutver.toml.",
+        matches.iter().map(|p| p.as_str()).collect::<Vec<_>>().join(", ")
+    )]
+    AmbiguousManifestPlugin { path: String, matches: Vec<PluginName> },
+
+    #[error(
+        "no registered plugin with capability 'manifest.v1' matches manifest '{path}'.\n  \
+        Where: manifest plugin resolution\n  \
+        Fix: configure a plugin with capability 'manifest.v1' and matching 'manifest_match' pattern in cutver.toml, or explicitly set 'plugin = \"<name>\"'."
+    )]
+    NoPluginForManifest { path: String },
 }

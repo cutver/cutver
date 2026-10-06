@@ -608,10 +608,10 @@ fn run_init_success_and_fail_on_collision() {
 #[test]
 fn test_external_subcommand_dispatch_and_exit_code() {
     let dir = temp_dir("cutver-runner-ext-ok");
-    let script_path = dir.join("cutver-mock");
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
+        let script_path = dir.join("cutver-mock");
         fs::write(&script_path, "#!/bin/sh\nexit 42\n").unwrap();
         let mut perms = fs::metadata(&script_path).unwrap().permissions();
         perms.set_mode(0o755);

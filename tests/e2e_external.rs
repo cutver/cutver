@@ -6,11 +6,11 @@ use std::process::Command;
 #[test]
 fn test_e2e_external_subcommand_dispatch_and_exit_code() {
     let fixture = Fixture::new("external-ok");
-    let script_path = fixture.dir.join("cutver-custom");
 
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
+        let script_path = fixture.dir.join("cutver-custom");
         std::fs::write(&script_path, "#!/bin/sh\necho \"args: $@\"\nexit 7\n").unwrap();
         let mut perms = std::fs::metadata(&script_path).unwrap().permissions();
         perms.set_mode(0o755);

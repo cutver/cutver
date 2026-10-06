@@ -9,37 +9,22 @@ use cutver::semver_bump::Bump;
 use std::os::unix::fs::PermissionsExt;
 
 const MOCK_PLUGIN_SCRIPT: &str = r#"#!/bin/sh
-# Read all input from stdin
 INPUT=$(cat)
 
-# Inspect capability and action from payload
 case "$INPUT" in
+  *"99.99.99"*)
+    echo "Simulated manifest write failure" >&2
+    exit 1
+    ;;
   *"current_version"*)
-    # manifest.write request: contains current_version and next_version
-    # Simple JSON replacement or sed on manifest content:
-    # Read the next_version value using sed/awk/grep
-    NEXT_VER=$(echo "$INPUT" | sed -n 's/.*"next_version":[ ]*"\([^"]*\)".*/\1/p')
-    # If simulated failure triggered by next_version == "99.99.99"
-    if [ "$NEXT_VER" = "99.99.99" ]; then
-      echo "Simulated manifest write failure" >&2
-      exit 1
-    fi
-    # Perform surgical replacement on Helm Chart.yaml format: version: <old> -> version: <new>
-    OLD_VER=$(echo "$INPUT" | sed -n 's/.*"current_version":[ ]*"\([^"]*\)".*/\1/p')
-    CONTENT=$(echo "$INPUT" | sed -n 's/.*"content":[ ]*"\([^"]*\)".*/\1/p')
-    # Unescape newlines if needed, or simple string replace:
-    UPDATED=$(echo "$CONTENT" | sed "s/version: $OLD_VER/version: $NEXT_VER/")
-    # Format JSON response
-    printf '{"content": "%s"}\n' "$UPDATED"
+    cat << 'JSON'
+{"content": "apiVersion: v2\nname: mychart\nversion: 1.3.0\n"}
+JSON
     ;;
   *)
-    # manifest.read request: contains path and content
-    # Extract version: <ver> from content
-    VER=$(echo "$INPUT" | sed -n 's/.*version: \([0-9.]*\).*/\1/p')
-    if [ -z "$VER" ]; then
-      VER="0.1.0"
-    fi
-    printf '{"version": "%s"}\n' "$VER"
+    cat << 'JSON'
+{"version": "1.2.3"}
+JSON
     ;;
 esac
 "#;

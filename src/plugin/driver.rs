@@ -1,3 +1,7 @@
+pub mod process;
+
+pub use process::ProcessDriver;
+
 use crate::plugin::error::PluginError;
 use crate::plugin::types::PluginName;
 

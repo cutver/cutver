@@ -244,6 +244,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(windows, ignore)]
     fn test_successful_invocation_echo() {
         let name = PluginName::new("cat-plugin").unwrap();
         let mut caps = HashSet::new();

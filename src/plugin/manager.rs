@@ -188,14 +188,18 @@ mod tests {
     use super::*;
     use std::collections::HashMap;
 
-    fn echo_command() -> (String, Vec<String>) {
-        if cfg!(windows) {
-            (
-                "cmd".to_string(),
-                vec!["/C".to_string(), "findstr".to_string(), "^".to_string()],
-            )
-        } else {
-            ("cat".to_string(), vec![])
+    #[derive(Debug)]
+    struct MockEchoDriver {
+        name: PluginName,
+    }
+
+    impl PluginDriver for MockEchoDriver {
+        fn name(&self) -> &PluginName {
+            &self.name
+        }
+
+        fn invoke(&self, _capability: &str, payload: &[u8]) -> Result<Vec<u8>, PluginError> {
+            Ok(payload.to_vec())
         }
     }
 
@@ -315,12 +319,7 @@ mod tests {
     #[test]
     fn test_dispatch_missing_capability() {
         let name = PluginName::new("limited-plugin").unwrap();
-        let (cmd, args) = echo_command();
-
-        let mut caps = HashSet::new();
-        caps.insert(Capability::LifecycleV1);
-
-        let driver = ProcessDriver::new(name.clone(), cmd, args, BTreeMap::new(), 5, caps);
+        let driver = MockEchoDriver { name: name.clone() };
 
         let cfg = PluginConfig {
             runtime: RuntimeKind::Process,
@@ -360,14 +359,7 @@ mod tests {
     #[test]
     fn test_dispatch_roundtrip_with_echo_driver() {
         let name = PluginName::new("echo-plugin").unwrap();
-        let (cmd, args) = echo_command();
-
-        let mut caps = HashSet::new();
-        caps.insert(Capability::ManifestV1);
-        caps.insert(Capability::LifecycleV1);
-        caps.insert(Capability::ChangelogV1);
-
-        let driver = ProcessDriver::new(name.clone(), cmd, args, BTreeMap::new(), 5, caps);
+        let driver = MockEchoDriver { name: name.clone() };
 
         let cfg = PluginConfig {
             runtime: RuntimeKind::Process,

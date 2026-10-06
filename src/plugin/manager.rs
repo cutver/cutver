@@ -150,9 +150,45 @@ impl PluginManager {
 /// Creates a driver instance for a plugin based on its runtime configuration.
 fn create_driver(name: &PluginName, config: &PluginConfig) -> Result<Box<dyn PluginDriver>, PluginError> {
     match config.runtime {
-        RuntimeKind::Wasm => Err(PluginError::WasmNotSupported { name: name.clone() }),
+        RuntimeKind::Wasm => create_wasm_runtime_driver(name, config),
         RuntimeKind::Process => create_process_driver(name, config),
     }
+}
+
+#[cfg(not(feature = "plugins"))]
+fn create_wasm_runtime_driver(name: &PluginName, _config: &PluginConfig) -> Result<Box<dyn PluginDriver>, PluginError> {
+    Err(PluginError::WasmNotSupported { name: name.clone() })
+}
+
+#[cfg(feature = "plugins")]
+fn create_wasm_runtime_driver(name: &PluginName, config: &PluginConfig) -> Result<Box<dyn PluginDriver>, PluginError> {
+    create_wasm_driver(name, config)
+}
+
+#[cfg(feature = "plugins")]
+fn create_wasm_driver(name: &PluginName, config: &PluginConfig) -> Result<Box<dyn PluginDriver>, PluginError> {
+    let source = config
+        .source
+        .as_deref()
+        .filter(|s| !s.trim().is_empty())
+        .ok_or_else(|| PluginError::MissingConfiguration {
+            name: name.clone(),
+            reason: "'source' is required for wasm runtime and cannot be empty".to_string(),
+        })?;
+
+    let bytes = crate::plugin::driver::wasm::load_wasm_bytes(source, config.hash.as_deref())?;
+    let capabilities = config.capabilities.iter().copied().collect::<HashSet<_>>();
+
+    let driver = crate::plugin::driver::WasmDriver::new(
+        name.clone(),
+        &bytes,
+        &config.permissions,
+        config.timeout_seconds,
+        capabilities,
+        config.hash.as_deref(),
+    )?;
+
+    Ok(Box::new(driver))
 }
 
 /// Creates a `ProcessDriver` from plugin configuration.
@@ -218,6 +254,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "plugins"))]
     fn test_from_config_wasm_unsupported() {
         let name = PluginName::new("wasm-plugin").unwrap();
         let config = PluginConfig {
@@ -242,6 +279,35 @@ mod tests {
             }
             other => panic!("expected WasmNotSupported, got {other:?}"),
         }
+    }
+
+    #[test]
+    #[cfg(feature = "plugins")]
+    fn test_from_config_wasm_supported_and_executes() {
+        let temp_dir = std::env::temp_dir();
+        let wasm_file = temp_dir.join("cutver_mgr_test.wasm");
+        let minimal_wasm: &[u8] = &[0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00];
+        std::fs::write(&wasm_file, minimal_wasm).unwrap();
+
+        let name = PluginName::new("wasm-plugin-feature").unwrap();
+        let config = PluginConfig {
+            runtime: RuntimeKind::Wasm,
+            source: Some(wasm_file.to_str().unwrap().to_string()),
+            hash: None,
+            command: None,
+            capabilities: vec![Capability::ManifestV1],
+            events: vec![],
+            manifest_match: vec![],
+            permissions: Default::default(),
+            timeout_seconds: Some(5),
+        };
+
+        let mut map = HashMap::new();
+        map.insert(name.clone(), config);
+
+        let manager = PluginManager::from_config(&map).unwrap();
+        assert!(manager.driver(&name).is_some());
+        let _ = std::fs::remove_file(wasm_file);
     }
 
     #[test]

@@ -1,6 +1,10 @@
 pub mod process;
+#[cfg(feature = "plugins")]
+pub mod wasm;
 
 pub use process::ProcessDriver;
+#[cfg(feature = "plugins")]
+pub use wasm::WasmDriver;
 
 use crate::plugin::error::PluginError;
 use crate::plugin::types::PluginName;

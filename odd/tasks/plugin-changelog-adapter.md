@@ -31,11 +31,14 @@
 ## Evidence & Verification
 - **Branch**: `feat/plugin-changelog-adapter-154`
 - **Issue**: [#154](https://github.com/cutver/cutver/issues/154)
+- **Commit**: `b8b5dfe` (`feat(plugin): wire changelog.v1 capability into release notes formatting pipeline (#154)`)
+- **Pull Request**: [#157](https://github.com/cutver/cutver/pull/157)
 - **Validation**:
   - `cargo test`: passed (332 unit tests, all e2e suites green)
   - `cargo test --features plugins`: passed (332 unit tests, all e2e suites green)
   - `cargo clippy --all-targets --all-features -- -D warnings`: passed (0 warnings)
   - `cargo fmt -- --check`: passed (clean formatting)
 - **RDD Receipt**: Lineage `review-d894d3e6725590fa`, state `approved`, authority burned with `burn_evidence: gentle-ai.review-acknowledged/v1`.
+
 
 

@@ -14,7 +14,8 @@ use crate::config::Config;
 use crate::conventional;
 use crate::git;
 use crate::plugin::PluginManager;
-use crate::plugin::dto::{PostBumpPayload, PostReleasePayload, PreBumpPayload};
+use crate::plugin::dto::{PostBumpPayload, PostReleasePayload, PreBumpPayload, VersioningComputeRequest};
+use crate::plugin::types::PluginName;
 use crate::preflight;
 use crate::semver_bump::{self, Bump};
 
@@ -42,7 +43,7 @@ pub fn run_with_first_release(
     let (source_entry, _editor, current) = current_source(config, Some(&plugin_manager))?;
     let bump_level = bump_kind.into();
     let (next, prev_tag, auto_commits, rationale) =
-        resolve_next_version(config, repo, &current, bump_level, first_release)?;
+        resolve_next_version(config, repo, &current, bump_level, first_release, &plugin_manager)?;
     let tag = git::tag_name(&config.git.tag_prefix, &next.to_string());
     let interp_ctx = build_context(
         repo,
@@ -136,11 +137,63 @@ fn resolve_next_version(
     current: &Version,
     bump_level: BumpLevel,
     first_release: bool,
+    plugin_manager: &PluginManager,
 ) -> Result<NextVersionResolution, Error> {
     if first_release {
         return Ok((current.clone(), None, None, None));
     }
     let previous_tag = git::latest_tag(repo, Some(&config.git.tag_prefix))?;
+
+    if config.version.strategy == "plugin" {
+        let plugin_name = match &config.version.plugin {
+            Some(name) => {
+                let p_name = PluginName::new(name).map_err(|e| Error::InvalidPluginName(name.clone(), e))?;
+                if plugin_manager.config(&p_name).is_none() {
+                    return Err(Error::Plugin(crate::plugin::PluginError::PluginNotFound {
+                        name: p_name,
+                    }));
+                }
+                p_name
+            }
+            None => plugin_manager.resolve_versioning_plugin()?.clone(),
+        };
+
+        let commits = git::commits_since(repo, previous_tag.as_deref())?;
+        let bump_level_str = match bump_level {
+            BumpLevel::Patch => "patch",
+            BumpLevel::Minor => "minor",
+            BumpLevel::Major => "major",
+            BumpLevel::Auto => "auto",
+        };
+
+        let req = VersioningComputeRequest {
+            root_dir: repo.to_string_lossy().into_owned(),
+            current_version: current.to_string(),
+            bump_level: bump_level_str.to_string(),
+            tag_prefix: config.git.tag_prefix.clone(),
+            previous_tag: previous_tag.clone(),
+            commits,
+        };
+
+        let resp = plugin_manager.dispatch_versioning(&plugin_name, &req)?;
+        let next = Version::parse(&resp.next_version).map_err(|e| Error::InvalidPluginVersion {
+            plugin: plugin_name.to_string(),
+            version: resp.next_version,
+            reason: e.to_string(),
+        })?;
+
+        let rationale = resp.rationale.map(|r| conventional::BumpRationale {
+            level: Bump::Patch,
+            breaking_count: 0,
+            feat_count: 0,
+            fix_count: 0,
+            other_count: 0,
+            breaking_sample: Some(r),
+        });
+
+        return Ok((next, previous_tag, None, rationale));
+    }
+
     let mut auto_commits = None;
     let mut rationale = None;
     let bump_semver = match bump_level {

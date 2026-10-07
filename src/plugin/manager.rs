@@ -4,6 +4,7 @@ use crate::plugin::driver::{PluginDriver, ProcessDriver};
 use crate::plugin::dto::{
     ChangelogRenderRequest, ChangelogRenderResponse, ManifestReadRequest, ManifestReadResponse, ManifestWriteRequest,
     ManifestWriteResponse, PostBumpPayload, PostReleasePayload, PreBumpPayload, PreBumpResponse,
+    VersioningComputeRequest, VersioningComputeResponse,
 };
 use crate::plugin::error::PluginError;
 use crate::plugin::types::{Capability, PluginConfig, PluginName, RuntimeKind};
@@ -123,6 +124,29 @@ impl PluginManager {
         }
     }
 
+    /// Finds plugins declaring capability `versioning.v1`.
+    /// - If 1 match found, returns `&PluginName`.
+    /// - If 0 matches, returns `Err(PluginError::NoVersioningPlugin)`.
+    /// - If >1 matches, returns `Err(PluginError::AmbiguousVersioningPlugin)`.
+    pub fn resolve_versioning_plugin(&self) -> Result<&PluginName, PluginError> {
+        let mut matched: Vec<&PluginName> = self
+            .configs
+            .iter()
+            .filter(|(_name, config)| config.capabilities.contains(&Capability::VersioningV1))
+            .map(|(name, _config)| name)
+            .collect();
+
+        matched.sort();
+
+        match matched.len() {
+            1 => Ok(matched[0]),
+            0 => Err(PluginError::NoVersioningPlugin),
+            _ => Err(PluginError::AmbiguousVersioningPlugin {
+                matches: matched.into_iter().cloned().collect(),
+            }),
+        }
+    }
+
     /// Dispatches a `manifest.read` request to the target plugin.
     pub fn dispatch_manifest_read(
         &self,
@@ -169,6 +193,15 @@ impl PluginManager {
         req: &ChangelogRenderRequest,
     ) -> Result<ChangelogRenderResponse, PluginError> {
         self.dispatch_raw(name, Capability::ChangelogV1, req)
+    }
+
+    /// Dispatches a versioning compute request to the target plugin.
+    pub fn dispatch_versioning(
+        &self,
+        name: &PluginName,
+        req: &VersioningComputeRequest,
+    ) -> Result<VersioningComputeResponse, PluginError> {
+        self.dispatch_raw(name, Capability::VersioningV1, req)
     }
 
     /// Helper dispatch method validating capability and executing IPC over driver.
@@ -892,6 +925,78 @@ mod tests {
                 assert_eq!(matches, vec![p_cl, p_extra]);
             }
             other => panic!("expected AmbiguousChangelogPlugin, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_resolve_versioning_plugin() {
+        let p_ver = PluginName::new("custom-semver").unwrap();
+        let p_extra = PluginName::new("calver-strategy").unwrap();
+        let p_other = PluginName::new("manifest-only").unwrap();
+
+        let cfg_ver = PluginConfig {
+            runtime: RuntimeKind::Process,
+            source: None,
+            hash: None,
+            command: Some("custom-semver".into()),
+            capabilities: vec![Capability::VersioningV1],
+            events: vec![],
+            manifest_match: vec![],
+            permissions: Default::default(),
+            timeout_seconds: None,
+        };
+
+        let cfg_extra = PluginConfig {
+            runtime: RuntimeKind::Process,
+            source: None,
+            hash: None,
+            command: Some("calver-strategy".into()),
+            capabilities: vec![Capability::VersioningV1],
+            events: vec![],
+            manifest_match: vec![],
+            permissions: Default::default(),
+            timeout_seconds: None,
+        };
+
+        let cfg_other = PluginConfig {
+            runtime: RuntimeKind::Process,
+            source: None,
+            hash: None,
+            command: Some("manifest-only".into()),
+            capabilities: vec![Capability::ManifestV1],
+            events: vec![],
+            manifest_match: vec![],
+            permissions: Default::default(),
+            timeout_seconds: None,
+        };
+
+        // 0 matches -> Err(NoVersioningPlugin)
+        let mut configs_empty = HashMap::new();
+        configs_empty.insert(p_other.clone(), cfg_other);
+        let mgr_empty = PluginManager::new(HashMap::new(), configs_empty);
+        assert!(matches!(
+            mgr_empty.resolve_versioning_plugin(),
+            Err(PluginError::NoVersioningPlugin)
+        ));
+
+        // 1 match -> Ok
+        let mut configs_single = HashMap::new();
+        configs_single.insert(p_ver.clone(), cfg_ver.clone());
+        let mgr_single = PluginManager::new(HashMap::new(), configs_single);
+        let res = mgr_single.resolve_versioning_plugin().unwrap();
+        assert_eq!(res, &p_ver);
+
+        // >1 matches -> Err(AmbiguousVersioningPlugin)
+        let mut configs_multi = HashMap::new();
+        configs_multi.insert(p_ver.clone(), cfg_ver);
+        configs_multi.insert(p_extra.clone(), cfg_extra);
+        let mgr_multi = PluginManager::new(HashMap::new(), configs_multi);
+        match mgr_multi.resolve_versioning_plugin().unwrap_err() {
+            PluginError::AmbiguousVersioningPlugin { matches } => {
+                // p_extra ("calver-strategy") < p_ver ("custom-semver")
+                assert_eq!(matches, vec![p_extra, p_ver]);
+            }
+            other => panic!("expected AmbiguousVersioningPlugin, got {other:?}"),
         }
     }
 }

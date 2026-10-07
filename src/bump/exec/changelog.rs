@@ -19,6 +19,7 @@ pub(crate) struct ChangelogPlanParams<'a> {
     pub(crate) auto_commits: Option<Vec<conventional::ConventionalCommit>>,
     pub(crate) dry_run: bool,
     pub(crate) first_release: bool,
+    pub(crate) plugin_manager: Option<&'a crate::plugin::PluginManager>,
 }
 
 pub(crate) struct ChangelogUpdate {
@@ -66,7 +67,12 @@ pub(crate) fn prepare_changelog(params: ChangelogPlanParams<'_>) -> Result<Optio
             contributors,
             changelog_config: &params.config.changelog,
         });
-        let body = changelog::render_body_with_context(&params.config.changelog, &commits, &context)?;
+        let body = changelog::render_body_with_plugin(
+            &params.config.changelog,
+            &commits,
+            Some(&context),
+            params.plugin_manager,
+        )?;
         let orig_content = original.as_deref().unwrap_or_default();
         changelog::compute_update(
             orig_content,

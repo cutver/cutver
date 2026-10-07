@@ -100,6 +100,29 @@ impl PluginManager {
         }
     }
 
+    /// Finds plugins declaring capability `changelog.v1`.
+    /// - If 1 match found, returns `&PluginName`.
+    /// - If 0 matches, returns `Err(PluginError::NoChangelogPlugin)`.
+    /// - If >1 matches, returns `Err(PluginError::AmbiguousChangelogPlugin)`.
+    pub fn resolve_changelog_plugin(&self) -> Result<&PluginName, PluginError> {
+        let mut matched: Vec<&PluginName> = self
+            .configs
+            .iter()
+            .filter(|(_name, config)| config.capabilities.contains(&Capability::ChangelogV1))
+            .map(|(name, _config)| name)
+            .collect();
+
+        matched.sort();
+
+        match matched.len() {
+            1 => Ok(matched[0]),
+            0 => Err(PluginError::NoChangelogPlugin),
+            _ => Err(PluginError::AmbiguousChangelogPlugin {
+                matches: matched.into_iter().cloned().collect(),
+            }),
+        }
+    }
+
     /// Dispatches a `manifest.read` request to the target plugin.
     pub fn dispatch_manifest_read(
         &self,
@@ -798,6 +821,77 @@ mod tests {
                 assert_eq!(matches, vec![p_helm.clone(), p_k8s.clone()]);
             }
             other => panic!("expected AmbiguousManifestPlugin, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_resolve_changelog_plugin() {
+        let p_cl = PluginName::new("custom-cl").unwrap();
+        let p_extra = PluginName::new("extra-cl").unwrap();
+        let p_other = PluginName::new("manifest-only").unwrap();
+
+        let cfg_cl = PluginConfig {
+            runtime: RuntimeKind::Process,
+            source: None,
+            hash: None,
+            command: Some("cl".into()),
+            capabilities: vec![Capability::ChangelogV1],
+            events: vec![],
+            manifest_match: vec![],
+            permissions: Default::default(),
+            timeout_seconds: None,
+        };
+
+        let cfg_extra = PluginConfig {
+            runtime: RuntimeKind::Process,
+            source: None,
+            hash: None,
+            command: Some("extra".into()),
+            capabilities: vec![Capability::ChangelogV1],
+            events: vec![],
+            manifest_match: vec![],
+            permissions: Default::default(),
+            timeout_seconds: None,
+        };
+
+        let cfg_other = PluginConfig {
+            runtime: RuntimeKind::Process,
+            source: None,
+            hash: None,
+            command: Some("other".into()),
+            capabilities: vec![Capability::ManifestV1],
+            events: vec![],
+            manifest_match: vec![],
+            permissions: Default::default(),
+            timeout_seconds: None,
+        };
+
+        // 0 matches -> Err(NoChangelogPlugin)
+        let mut configs_empty = HashMap::new();
+        configs_empty.insert(p_other.clone(), cfg_other);
+        let mgr_empty = PluginManager::new(HashMap::new(), configs_empty);
+        assert!(matches!(
+            mgr_empty.resolve_changelog_plugin(),
+            Err(PluginError::NoChangelogPlugin)
+        ));
+
+        // 1 match -> Ok
+        let mut configs_single = HashMap::new();
+        configs_single.insert(p_cl.clone(), cfg_cl.clone());
+        let mgr_single = PluginManager::new(HashMap::new(), configs_single);
+        let res = mgr_single.resolve_changelog_plugin().unwrap();
+        assert_eq!(res, &p_cl);
+
+        // >1 matches -> Err(AmbiguousChangelogPlugin)
+        let mut configs_multi = HashMap::new();
+        configs_multi.insert(p_cl.clone(), cfg_cl);
+        configs_multi.insert(p_extra.clone(), cfg_extra);
+        let mgr_multi = PluginManager::new(HashMap::new(), configs_multi);
+        match mgr_multi.resolve_changelog_plugin().unwrap_err() {
+            PluginError::AmbiguousChangelogPlugin { matches } => {
+                assert_eq!(matches, vec![p_cl, p_extra]);
+            }
+            other => panic!("expected AmbiguousChangelogPlugin, got {other:?}"),
         }
     }
 }

@@ -74,6 +74,7 @@ pub fn run_with_first_release(
         auto_commits,
         dry_run,
         first_release,
+        plugin_manager: Some(&plugin_manager),
     };
     let changelog_update = prepare_changelog(cl_params)?;
     let mut transaction = MutationTransaction::new(repo);

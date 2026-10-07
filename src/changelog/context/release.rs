@@ -228,3 +228,42 @@ pub(crate) fn parse_date_components(date_str: &str) -> (u32, u32, u32) {
     let d = parts.next().and_then(|s| s.parse::<u32>().ok()).unwrap_or(0);
     (y, m, d)
 }
+
+impl ReleaseContext {
+    /// Builds a `ChangelogRenderRequest` DTO from this `ReleaseContext` and the workspace root directory.
+    pub fn to_changelog_render_request(
+        &self,
+        root_dir: impl Into<String>,
+    ) -> crate::plugin::dto::ChangelogRenderRequest {
+        let commits = self
+            .commits
+            .iter()
+            .map(|c| crate::plugin::dto::PluginCommitEntry {
+                sha: c.hash.clone().unwrap_or_default(),
+                message: if !c.description.is_empty() {
+                    c.description.clone()
+                } else {
+                    c.line.clone()
+                },
+                r#type: if !c.commit_type.is_empty() {
+                    Some(c.commit_type.clone())
+                } else {
+                    None
+                },
+                scope: c.scope.clone(),
+                author_name: c.author.clone(),
+                pr_number: c.pr_number.map(|n| n.to_string()),
+                is_breaking: c.is_breaking,
+            })
+            .collect();
+
+        crate::plugin::dto::ChangelogRenderRequest {
+            root_dir: root_dir.into(),
+            version: self.version.clone(),
+            tag_name: self.tag.clone(),
+            previous_tag: self.previous_tag.clone(),
+            release_date: self.date.clone(),
+            commits,
+        }
+    }
+}

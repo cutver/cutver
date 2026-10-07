@@ -3,6 +3,8 @@ use crate::changelog::Error;
 use crate::changelog::context::ReleaseContext;
 use crate::config::Changelog;
 use crate::conventional::ConventionalCommit;
+use crate::plugin::PluginManager;
+use crate::plugin::types::PluginName;
 use std::fs;
 use std::path::Path;
 
@@ -37,12 +39,57 @@ fn load_template_string(config: &Changelog) -> Result<String, Error> {
 }
 
 /// Render the Keep-a-Changelog section body for a release based on `config`, parsed `commits`,
-/// and an optional authoritative `ReleaseContext`.
-pub fn render_body(
+/// an optional authoritative `ReleaseContext`, and an optional `PluginManager`.
+pub fn render_body_with_plugin(
     config: &Changelog,
     commits: &[ConventionalCommit],
     context_override: Option<&ReleaseContext>,
+    plugin_manager: Option<&PluginManager>,
 ) -> Result<String, Error> {
+    if config.format == "plugin" {
+        let manager = plugin_manager.ok_or(Error::PluginManagerRequired)?;
+        let plugin_name = match &config.plugin {
+            Some(name) => {
+                let p_name = PluginName::new(name).map_err(|e| Error::InvalidPluginName(name.clone(), e))?;
+                if manager.config(&p_name).is_none() {
+                    return Err(crate::plugin::PluginError::PluginNotFound { name: p_name }.into());
+                }
+                p_name
+            }
+            None => manager.resolve_changelog_plugin()?.clone(),
+        };
+
+        let fallback_ctx;
+        let context = match context_override {
+            Some(ctx) => ctx,
+            None => {
+                let today = crate::changelog::format_date(std::time::SystemTime::now());
+                fallback_ctx = crate::changelog::context::build_context_with_filter(
+                    "",
+                    None,
+                    "",
+                    None,
+                    &today,
+                    None,
+                    commits,
+                    Vec::new(),
+                    config.include_scopes,
+                    &config.fallback_entry,
+                    config.ignore_release_commits,
+                    &config.ignore_scopes,
+                );
+                &fallback_ctx
+            }
+        };
+
+        let root_dir = std::env::current_dir()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let req = context.to_changelog_render_request(root_dir);
+        let res = manager.dispatch_changelog(&plugin_name, &req)?;
+        return Ok(res.body);
+    }
+
     if config.template.is_some() || config.template_file.is_some() || config.mode == "template" {
         let template_str = load_template_string(config)?;
         let fallback_ctx;
@@ -72,6 +119,16 @@ pub fn render_body(
     } else {
         Ok(render_conventional(config, commits))
     }
+}
+
+/// Render the Keep-a-Changelog section body for a release based on `config`, parsed `commits`,
+/// and an optional authoritative `ReleaseContext`.
+pub fn render_body(
+    config: &Changelog,
+    commits: &[ConventionalCommit],
+    context_override: Option<&ReleaseContext>,
+) -> Result<String, Error> {
+    render_body_with_plugin(config, commits, context_override, None)
 }
 
 /// Render the Keep-a-Changelog section body for a release using an authoritative `ReleaseContext`.

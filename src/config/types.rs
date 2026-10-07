@@ -200,6 +200,8 @@ pub struct Changelog {
     pub ignore_release_commits: bool,
     #[serde(default)]
     pub ignore_scopes: Vec<String>,
+    #[serde(default)]
+    pub plugin: Option<String>,
 }
 
 impl Default for Changelog {
@@ -217,6 +219,7 @@ impl Default for Changelog {
             fallback_entry: default_fallback_entry(),
             ignore_release_commits: default_true(),
             ignore_scopes: Vec::new(),
+            plugin: None,
         }
     }
 }
@@ -333,6 +336,35 @@ ignore_scopes = ["internal", "wip"]
         assert_eq!(c.changelog.fallback_entry, "Custom fallback notes.");
         assert!(!c.changelog.ignore_release_commits);
         assert_eq!(c.changelog.ignore_scopes, vec!["internal", "wip"]);
+        assert_eq!(c.changelog.plugin, None);
+    }
+
+    #[test]
+    fn changelog_plugin_format_and_plugin_field() {
+        let toml = r#"
+[[manifest]]
+path = "Cargo.toml"
+kind = "cargo-package"
+
+[changelog]
+format = "plugin"
+plugin = "custom-changelog"
+"#;
+        let c = load_str(toml).unwrap();
+        assert_eq!(c.changelog.format, "plugin");
+        assert_eq!(c.changelog.plugin.as_deref(), Some("custom-changelog"));
+
+        let toml_auto = r#"
+[[manifest]]
+path = "Cargo.toml"
+kind = "cargo-package"
+
+[changelog]
+format = "plugin"
+"#;
+        let c_auto = load_str(toml_auto).unwrap();
+        assert_eq!(c_auto.changelog.format, "plugin");
+        assert_eq!(c_auto.changelog.plugin, None);
     }
 
     #[test]

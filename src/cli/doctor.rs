@@ -1,10 +1,13 @@
+use std::fmt::Write as _;
+use std::fs;
+use std::path::Path;
+use std::sync::Arc;
+
 use crate::bump::{ChangelogDrift, Drift};
 use crate::cli::path::relativize_path;
 use crate::config::Config;
 use crate::manifest;
-use std::fmt::Write as _;
-use std::fs;
-use std::path::Path;
+use crate::plugin::PluginManager;
 
 /// Renders the complete status dashboard grid for valid doctor runs.
 pub fn render_dashboard(config: &Config, check_changelog: bool, theme: &crate::cli::style::Theme) -> String {
@@ -37,10 +40,12 @@ pub fn render_grid_row(out: &mut String, label: &str, value: &str, theme: &crate
 fn format_manifest_summary(config: &Config, theme: &crate::cli::style::Theme) -> String {
     let total = config.manifest.len();
     let primary = config.primary_manifest();
+    let plugin_manager = PluginManager::from_config(&config.plugins).ok().map(Arc::new);
 
     let (path_str, ver_str) = match primary {
         Some(m) => {
-            let ver = read_manifest_version(&config.root_dir, m).unwrap_or_else(|| "unknown".into());
+            let ver =
+                read_manifest_version(&config.root_dir, m, plugin_manager.as_ref()).unwrap_or_else(|| "unknown".into());
             let rel_path = relativize_path(m.path.as_str(), Some(&config.root_dir));
             (rel_path, ver)
         }
@@ -69,10 +74,14 @@ fn format_preflight_summary(config: &Config) -> String {
 }
 
 /// Reads version from manifest file, ignoring read/parse errors for display.
-fn read_manifest_version(root_dir: &Path, manifest: &crate::config::Manifest) -> Option<String> {
+fn read_manifest_version(
+    root_dir: &Path,
+    manifest: &crate::config::Manifest,
+    plugin_manager: Option<&Arc<PluginManager>>,
+) -> Option<String> {
     let target = root_dir.join(&manifest.path);
     let content = fs::read_to_string(target).ok()?;
-    let editor = manifest::editor_for(manifest).ok()?;
+    let editor = manifest::editor_for_with_manager(manifest, plugin_manager).ok()?;
     let version = editor.read_version(&content).ok()?;
     Some(version.to_string())
 }

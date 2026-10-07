@@ -1,6 +1,7 @@
 use rayon::prelude::*;
 use semver::Version;
 use std::io;
+use std::sync::Arc;
 
 use crate::atomic;
 use crate::bump::exec::command::read;
@@ -8,6 +9,7 @@ use crate::bump::exec::transaction::MutationTransaction;
 use crate::bump::{Change, Error, Touched};
 use crate::config::Config;
 use crate::manifest;
+use crate::plugin::PluginManager;
 
 pub struct SourceEntry<'a> {
     pub manifest: &'a crate::config::Manifest,
@@ -25,15 +27,16 @@ impl<'a> std::ops::Deref for SourceEntry<'a> {
 /// Single source of truth for mapping `config.version.current_source` to its
 /// manifest entry, editor, and current version. Used by both `run` and `doctor`
 /// to eliminate the previously duplicated lookup and error-mapping blocks.
-pub(crate) fn current_source(
-    config: &Config,
-) -> Result<(SourceEntry<'_>, Box<dyn manifest::ManifestEditor>, Version), Error> {
+pub(crate) fn current_source<'a>(
+    config: &'a Config,
+    plugin_manager: Option<&Arc<PluginManager>>,
+) -> Result<(SourceEntry<'a>, Box<dyn manifest::ManifestEditor>, Version), Error> {
     let entry = config.primary_manifest().ok_or_else(|| Error::Read {
         path: config.version.current_source.clone(),
         source: io::Error::new(io::ErrorKind::NotFound, "current_source manifest entry not found"),
     })?;
     let content = read(&entry.path)?;
-    let editor = manifest::editor_for(entry).map_err(|e| Error::CurrentSource {
+    let editor = manifest::editor_for_with_manager(entry, plugin_manager).map_err(|e| Error::CurrentSource {
         path: entry.path.to_string(),
         source: e,
     })?;
@@ -50,9 +53,10 @@ pub(crate) fn current_source(
 
 pub(crate) fn read_manifest(
     m: &crate::config::Manifest,
+    plugin_manager: Option<&Arc<PluginManager>>,
 ) -> Result<(Box<dyn manifest::ManifestEditor>, String, Version), Error> {
     let content = read(&m.path)?;
-    let editor = manifest::editor_for(m).map_err(|e| Error::Manifest {
+    let editor = manifest::editor_for_with_manager(m, plugin_manager).map_err(|e| Error::Manifest {
         path: m.path.to_string(),
         source: e,
     })?;
@@ -63,12 +67,16 @@ pub(crate) fn read_manifest(
     Ok((editor, content, version))
 }
 
-pub(crate) fn compute(config: &Config, next: &Version) -> Result<Vec<Change>, Error> {
+pub(crate) fn compute(
+    config: &Config,
+    next: &Version,
+    plugin_manager: Option<&Arc<PluginManager>>,
+) -> Result<Vec<Change>, Error> {
     config
         .manifest
         .par_iter()
         .map(|m| {
-            let (editor, content, old) = read_manifest(m)?;
+            let (editor, content, old) = read_manifest(m, plugin_manager)?;
             let new = editor.write_version(&content, next).map_err(|e| Error::Manifest {
                 path: m.path.to_string(),
                 source: e,

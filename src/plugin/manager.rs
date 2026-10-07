@@ -70,6 +70,36 @@ impl PluginManager {
         })
     }
 
+    /// Resolves the plugin responsible for handling a manifest path.
+    ///
+    /// Finds plugins declaring capability `manifest.v1` whose `manifest_match`
+    /// patterns match `path`.
+    /// - If 1 match found, returns `&PluginName`.
+    /// - If 0 matches, returns `Err(PluginError::NoPluginForManifest)`.
+    /// - If >1 matches, returns `Err(PluginError::AmbiguousManifestPlugin)`.
+    pub fn resolve_plugin_for_manifest(&self, path: &str) -> Result<&PluginName, PluginError> {
+        let mut matched: Vec<&PluginName> = self
+            .configs
+            .iter()
+            .filter(|(_name, config)| {
+                config.capabilities.contains(&Capability::ManifestV1)
+                    && config.manifest_match.iter().any(|pattern| glob_matches(pattern, path))
+            })
+            .map(|(name, _config)| name)
+            .collect();
+
+        matched.sort();
+
+        match matched.len() {
+            1 => Ok(matched[0]),
+            0 => Err(PluginError::NoPluginForManifest { path: path.to_string() }),
+            _ => Err(PluginError::AmbiguousManifestPlugin {
+                path: path.to_string(),
+                matches: matched.into_iter().cloned().collect(),
+            }),
+        }
+    }
+
     /// Dispatches a `manifest.read` request to the target plugin.
     pub fn dispatch_manifest_read(
         &self,
@@ -231,6 +261,63 @@ fn validate_capability(
     }
 
     Ok(())
+}
+
+/// Matches a glob pattern against a normalized path using regex.
+///
+/// Supported tokens:
+/// - `**`: matches arbitrary directories across `/`
+/// - `*`: matches any characters except `/`
+/// - `?`: matches any single character except `/`
+/// - Literal text: matches exactly
+pub(crate) fn glob_matches(pattern: &str, path: &str) -> bool {
+    // Normalize backslashes to forward slashes for cross-platform glob matching
+    let norm_path = path.replace('\\', "/");
+    let norm_pattern = pattern.replace('\\', "/");
+
+    let regex_pattern = glob_to_regex(&norm_pattern);
+    match regex::Regex::new(&regex_pattern) {
+        Ok(re) => re.is_match(&norm_path),
+        Err(_) => false,
+    }
+}
+
+fn glob_to_regex(pattern: &str) -> String {
+    let mut regex = String::from("^");
+    let chars: Vec<char> = pattern.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        match chars[i] {
+            '*' => {
+                if i + 1 < chars.len() && chars[i + 1] == '*' {
+                    // Match '**'
+                    i += 2;
+                    if i < chars.len() && chars[i] == '/' {
+                        // "**/": matches zero or more directories
+                        regex.push_str("(?:.*/)?");
+                        i += 1;
+                    } else {
+                        // "**": matches anything
+                        regex.push_str(".*");
+                    }
+                } else {
+                    // Single '*': matches non-slash characters
+                    regex.push_str("[^/]*");
+                    i += 1;
+                }
+            }
+            '?' => {
+                regex.push_str("[^/]");
+                i += 1;
+            }
+            c => {
+                regex.push_str(&regex::escape(&c.to_string()));
+                i += 1;
+            }
+        }
+    }
+    regex.push('$');
+    regex
 }
 
 #[cfg(test)]
@@ -610,5 +697,107 @@ mod tests {
         let rel_plugins: HashSet<&PluginName> = manager.plugins_for_event("on_post_release").collect();
         assert_eq!(rel_plugins.len(), 1);
         assert!(rel_plugins.contains(&p_all));
+    }
+
+    #[test]
+    fn test_glob_matches() {
+        // Exact
+        assert!(glob_matches("Chart.yaml", "Chart.yaml"));
+        assert!(!glob_matches("Chart.yaml", "other.yaml"));
+
+        // Single asterisk
+        assert!(glob_matches("*.yaml", "Chart.yaml"));
+        assert!(glob_matches("*.yaml", "foo.yaml"));
+        assert!(!glob_matches("*.yaml", "subdir/foo.yaml"));
+
+        // Question mark
+        assert!(glob_matches("file?.txt", "file1.txt"));
+        assert!(!glob_matches("file?.txt", "file10.txt"));
+
+        // Double asterisk
+        assert!(glob_matches("**/Chart.yaml", "Chart.yaml"));
+        assert!(glob_matches("**/Chart.yaml", "charts/nested/Chart.yaml"));
+        assert!(glob_matches("charts/**", "charts/foo/bar.yaml"));
+        assert!(glob_matches("**/*.json", "sub/dir/package.json"));
+        assert!(glob_matches("**/*.json", "package.json"));
+
+        // Backslash normalization
+        assert!(glob_matches("charts/**/*.yaml", "charts\\sub\\Chart.yaml"));
+    }
+
+    #[test]
+    fn test_resolve_plugin_for_manifest() {
+        let p_helm = PluginName::new("helm").unwrap();
+        let p_k8s = PluginName::new("k8s").unwrap();
+        let p_other = PluginName::new("other").unwrap();
+
+        let cfg_helm = PluginConfig {
+            runtime: RuntimeKind::Process,
+            source: None,
+            hash: None,
+            command: Some("helm".into()),
+            capabilities: vec![Capability::ManifestV1],
+            events: vec![],
+            manifest_match: vec!["Chart.yaml".into(), "charts/**/Chart.yaml".into()],
+            permissions: Default::default(),
+            timeout_seconds: None,
+        };
+
+        let cfg_k8s = PluginConfig {
+            runtime: RuntimeKind::Process,
+            source: None,
+            hash: None,
+            command: Some("k8s".into()),
+            capabilities: vec![Capability::ManifestV1],
+            events: vec![],
+            manifest_match: vec!["k8s/*.yaml".into(), "charts/**/Chart.yaml".into()],
+            permissions: Default::default(),
+            timeout_seconds: None,
+        };
+
+        let cfg_other = PluginConfig {
+            runtime: RuntimeKind::Process,
+            source: None,
+            hash: None,
+            command: Some("other".into()),
+            capabilities: vec![Capability::LifecycleV1], // Note: ManifestV1 NOT declared
+            events: vec![],
+            manifest_match: vec!["other.yaml".into()],
+            permissions: Default::default(),
+            timeout_seconds: None,
+        };
+
+        let mut configs = HashMap::new();
+        configs.insert(p_helm.clone(), cfg_helm);
+        configs.insert(p_k8s.clone(), cfg_k8s);
+        configs.insert(p_other.clone(), cfg_other);
+
+        let manager = PluginManager::new(HashMap::new(), configs);
+
+        // 1 match -> Ok
+        let res = manager.resolve_plugin_for_manifest("Chart.yaml").unwrap();
+        assert_eq!(res, &p_helm);
+
+        let res_k8s = manager.resolve_plugin_for_manifest("k8s/deploy.yaml").unwrap();
+        assert_eq!(res_k8s, &p_k8s);
+
+        // 0 matches (either no pattern match or capability missing) -> Err(NoPluginForManifest)
+        let err_nomatch = manager.resolve_plugin_for_manifest("Cargo.toml").unwrap_err();
+        assert!(matches!(err_nomatch, PluginError::NoPluginForManifest { ref path } if path == "Cargo.toml"));
+
+        let err_nocap = manager.resolve_plugin_for_manifest("other.yaml").unwrap_err();
+        assert!(matches!(err_nocap, PluginError::NoPluginForManifest { ref path } if path == "other.yaml"));
+
+        // >1 matches -> Err(AmbiguousManifestPlugin)
+        let err_ambig = manager
+            .resolve_plugin_for_manifest("charts/foo/Chart.yaml")
+            .unwrap_err();
+        match err_ambig {
+            PluginError::AmbiguousManifestPlugin { path, matches } => {
+                assert_eq!(path, "charts/foo/Chart.yaml");
+                assert_eq!(matches, vec![p_helm.clone(), p_k8s.clone()]);
+            }
+            other => panic!("expected AmbiguousManifestPlugin, got {other:?}"),
+        }
     }
 }

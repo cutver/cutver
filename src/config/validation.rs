@@ -75,6 +75,8 @@ mod tests {
         assert!(matches!(load_str(&manifest("gradle", "")), Err(ConfigError::Parse(_))));
         assert!(matches!(load_str(&manifest("regex", "")), Err(ConfigError::Parse(_))));
         assert!(matches!(load_str(&manifest("unknown", "")), Err(ConfigError::Parse(_))));
+        assert!(load_str(&manifest("plugin", "")).is_ok());
+        assert!(load_str(&manifest("plugin", "plugin = \"helm\"\n")).is_ok());
         assert!(matches!(
             load_str(&(manifest("cargo-package", "") + "\n[preflight]\ntests = 123")),
             Err(ConfigError::PreflightNotString(_))

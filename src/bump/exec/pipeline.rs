@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::sync::Arc;
 
 use semver::Version;
 
@@ -37,7 +38,8 @@ pub fn run_with_first_release(
     git::require_clean_tree(repo, config.git.require_clean_tree)?;
     git::require_branch(repo, config.git.require_branch.as_deref())?;
 
-    let (source_entry, _editor, current) = current_source(config)?;
+    let plugin_manager = Arc::new(PluginManager::from_config(&config.plugins)?);
+    let (source_entry, _editor, current) = current_source(config, Some(&plugin_manager))?;
     let bump_level = bump_kind.into();
     let (next, prev_tag, auto_commits, rationale) =
         resolve_next_version(config, repo, &current, bump_level, first_release)?;
@@ -60,10 +62,9 @@ pub fn run_with_first_release(
         preflight::run(&preflight_plan)?;
     }
 
-    let plugin_manager = PluginManager::from_config(&config.plugins)?;
     run_plugin_pre_bump(&plugin_manager, repo, &current, &next, bump_level, &tag, dry_run)?;
 
-    let computed = compute(config, &next)?;
+    let computed = compute(config, &next, Some(&plugin_manager))?;
     let cl_params = ChangelogPlanParams {
         config,
         repo,

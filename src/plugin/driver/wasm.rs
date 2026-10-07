@@ -188,7 +188,11 @@ pub fn load_wasm_bytes(name: &PluginName, source: &str, expected_hash: Option<&s
 }
 
 /// Helper caching a WASM artifact to the local plugin cache.
-pub fn cache_wasm_artifact(name: &PluginName, source: &str, expected_hash: Option<&str>) -> Result<PathBuf, PluginError> {
+pub fn cache_wasm_artifact(
+    name: &PluginName,
+    source: &str,
+    expected_hash: Option<&str>,
+) -> Result<PathBuf, PluginError> {
     let src_path = Path::new(source);
     if src_path.is_file() {
         return Ok(src_path.to_path_buf());

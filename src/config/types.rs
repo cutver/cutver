@@ -117,6 +117,8 @@ pub struct VersionSection {
     pub current_source: String,
     #[serde(default = "default_strategy")]
     pub strategy: String,
+    #[serde(default)]
+    pub plugin: Option<String>,
 }
 
 pub(crate) fn default_strategy() -> String {
@@ -532,5 +534,33 @@ timeout_seconds = 15
 
         let default_cfg = load_str(&manifest("cargo-package", "")).unwrap();
         assert!(default_cfg.plugins.is_empty());
+    }
+
+    #[test]
+    fn version_section_plugin_strategy_parsing() {
+        let toml_explicit = r#"
+[version]
+strategy = "plugin"
+plugin = "custom-semver"
+
+[[manifest]]
+path = "Cargo.toml"
+kind = "cargo-package"
+"#;
+        let cfg = load_str(toml_explicit).unwrap();
+        assert_eq!(cfg.version.strategy, "plugin");
+        assert_eq!(cfg.version.plugin.as_deref(), Some("custom-semver"));
+
+        let toml_auto = r#"
+[version]
+strategy = "plugin"
+
+[[manifest]]
+path = "Cargo.toml"
+kind = "cargo-package"
+"#;
+        let cfg_auto = load_str(toml_auto).unwrap();
+        assert_eq!(cfg_auto.version.strategy, "plugin");
+        assert_eq!(cfg_auto.version.plugin, None);
     }
 }

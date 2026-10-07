@@ -134,4 +134,19 @@ pub enum PluginError {
         matches.iter().map(|p| p.as_str()).collect::<Vec<_>>().join(", ")
     )]
     AmbiguousChangelogPlugin { matches: Vec<PluginName> },
+
+    #[error(
+        "no registered plugin declares capability 'versioning.v1'.\n  \
+        Where: versioning plugin resolution\n  \
+        Fix: configure a plugin declaring 'capabilities = [\"versioning.v1\"]' under [plugins.<name>] in cutver.toml, or explicitly specify 'plugin = \"<name>\"' under [version]."
+    )]
+    NoVersioningPlugin,
+
+    #[error(
+        "multiple plugins declare capability 'versioning.v1': {}.\n  \
+        Where: versioning plugin resolution\n  \
+        Fix: explicitly specify 'plugin = \"<name>\"' under [version] in cutver.toml.",
+        matches.iter().map(|p| p.as_str()).collect::<Vec<_>>().join(", ")
+    )]
+    AmbiguousVersioningPlugin { matches: Vec<PluginName> },
 }

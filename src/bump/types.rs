@@ -82,6 +82,16 @@ pub enum Error {
     },
     #[error("plugin error: {0}")]
     Plugin(#[from] crate::plugin::PluginError),
+    #[error("invalid plugin name '{0}': {1}")]
+    InvalidPluginName(String, crate::plugin::types::PluginNameError),
+    #[error(
+        "plugin '{plugin}' returned invalid SemVer version '{version}': {reason}\n  Where: plugin versioning resolution\n  Fix: ensure the versioning plugin produces a valid SemVer 2.0 version string."
+    )]
+    InvalidPluginVersion {
+        plugin: String,
+        version: String,
+        reason: String,
+    },
     #[error(
         "plugin '{plugin}' rejected pre-bump checks: {reason}\n  Where: lifecycle hook 'on_pre_bump'\n  Fix: resolve the pre-bump condition reported above."
     )]

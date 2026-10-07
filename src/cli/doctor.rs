@@ -191,6 +191,7 @@ mod tests {
             version: VersionSection {
                 current_source: "Cargo.toml".into(),
                 strategy: "manual".into(),
+                plugin: None,
             },
             manifest: vec![Manifest {
                 path: ManifestPath::parse("Cargo.toml").unwrap(),

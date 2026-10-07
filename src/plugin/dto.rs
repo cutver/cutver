@@ -1,10 +1,12 @@
 pub mod changelog;
 pub mod lifecycle;
 pub mod manifest;
+pub mod versioning;
 
 pub use changelog::{ChangelogRenderRequest, ChangelogRenderResponse, PluginCommitEntry};
 pub use lifecycle::{PostBumpPayload, PostReleasePayload, PreBumpPayload, PreBumpResponse};
 pub use manifest::{ManifestReadRequest, ManifestReadResponse, ManifestWriteRequest, ManifestWriteResponse};
+pub use versioning::{VersioningComputeRequest, VersioningComputeResponse};
 
 #[cfg(test)]
 mod tests {
@@ -121,5 +123,50 @@ mod tests {
         let res_json = serde_json::to_string(&res).unwrap();
         let deserialized_res: ChangelogRenderResponse = serde_json::from_str(&res_json).unwrap();
         assert_eq!(res, deserialized_res);
+    }
+
+    #[test]
+    fn test_versioning_dto_roundtrip() {
+        let req = VersioningComputeRequest {
+            root_dir: "/workspace".to_string(),
+            current_version: "1.0.0".to_string(),
+            bump_level: "auto".to_string(),
+            tag_prefix: "v".to_string(),
+            previous_tag: Some("v1.0.0".to_string()),
+            commits: vec!["feat: new feature".to_string(), "fix: bugfix".to_string()],
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        let deserialized: VersioningComputeRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(req, deserialized);
+
+        let req_none = VersioningComputeRequest {
+            root_dir: "/workspace".to_string(),
+            current_version: "0.1.0".to_string(),
+            bump_level: "minor".to_string(),
+            tag_prefix: "v".to_string(),
+            previous_tag: None,
+            commits: vec![],
+        };
+        let json_none = serde_json::to_string(&req_none).unwrap();
+        assert!(!json_none.contains("previous_tag"));
+        let deserialized_none: VersioningComputeRequest = serde_json::from_str(&json_none).unwrap();
+        assert_eq!(req_none, deserialized_none);
+
+        let res = VersioningComputeResponse {
+            next_version: "1.1.0".to_string(),
+            rationale: Some("found 1 feature commit".to_string()),
+        };
+        let res_json = serde_json::to_string(&res).unwrap();
+        let deserialized_res: VersioningComputeResponse = serde_json::from_str(&res_json).unwrap();
+        assert_eq!(res, deserialized_res);
+
+        let res_no_rat = VersioningComputeResponse {
+            next_version: "1.0.1".to_string(),
+            rationale: None,
+        };
+        let res_no_rat_json = serde_json::to_string(&res_no_rat).unwrap();
+        assert!(!res_no_rat_json.contains("rationale"));
+        let deserialized_no_rat: VersioningComputeResponse = serde_json::from_str(&res_no_rat_json).unwrap();
+        assert_eq!(res_no_rat, deserialized_no_rat);
     }
 }

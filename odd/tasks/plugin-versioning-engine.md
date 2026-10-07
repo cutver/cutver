@@ -32,11 +32,14 @@
 ## Evidence & Verification
 - **Branch**: `feat/plugin-versioning-engine-155`
 - **Issue**: [#155](https://github.com/cutver/cutver/issues/155)
+- **Commit**: `7cdde61` (`feat(plugin): introduce versioning.v1 DTOs and pluggable bump strategy engine (#155)`)
+- **Pull Request**: [#158](https://github.com/cutver/cutver/pull/158)
 - **Validation**:
   - `cargo test`: passed (336 unit tests, all e2e suites green)
   - `cargo test --features plugins`: passed (336 unit tests, all e2e suites green)
   - `cargo clippy --all-targets --all-features -- -D warnings`: passed (0 warnings)
   - `cargo fmt -- --check`: passed (clean formatting)
 - **RDD Receipt**: Lineage `review-1bf2fbbea74c6c39`, state `approved`, authority burned with `burn_evidence: gentle-ai.review-acknowledged/v1`.
+
 
 

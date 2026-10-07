@@ -13,7 +13,10 @@ pub use context::{
     build_context_with_raw_and_filter, enrich_commit_context, filter_commits, parse_repo_forge,
 };
 pub use extract::{extract_latest, extract_version, list_versions, read_latest, read_version};
-pub use render::{create_environment, interpolate_string, render_body, render_body_with_context, render_template};
+pub use render::{
+    create_environment, interpolate_string, render_body, render_body_with_context, render_body_with_plugin,
+    render_template,
+};
 pub use update::{compute_update, format_date, update, update_with_options};
 
 pub type ChangelogError = Error;
@@ -44,4 +47,10 @@ pub enum Error {
         #[source]
         source: io::Error,
     },
+    #[error("plugin error: {0}")]
+    Plugin(#[from] crate::plugin::PluginError),
+    #[error("plugin manager is required to format changelog with format = \"plugin\"")]
+    PluginManagerRequired,
+    #[error("invalid plugin name '{0}': {1}")]
+    InvalidPluginName(String, crate::plugin::types::PluginNameError),
 }

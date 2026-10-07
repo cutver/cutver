@@ -331,3 +331,96 @@ Type: [{{ type }}]
     let pos_fix = res.find("Type: [fix]").unwrap();
     assert!(pos_feat < pos_fix);
 }
+
+#[derive(Debug)]
+struct MockChangelogDriver {
+    name: crate::plugin::types::PluginName,
+    output_body: String,
+}
+
+impl crate::plugin::driver::PluginDriver for MockChangelogDriver {
+    fn name(&self) -> &crate::plugin::types::PluginName {
+        &self.name
+    }
+
+    fn invoke(&self, capability: &str, payload: &[u8]) -> Result<Vec<u8>, crate::plugin::PluginError> {
+        assert_eq!(capability, "changelog.v1");
+        let req: crate::plugin::dto::ChangelogRenderRequest =
+            serde_json::from_slice(payload).expect("valid changelog request payload");
+        assert_eq!(req.version, "1.0.0");
+        let res = crate::plugin::dto::ChangelogRenderResponse {
+            body: self.output_body.clone(),
+        };
+        Ok(serde_json::to_vec(&res).unwrap())
+    }
+}
+
+#[test]
+fn test_render_body_with_plugin_mock() {
+    use crate::changelog::render::body::render_body_with_plugin;
+    use crate::plugin::PluginManager;
+    use crate::plugin::types::{Capability, PluginConfig, PluginName, RuntimeKind};
+    use std::collections::HashMap;
+
+    let p_name = PluginName::new("mock-formatter").unwrap();
+    let driver = Box::new(MockChangelogDriver {
+        name: p_name.clone(),
+        output_body: "### Custom Notes\n* Handled by mock plugin".into(),
+    });
+
+    let config_plugin = PluginConfig {
+        runtime: RuntimeKind::Process,
+        source: None,
+        hash: None,
+        command: Some("mock".into()),
+        capabilities: vec![Capability::ChangelogV1],
+        events: vec![],
+        manifest_match: vec![],
+        permissions: Default::default(),
+        timeout_seconds: None,
+    };
+
+    let mut drivers = HashMap::new();
+    drivers.insert(p_name.clone(), driver as Box<dyn crate::plugin::driver::PluginDriver>);
+    let mut configs = HashMap::new();
+    configs.insert(p_name.clone(), config_plugin);
+
+    let manager = PluginManager::new(drivers, configs);
+
+    let changelog_cfg = Changelog {
+        format: "plugin".into(),
+        plugin: Some("mock-formatter".into()),
+        ..Default::default()
+    };
+
+    let commits = vec![ConventionalCommit::parse("feat: add mock feature").unwrap()];
+    let ctx = build_context(
+        "1.0.0",
+        None,
+        "v1.0.0",
+        None,
+        "2026-04-10",
+        None,
+        &commits,
+        vec![],
+        true,
+        "fallback",
+    );
+
+    // 1. Explicit plugin name
+    let body = render_body_with_plugin(&changelog_cfg, &commits, Some(&ctx), Some(&manager)).unwrap();
+    assert_eq!(body, "### Custom Notes\n* Handled by mock plugin");
+
+    // 2. Automatic plugin resolution
+    let changelog_auto_cfg = Changelog {
+        format: "plugin".into(),
+        plugin: None,
+        ..Default::default()
+    };
+    let body_auto = render_body_with_plugin(&changelog_auto_cfg, &commits, Some(&ctx), Some(&manager)).unwrap();
+    assert_eq!(body_auto, "### Custom Notes\n* Handled by mock plugin");
+
+    // 3. Missing plugin manager returns Error::PluginManagerRequired
+    let err = render_body_with_plugin(&changelog_cfg, &commits, Some(&ctx), None).unwrap_err();
+    assert!(matches!(err, crate::changelog::Error::PluginManagerRequired));
+}

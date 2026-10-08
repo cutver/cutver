@@ -11,6 +11,22 @@ use std::os::unix::fs::PermissionsExt;
 const MOCK_PLUGIN_SCRIPT: &str = r#"#!/bin/sh
 INPUT=$(cat)
 
+# Envelope guard: fail closed if the invocation envelope is malformed, and
+# cross-check the operation against the payload shape so a read/write swap is
+# caught. `current_version` only ever appears in a write payload.
+case "$INPUT" in
+  *'"capability":"manifest.v1"'*'"operation":"write"'*'"current_version"'*) : ;;
+  *'"capability":"manifest.v1"'*'"operation":"read"'*'"current_version"'*)
+    echo '{"error":"read invocation carried write-only fields"}'
+    exit 1
+    ;;
+  *'"capability":"manifest.v1"'*'"operation":"read"'*) : ;;
+  *)
+    echo '{"error":"unexpected envelope"}'
+    exit 1
+    ;;
+esac
+
 case "$INPUT" in
   *"99.99.99"*)
     echo "Simulated manifest write failure" >&2
@@ -151,7 +167,7 @@ manifest_match = ["Chart.yaml"]
     // Failing script on write error:
     // If the plugin exits non-zero during compute/write, the pipeline aborts before phase 2
     let failing_script = fixture.dir.join("fail_plugin.sh");
-    fixture.write("fail_plugin.sh", "#!/bin/sh\nINPUT=$(cat)\ncase \"$INPUT\" in *\"current_version\"*) exit 1;; *) echo '{\"version\": \"1.2.3\"}';; esac\n");
+    fixture.write("fail_plugin.sh", "#!/bin/sh\nINPUT=$(cat)\ncase \"$INPUT\" in *'\"capability\":\"manifest.v1\"'*'\"operation\":\"read\"'*|*'\"capability\":\"manifest.v1\"'*'\"operation\":\"write\"'*) : ;; *) echo '{\"error\":\"unexpected envelope\"}'; exit 1 ;; esac\ncase \"$INPUT\" in *\"current_version\"*) exit 1;; *) echo '{\"version\": \"1.2.3\"}';; esac\n");
     let mut fperms = std::fs::metadata(&failing_script).unwrap().permissions();
     fperms.set_mode(0o755);
     std::fs::set_permissions(&failing_script, fperms).unwrap();

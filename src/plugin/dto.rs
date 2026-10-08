@@ -1,9 +1,11 @@
 pub mod changelog;
+pub mod invocation;
 pub mod lifecycle;
 pub mod manifest;
 pub mod versioning;
 
 pub use changelog::{ChangelogRenderRequest, ChangelogRenderResponse, PluginCommitEntry};
+pub use invocation::PluginInvocation;
 pub use lifecycle::{PostBumpPayload, PostReleasePayload, PreBumpPayload, PreBumpResponse};
 pub use manifest::{ManifestReadRequest, ManifestReadResponse, ManifestWriteRequest, ManifestWriteResponse};
 pub use versioning::{VersioningComputeRequest, VersioningComputeResponse};

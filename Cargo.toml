@@ -29,6 +29,14 @@ sha2 = { version = "0.10", optional = true }
 default = []
 plugins = ["dep:extism", "dep:sha2"]
 
+[dev-dependencies]
+# `wat` is already in Cargo.lock as a transitive dependency of `wasmtime` and
+# `wasm-compose` (both pulled in by the optional `extism` dependency), so this adds
+# NO new crates to the resolved dependency graph. Dev-dependencies never ship in
+# binaries, and this does not affect `cargo build` without `--features plugins`
+# (Pillar VI.4 stays dependency-free).
+wat = "1"
+
 [profile.release]
 opt-level = 3
 lto = "fat"

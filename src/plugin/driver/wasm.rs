@@ -7,8 +7,12 @@ use std::time::Duration;
 use sha2::{Digest, Sha256};
 
 use crate::plugin::driver::PluginDriver;
+use crate::plugin::dto::PluginInvocation;
 use crate::plugin::error::PluginError;
 use crate::plugin::types::{Capability, PermissionsConfig, PluginName};
+
+/// Stable Extism export every WASM plugin must expose to receive invocations.
+pub const INVOKE_EXPORT: &str = "invoke";
 
 /// WebAssembly plugin driver executing guest plugins inside an Extism sandbox.
 pub struct WasmDriver {
@@ -58,7 +62,8 @@ impl PluginDriver for WasmDriver {
         &self.name
     }
 
-    fn invoke(&self, capability: &str, payload: &[u8]) -> Result<Vec<u8>, PluginError> {
+    fn invoke(&self, invocation: &PluginInvocation) -> Result<Vec<u8>, PluginError> {
+        let capability = invocation.capability.as_str();
         let is_supported = self.capabilities.iter().any(|cap| cap.as_str() == capability);
         if !is_supported {
             return Err(PluginError::UnsupportedCapability {
@@ -72,8 +77,14 @@ impl PluginDriver for WasmDriver {
             reason: "failed to acquire plugin lock (mutex poisoned)".to_string(),
         })?;
 
+        let payload = serde_json::to_vec(invocation).map_err(|source| PluginError::InvalidPayload {
+            name: self.name.clone(),
+            capability: capability.to_string(),
+            source,
+        })?;
+
         plugin
-            .call::<&[u8], Vec<u8>>(capability, payload)
+            .call::<&[u8], Vec<u8>>(INVOKE_EXPORT, &payload)
             .map_err(|err| map_extism_error(&self.name, capability, err))
     }
 }
@@ -273,7 +284,8 @@ mod tests {
 
         let driver = WasmDriver::new(name.clone(), MINIMAL_WASM, &perms, None, caps, None).unwrap();
 
-        let err = driver.invoke("lifecycle.v1", b"{}").unwrap_err();
+        let invocation = PluginInvocation::new("lifecycle.v1", "on_pre_bump", &serde_json::json!({})).unwrap();
+        let err = driver.invoke(&invocation).unwrap_err();
         match err {
             PluginError::UnsupportedCapability {
                 name: err_name,

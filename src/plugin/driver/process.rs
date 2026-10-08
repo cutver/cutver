@@ -6,6 +6,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::plugin::driver::PluginDriver;
+use crate::plugin::dto::PluginInvocation;
 use crate::plugin::error::PluginError;
 use crate::plugin::types::{Capability, PluginName};
 
@@ -87,7 +88,8 @@ impl PluginDriver for ProcessDriver {
         &self.name
     }
 
-    fn invoke(&self, capability: &str, payload: &[u8]) -> Result<Vec<u8>, PluginError> {
+    fn invoke(&self, invocation: &PluginInvocation) -> Result<Vec<u8>, PluginError> {
+        let capability = invocation.capability.as_str();
         let is_supported = self.capabilities.iter().any(|cap| cap.as_str() == capability);
         if !is_supported {
             return Err(PluginError::UnsupportedCapability {
@@ -96,8 +98,14 @@ impl PluginDriver for ProcessDriver {
             });
         }
 
+        let envelope = serde_json::to_vec(invocation).map_err(|source| PluginError::InvalidPayload {
+            name: self.name.clone(),
+            capability: capability.to_string(),
+            source,
+        })?;
+
         let mut child = self.spawn_child()?;
-        write_stdin(&mut child, payload);
+        write_stdin(&mut child, &envelope);
 
         let timeout = Duration::from_secs(self.timeout_seconds);
         wait_with_timeout(child, timeout, &self.name, capability)
@@ -230,7 +238,8 @@ mod tests {
     fn test_unsupported_capability() {
         let name = PluginName::new("echo-plugin").unwrap();
         let driver = ProcessDriver::new(name.clone(), "echo", vec![], BTreeMap::new(), 5, HashSet::new());
-        let err = driver.invoke("manifest.v1", b"{}").unwrap_err();
+        let invocation = PluginInvocation::new("manifest.v1", "read", &serde_json::json!({})).unwrap();
+        let err = driver.invoke(&invocation).unwrap_err();
         match err {
             PluginError::UnsupportedCapability {
                 name: err_name,
@@ -260,9 +269,14 @@ mod tests {
         };
 
         let driver = ProcessDriver::new(name, cmd, args, BTreeMap::new(), 5, caps);
-        let payload = br#"{"action":"bump","version":"1.0.0"}"#;
-        let output = driver.invoke("manifest.v1", payload).unwrap();
-        assert_eq!(output, payload);
+        let invocation = PluginInvocation::new(
+            "manifest.v1",
+            "write",
+            &serde_json::json!({"action": "bump", "version": "1.0.0"}),
+        )
+        .unwrap();
+        let output = driver.invoke(&invocation).unwrap();
+        assert_eq!(output, serde_json::to_vec(&invocation).unwrap());
     }
 
     #[test]
@@ -284,7 +298,8 @@ mod tests {
         };
 
         let driver = ProcessDriver::new(name.clone(), cmd, args, BTreeMap::new(), 5, caps);
-        let err = driver.invoke("lifecycle.v1", b"{}").unwrap_err();
+        let invocation = PluginInvocation::new("lifecycle.v1", "on_pre_bump", &serde_json::json!({})).unwrap();
+        let err = driver.invoke(&invocation).unwrap_err();
 
         match err {
             PluginError::ExecutionFailed {
@@ -322,8 +337,9 @@ mod tests {
         };
 
         let driver = ProcessDriver::new(name.clone(), cmd, args, BTreeMap::new(), 1, caps);
+        let invocation = PluginInvocation::new("changelog.v1", "render", &serde_json::json!({})).unwrap();
         let start = Instant::now();
-        let err = driver.invoke("changelog.v1", b"{}").unwrap_err();
+        let err = driver.invoke(&invocation).unwrap_err();
         let elapsed = start.elapsed();
 
         assert!(elapsed.as_secs() >= 1);

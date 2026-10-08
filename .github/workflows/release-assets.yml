@@ -143,7 +143,7 @@ jobs:
         run: |
           TAG="${{ inputs.tag }}"
           VERSION="${TAG#v}"
-          awk -v h="## [${TAG}]" 'BEGIN{p=0} $0 ~ "^"h {p=1; next} p && /^## /{exit} p {print}' CHANGELOG.md > RELEASE_NOTES.md
+          awk -v h="## [${TAG}]" 'BEGIN{p=0} index($0, h) == 1 {p=1; next} p && /^## /{exit} p {print}' CHANGELOG.md > RELEASE_NOTES.md
           if [ ! -s RELEASE_NOTES.md ]; then
             echo "::error::Failed to extract release notes for ${TAG} from CHANGELOG.md"
             exit 1

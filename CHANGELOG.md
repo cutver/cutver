@@ -3,6 +3,46 @@
 All notable changes to this project are documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com).
 
+## [v0.11.0] - 2026-10-08
+### 🚀 Features & Enhancements
+- **plugin**: introduce versioning.v1 DTOs and pluggable bump strategy engine in [#158](https://github.com/cutver/cutver/pull/158) ([d4d8660](https://github.com/cutver/cutver/commit/d4d86607e873d94dab3af7a3c578a57dd67fb6d9)) by @Row0902
+- **plugin**: wire changelog.v1 capability into release notes formatting pipeline in [#157](https://github.com/cutver/cutver/pull/157) ([7a5954e](https://github.com/cutver/cutver/commit/7a5954e04580b84302be759447e61c0db69b98f0)) by @Row0902
+- **plugin**: wire manifest.v1 capability into manifest discovery and mutation pipeline in [#156](https://github.com/cutver/cutver/pull/156) ([3627049](https://github.com/cutver/cutver/commit/36270491b78ad643c20040b87cac64606df97a05)) by @Row0902
+- **cli**: add Git-style external subcommand dispatch for cutver-* executables in [#151](https://github.com/cutver/cutver/pull/151) ([ae76fb5](https://github.com/cutver/cutver/commit/ae76fb55be130d9690a84a6f118b4e746d6a85a6)) by @Row0902
+- **plugin**: implement WasmDriver with Extism runtime behind feature flag in [#150](https://github.com/cutver/cutver/pull/150) ([89fc2b3](https://github.com/cutver/cutver/commit/89fc2b3e2742edda12f897925a689d5c9766eabf)) by @Row0902
+- **plugin**: wire lifecycle hooks into two-phase mutation pipeline in [#149](https://github.com/cutver/cutver/pull/149) ([542efed](https://github.com/cutver/cutver/commit/542efed04f9ab047f410b9dee29e9119a2d02f00)) by @Row0902
+- **plugin**: implement PluginManager and declarative config orchestration in [#148](https://github.com/cutver/cutver/pull/148) ([cca7e26](https://github.com/cutver/cutver/commit/cca7e267da59ee87cc72bb11416994159800bd6b)) by @Row0902
+- **plugin**: implement ProcessDriver with JSON IPC and timeout isolation in [#144](https://github.com/cutver/cutver/pull/144) ([7200c24](https://github.com/cutver/cutver/commit/7200c2417abb7ae37f91317237d44671b55aeac8)) by @Row0902
+- **plugin**: introduce microkernel types, DTOs, and Pillar VI contract in [#32](https://github.com/cutver/cutver/pull/32) ([447e322](https://github.com/cutver/cutver/commit/447e322f0818479a7459afeef5b2dfa87241b6e3)) by @Row0902
+- **skills**: track cutver project skills and symlinks ([c02f265](https://github.com/cutver/cutver/commit/c02f265f7d149670a296e0341c60edde8ed3156e)) by @Row0902
+- **container**: official OCI container packaging and GHCR publishing workflow in [#128](https://github.com/cutver/cutver/pull/128) ([d12e918](https://github.com/cutver/cutver/commit/d12e918e8f2cdc79b40e24bfc4466ebcabc56c14)) by @Row0902
+
+### 🔄 Code Refactoring
+- **plugin**: eliminate unwrap in wasm loader by propagating PluginName ([bac7fae](https://github.com/cutver/cutver/commit/bac7faec4fb403d85516d9a8f2c815cb103f0ce1)) by @Row0902
+
+### 🐛 Bug Fixes
+- **cli**: resolve batch files and PATHEXT extensions on Windows for external subcommands in [#152](https://github.com/cutver/cutver/pull/152) ([b721007](https://github.com/cutver/cutver/commit/b721007b6f2cbd831e44d23e760e0303d22800e3)) by @Row0902
+
+### 📚 Documentation
+- **rfc**: evolve RFC 0001 to Microkernel & Unified Plugin Engine in [#32](https://github.com/cutver/cutver/pull/32) ([d4812e4](https://github.com/cutver/cutver/commit/d4812e4db9353e6559e8f1722e675c20a0cc701c)) by @Row0902
+- **rfc**: fix target versions to v0.11.0 / v0.12.0 in RFC 0001 ([5ded749](https://github.com/cutver/cutver/commit/5ded7497900e035b2631e2894fc78c381ddae5a9)) by @Row0902
+- **rfc**: add RFC 0001 for Extism WebAssembly plugin architecture in [#32](https://github.com/cutver/cutver/pull/32) ([c174ea5](https://github.com/cutver/cutver/commit/c174ea5db0f2007a8fea9d6ffa1a0451e2b56f26)) by @Row0902
+- **readme**: reflect expanded 8-skill catalog from cutver/skills in [#143](https://github.com/cutver/cutver/pull/143) ([f9c6ffb](https://github.com/cutver/cutver/commit/f9c6ffb334d0df1a7d74391f9c493219528d01d6)) by @Row0902
+- **odd**: record commit hash and PR evidence for WSLC guide ([5e87910](https://github.com/cutver/cutver/commit/5e87910bfdf8b2a64e7e0eedbe69fcae1478d9b9)) by @Row0902
+- **integrations**: add WSL Containers (wslc) execution guide in [#138](https://github.com/cutver/cutver/pull/138) ([2bc66f5](https://github.com/cutver/cutver/commit/2bc66f5f1871448fea22c05947c47ee8ad62ad2f)) by @Row0902
+- **contract**: formalize cognitive doc design and transversal skill governance in Pillar IV in [#134](https://github.com/cutver/cutver/pull/134) ([de75eab](https://github.com/cutver/cutver/commit/de75eab97644d869d059f6a209056a4fee6e96ad)) by @Row0902
+- restructure documentation into modular subfolders and cognitive line budgets in [#132](https://github.com/cutver/cutver/pull/132) ([097be2e](https://github.com/cutver/cutver/commit/097be2e2e7884e757fcbcbdc33be4808b8b3d6ac)) by @Row0902
+- **readme**: apply cognitive doc design, new dogfooding hook, and v0.10.0 feature guides ([270191c](https://github.com/cutver/cutver/commit/270191c18a3c2b0fb2bd8177af5bb933d85b464e)) by @Row0902
+
+### 🛠️ Maintenance & Dependencies
+- **container**: enable latest tag when building on main branch in [#136](https://github.com/cutver/cutver/pull/136) ([4252ae6](https://github.com/cutver/cutver/commit/4252ae6ddb0496b08ce4139bb75d9e9ca08d11f1)) by @Row0902
+
+### 👥 Contributors
+- @Row0902
+
+
+---
+**Full Changelog**: https://github.com/cutver/cutver/compare/v0.10.0...v0.11.0 • *CI Build #16*
 ## [v0.10.0] - 2026-10-04
 ### 🔄 Code Refactoring
 - **changelog**: upgrade release template with group_by_type, breaking migration details, and env helpers ([fcf00b5](https://github.com/cutver/cutver/commit/fcf00b58e7681f884e0997db3a2548c703fd916f)) by @Row0902

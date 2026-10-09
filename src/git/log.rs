@@ -105,17 +105,15 @@ pub fn list_authors_before(dir: &Path, before_ref: &str) -> io::Result<Vec<Strin
 /// Computes which of `contributors` are making their first contribution to the repository.
 ///
 /// Fail-safe direction: a first release (`prev_tag` is `None`) genuinely has no prior history, so
-/// every contributor is new. If the prior history is unreadable we announce **nobody** as new,
-/// because falsely branding a long-time contributor as a newcomer is a worse failure than omitting
-/// the section.
-pub fn first_time_contributors(dir: &Path, prev_tag: Option<&str>, contributors: &[String]) -> Vec<String> {
-    match prev_tag {
-        None => contributors.to_vec(),
-        Some(before) => match list_authors_before(dir, before) {
-            Ok(prior) => contributors.iter().filter(|c| !prior.contains(c)).cloned().collect(),
-            Err(_) => Vec::new(),
-        },
-    }
+/// every contributor is new. If the prior history is unreadable this propagates the error so
+/// callers can announce **nobody** as new while telling the user why -- falsely branding a
+/// long-time contributor as a newcomer is a worse failure than omitting the section.
+pub fn first_time_contributors(dir: &Path, prev_tag: Option<&str>, contributors: &[String]) -> io::Result<Vec<String>> {
+    let Some(before) = prev_tag else {
+        return Ok(contributors.to_vec());
+    };
+    let prior = list_authors_before(dir, before)?;
+    Ok(contributors.iter().filter(|c| !prior.contains(c)).cloned().collect())
 }
 
 /// Shared `git log` author extraction. Propagates every failure -- spawn, status and decode -- as
@@ -161,11 +159,8 @@ fn list_authors_from_ref(dir: &Path, from_tag: Option<&str>, to_ref: &str) -> io
 mod tests {
     use super::*;
     use std::fs;
-    use std::path::PathBuf;
+    use std::path::Path;
     use std::process::Command;
-    use std::sync::atomic::{AtomicU64, Ordering};
-
-    static TMP_SEQ: AtomicU64 = AtomicU64::new(0);
 
     fn run(dir: &Path, args: &[&str]) {
         assert!(
@@ -179,33 +174,27 @@ mod tests {
         );
     }
 
-    fn repo_with_authors() -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "cutver-list-authors-{}-{}",
-            std::process::id(),
-            TMP_SEQ.fetch_add(1, Ordering::SeqCst)
-        ));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        crate::git::init_test_repo(&dir);
+    fn repo_with_authors() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        crate::git::init_test_repo(dir.path());
 
-        fs::write(dir.join("f"), "1").unwrap();
-        run(&dir, &["add", "f"]);
+        fs::write(dir.path().join("f"), "1").unwrap();
+        run(dir.path(), &["add", "f"]);
         run(
-            &dir,
+            dir.path(),
             &["commit", "-m", "init", "--author=Alice <alice@example.com>", "-q"],
         );
-        run(&dir, &["tag", "v1"]);
+        run(dir.path(), &["tag", "v1"]);
 
-        fs::write(dir.join("f"), "2").unwrap();
+        fs::write(dir.path().join("f"), "2").unwrap();
         run(
-            &dir,
+            dir.path(),
             &["commit", "-am", "bob work", "--author=Bob <bob@example.com>", "-q"],
         );
 
-        fs::write(dir.join("f"), "3").unwrap();
+        fs::write(dir.path().join("f"), "3").unwrap();
         run(
-            &dir,
+            dir.path(),
             &[
                 "commit",
                 "-am",
@@ -221,50 +210,55 @@ mod tests {
     #[test]
     fn list_authors_before_dedups_and_errors_on_bad_ref() {
         let dir = repo_with_authors();
+        let path = dir.path();
 
         // Only the commit reachable from `v1` counts, and it is Alice's.
-        assert_eq!(list_authors_before(&dir, "v1").unwrap(), vec!["Alice".to_string()]);
+        assert_eq!(list_authors_before(path, "v1").unwrap(), vec!["Alice".to_string()]);
 
         // HEAD reachability contains Alice twice; the result is deduplicated.
         assert_eq!(
-            list_authors_before(&dir, "HEAD").unwrap(),
+            list_authors_before(path, "HEAD").unwrap(),
             vec!["Alice".to_string(), "Bob".to_string()]
         );
 
         // An unreadable ref must surface as an error, never as a silent empty list.
-        assert!(list_authors_before(&dir, "no-such-ref").is_err());
+        assert!(list_authors_before(path, "no-such-ref").is_err());
     }
 
     #[test]
     fn list_authors_between_keeps_legacy_none_suppression() {
         let dir = repo_with_authors();
+        let path = dir.path();
 
         // The legacy contract: `None` + a failing ref yields an empty list, not an error.
         assert_eq!(
-            list_authors_between(&dir, None, "no-such-ref").unwrap(),
+            list_authors_between(path, None, "no-such-ref").unwrap(),
             Vec::<String>::new()
         );
 
         // A concrete `from_tag` still propagates the failure.
-        assert!(list_authors_between(&dir, Some("v1"), "no-such-ref").is_err());
+        assert!(list_authors_between(path, Some("v1"), "no-such-ref").is_err());
     }
 
     #[test]
-    fn first_time_contributors_filters_and_fails_safe() {
+    fn first_time_contributors_filters_and_propagates_unreadable_history() {
         let dir = repo_with_authors();
+        let path = dir.path();
         let contributors = vec!["Alice".to_string(), "Bob".to_string(), "Carol".to_string()];
 
         // No prior tag: a genuine first release, so everyone is new.
-        assert_eq!(first_time_contributors(&dir, None, &contributors), contributors.clone());
+        assert_eq!(
+            first_time_contributors(path, None, &contributors).unwrap(),
+            contributors.clone()
+        );
 
         // `v1` is reachable history: Alice predates it, Bob and Carol do not.
         assert_eq!(
-            first_time_contributors(&dir, Some("v1"), &contributors),
+            first_time_contributors(path, Some("v1"), &contributors).unwrap(),
             vec!["Bob".to_string(), "Carol".to_string()]
         );
 
-        // Unreadable history must announce NOBODY, never the whole contributor list.
-        let failsafe = first_time_contributors(&dir, Some("no-such-ref"), &contributors);
-        assert!(failsafe.is_empty(), "fail-safe must announce nobody, got {failsafe:?}");
+        // Unreadable history surfaces as an error, never as a silent empty list.
+        assert!(first_time_contributors(path, Some("no-such-ref"), &contributors).is_err());
     }
 }

@@ -122,6 +122,7 @@ pub struct Summary {
     pub tag_skipped: bool,
     pub floating_tag: Option<String>,
     pub post_bump: Option<String>,
+    pub warnings: Vec<String>,
     pub publish_push: bool,
     pub publish_push_command: Option<String>,
     pub publish_commands: Vec<String>,

@@ -193,6 +193,14 @@ pub fn warning<T: Display>(text: T) -> String {
     Theme::stdout().warning(text)
 }
 
+/// Emits a non-fatal degradation warning to stderr with its causal rationale (Pillar III.4).
+///
+/// This is the single warning-rendering helper for the boundary layer (Pillar V.6). Callers that
+/// have a separate cause format `"{context}: {cause}"` into `message` before calling.
+pub fn warn_degradation(message: impl Display) {
+    eprintln!("{}", Theme::stderr().warning(format!("warning: {message}")));
+}
+
 pub fn error<T: Display>(text: T) -> String {
     Theme::stderr().error(text)
 }

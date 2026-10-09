@@ -77,10 +77,10 @@ pub fn run_with_first_release(
         first_release,
         plugin_manager: Some(&plugin_manager),
     };
-    let changelog_update = prepare_changelog(cl_params)?;
+    let changelog_plan = prepare_changelog(cl_params)?;
     let mut transaction = MutationTransaction::new(repo);
     let (touched, mut paths_to_stage) = apply(&computed, &next, dry_run, &mut transaction)?;
-    apply_changelog(changelog_update, dry_run, &mut transaction, &mut paths_to_stage)?;
+    apply_changelog(changelog_plan.update, dry_run, &mut transaction, &mut paths_to_stage)?;
 
     run_plugin_post_bump(&plugin_manager, repo, &current, &next, &tag, &paths_to_stage, dry_run)?;
     let summary_post_bump = run_post_bump_hook(config, repo, &interp_ctx, dry_run, &mut paths_to_stage)?;
@@ -116,6 +116,7 @@ pub fn run_with_first_release(
         tag_skipped,
         floating_tag,
         post_bump: summary_post_bump,
+        warnings: changelog_plan.warnings,
         publish_push: config.publish.push,
         publish_push_command,
         publish_commands,

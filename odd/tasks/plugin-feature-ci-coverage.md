@@ -33,7 +33,7 @@ otherwise delete the guard silently.
 - [x] 1. Measure the release binary with and without the feature from the same tree, and record both sizes and wall times as evidence.
 - [x] 2. Add a `test-plugins` CI job (3-OS matrix: build, test, clippy with `--features plugins`) and document in the workflow why the no-feature job must stay.
 - [x] 3. Validate the workflow change: YAML parses, step parity with the existing job, and the diff is reviewed.
-- [ ] 4. Close with one work-unit commit on a feature branch, recording its identity here as evidence.
+- [x] 4. Close with one work-unit commit on a feature branch, recording its identity here as evidence.
 
 ## Evidence
 
@@ -87,4 +87,5 @@ Windows gap.
 
 ## Commit
 
-Pending task 4.
+- `18e514d` `ci: cover the plugins feature on every target OS` — branch `ci/plugins-feature-coverage`,
+  2 files, +125 lines (`.github/workflows/ci.yml`, this document). Local only: nothing pushed.

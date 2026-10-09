@@ -70,7 +70,8 @@ pub struct PluginInvocation {
 - [x] Task 4b: Close the false-coverage gaps found by independent verification: rename the misnamed registration-only WASM test, make `MockEchoDriver` assert `(capability, operation)`, and add discriminating envelope guards to the three process-plugin integration scripts.
 
 ### Work unit 3 — Changelog context enrichment
-- [ ] Task 5: Extend `ChangelogRenderRequest` with `repository`, `compare_url`, `is_prerelease` and `contributors`, mapped from `ReleaseContext`, with compat for absent fields.
+- [ ] Task 5a: Core computes first-time contributors. Add an honest `git::list_authors_before`, carry `first_time_contributors` through `AssembleContextParams` and `ReleaseContext`, and populate it at both release call sites with a fail-safe policy.
+- [ ] Task 5b: Extend `ChangelogRenderRequest` with `repository`, `compare_url`, `is_prerelease` and a `contributors` list carrying `is_first_contribution`, mapped from `ReleaseContext`, with serde defaults for compat.
 - [ ] Task 6: Document the invocation contract and operation names in RFC 0001.
 
 ### Verification
@@ -101,7 +102,15 @@ pub struct PluginInvocation {
 `extism`), so adding it as a dev-dependency introduces **zero** new crates to the resolved graph. Dev-dependencies
 never ship in binaries, so `cargo build` without `--features plugins` remains dependency-free (Pillar VI.4).
 
-### Gotcha for future fixture authors: Extism reads output from kernel memory
+### Decision: the core computes first-time contributors
+
+The `github-releases` plugin renders a GitHub-style "New Contributors" section, but a WASM plugin runs
+sandboxed with no filesystem or network access, so it cannot inspect git history. The host must decide who is
+new.
+
+The safe direction matters: falsely announcing a long-time contributor as a newcomer is worse than omitting the
+section. So when `prev_tag` is absent the release is genuinely a first release and every contributor is new,
+but when the prior history cannot be read the result is **empty**, never the whole contributor list.
 
 A WAT guest **cannot** return data by exporting its own linear memory and pointing `output_set` at it. In Extism 1.30
 the host reads call output from the Extism kernel's own memory (`extism:host/env`), and importing that memory as a

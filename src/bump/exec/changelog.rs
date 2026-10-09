@@ -52,6 +52,9 @@ pub(crate) fn prepare_changelog(params: ChangelogPlanParams<'_>) -> Result<Optio
             }
         };
         let contributors = git::list_authors_since(params.repo, latest_tag.as_deref()).unwrap_or_default();
+        // Fail-safe policy lives in `git::first_time_contributors`: a first release marks
+        // everyone new, but unreadable prior history announces nobody.
+        let first_time_contributors = git::first_time_contributors(params.repo, latest_tag.as_deref(), &contributors);
         let repository = git::remote_url(params.repo);
         let today = changelog::format_date(std::time::SystemTime::now());
         let (next_ver, curr_ver) = (params.next.to_string(), params.current.to_string());
@@ -65,6 +68,7 @@ pub(crate) fn prepare_changelog(params: ChangelogPlanParams<'_>) -> Result<Optio
             parsed_commits: &commits,
             raw_commits: raw_commits.as_deref(),
             contributors,
+            first_time_contributors,
             changelog_config: &params.config.changelog,
         });
         let body = changelog::render_body_with_plugin(

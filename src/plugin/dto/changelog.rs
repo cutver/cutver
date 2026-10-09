@@ -17,6 +17,28 @@ pub struct ChangelogRenderRequest {
     /// Raw unformatted commit entries.
     #[serde(default)]
     pub commits: Vec<PluginCommitEntry>,
+    /// Repository URL of the project, when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repository: Option<String>,
+    /// Compare URL between the previous and current tags, when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compare_url: Option<String>,
+    /// Whether the release is a prerelease.
+    #[serde(default)]
+    pub is_prerelease: bool,
+    /// Contributors to the release, with first-contribution provenance.
+    #[serde(default)]
+    pub contributors: Vec<PluginContributor>,
+}
+
+/// A contributor to the release, with first-contribution provenance.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PluginContributor {
+    /// Contributor display name or resolved handle.
+    pub name: String,
+    /// True when this is the contributor's first release in the repository.
+    #[serde(default)]
+    pub is_first_contribution: bool,
 }
 
 /// A single commit summary entry passed to changelog plugins.

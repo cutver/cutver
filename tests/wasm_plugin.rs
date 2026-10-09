@@ -151,6 +151,10 @@ fn test_plugin_manager_wasm_round_trip() {
         previous_tag: None,
         release_date: "2025-05-18".to_string(),
         commits: vec![],
+        repository: None,
+        compare_url: None,
+        is_prerelease: false,
+        contributors: vec![],
     };
 
     let response = manager

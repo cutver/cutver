@@ -20,6 +20,7 @@ pub struct ReleaseContext {
     pub all_changes: String,
     pub commits: Vec<CommitContext>,
     pub contributors: Vec<String>,
+    pub first_time_contributors: Vec<String>,
     pub major: u64,
     pub minor: u64,
     pub patch: u64,
@@ -41,7 +42,7 @@ impl serde::Serialize for ReleaseContext {
         S: serde::Serializer,
     {
         use serde::ser::SerializeMap;
-        let mut map = serializer.serialize_map(Some(34))?;
+        let mut map = serializer.serialize_map(Some(35))?;
         map.serialize_entry("version", &self.version)?;
         map.serialize_entry("previous_version", &self.previous_version)?;
         map.serialize_entry("tag", &self.tag)?;
@@ -60,6 +61,7 @@ impl serde::Serialize for ReleaseContext {
         map.serialize_entry("all_changes", &self.all_changes)?;
         map.serialize_entry("commits", &self.commits)?;
         map.serialize_entry("contributors", &self.contributors)?;
+        map.serialize_entry("first_time_contributors", &self.first_time_contributors)?;
 
         map.serialize_entry("major", &self.major)?;
         map.serialize_entry("minor", &self.minor)?;
@@ -123,6 +125,8 @@ impl<'de> serde::Deserialize<'de> for ReleaseContext {
             commits: Vec<CommitContext>,
             #[serde(default)]
             contributors: Vec<String>,
+            #[serde(default)]
+            first_time_contributors: Vec<String>,
             #[serde(default)]
             major: Option<u64>,
             #[serde(default)]
@@ -204,6 +208,7 @@ impl<'de> serde::Deserialize<'de> for ReleaseContext {
             all_changes: h.all_changes,
             commits: h.commits,
             contributors: h.contributors,
+            first_time_contributors: h.first_time_contributors,
             major,
             minor,
             patch,
@@ -257,6 +262,15 @@ impl ReleaseContext {
             })
             .collect();
 
+        let contributors = self
+            .contributors
+            .iter()
+            .map(|name| crate::plugin::dto::PluginContributor {
+                name: name.clone(),
+                is_first_contribution: self.first_time_contributors.contains(name),
+            })
+            .collect();
+
         crate::plugin::dto::ChangelogRenderRequest {
             root_dir: root_dir.into(),
             version: self.version.clone(),
@@ -264,6 +278,10 @@ impl ReleaseContext {
             previous_tag: self.previous_tag.clone(),
             release_date: self.date.clone(),
             commits,
+            repository: self.repository.clone(),
+            compare_url: self.compare_url.clone(),
+            is_prerelease: self.is_prerelease,
+            contributors,
         }
     }
 }

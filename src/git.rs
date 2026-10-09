@@ -36,8 +36,8 @@ pub use tags::{has_remote, latest_tag, list_tags, remote_tag_exists, tag_exists,
 
 // Re-export log traversal and author resolution
 pub use log::{
-    commits_between, commits_since, list_authors_between, list_authors_since, raw_commits_between, raw_commits_since,
-    resolve_author,
+    commits_between, commits_since, first_time_contributors, list_authors_between, list_authors_since,
+    raw_commits_between, raw_commits_since, resolve_author,
 };
 
 // Re-export remote repository extraction

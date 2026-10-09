@@ -109,6 +109,9 @@ pub fn resolve_changelog_context(
     let commit_messages: Vec<String> = target.raw_commits.iter().map(|r| r.message.clone()).collect();
     let (_bump, parsed_commits) = crate::conventional::parse_and_deduce_bump(&commit_messages);
     let contributors = crate::git::list_authors_between(root_dir, prev_tag.as_deref(), &tag).unwrap_or_default();
+    // Fail-safe policy lives in `crate::git::first_time_contributors`: a first release marks
+    // everyone new, but unreadable prior history announces nobody.
+    let first_time_contributors = crate::git::first_time_contributors(root_dir, prev_tag.as_deref(), &contributors);
     let repository = crate::git::remote_url(root_dir);
     let date_str = extract_heading_date(content, &target.version)
         .unwrap_or_else(|| crate::changelog::format_date(std::time::SystemTime::now()));
@@ -123,6 +126,7 @@ pub fn resolve_changelog_context(
         parsed_commits: &parsed_commits,
         raw_commits: Some(&target.raw_commits),
         contributors,
+        first_time_contributors,
         changelog_config,
     });
 

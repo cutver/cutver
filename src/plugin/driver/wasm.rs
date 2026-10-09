@@ -63,12 +63,11 @@ impl PluginDriver for WasmDriver {
     }
 
     fn invoke(&self, invocation: &PluginInvocation) -> Result<Vec<u8>, PluginError> {
-        let capability = invocation.capability.as_str();
-        let is_supported = self.capabilities.iter().any(|cap| cap.as_str() == capability);
-        if !is_supported {
+        let capability = invocation.capability;
+        if !self.capabilities.contains(&capability) {
             return Err(PluginError::UnsupportedCapability {
                 name: self.name.clone(),
-                capability: capability.to_string(),
+                capability: capability.as_str().to_string(),
             });
         }
 
@@ -79,13 +78,13 @@ impl PluginDriver for WasmDriver {
 
         let payload = serde_json::to_vec(invocation).map_err(|source| PluginError::InvalidPayload {
             name: self.name.clone(),
-            capability: capability.to_string(),
+            capability: capability.as_str().to_string(),
             source,
         })?;
 
         plugin
             .call::<&[u8], Vec<u8>>(INVOKE_EXPORT, &payload)
-            .map_err(|err| map_extism_error(&self.name, capability, err))
+            .map_err(|err| map_extism_error(&self.name, capability.as_str(), err))
     }
 }
 
@@ -241,6 +240,7 @@ pub fn cache_wasm_artifact(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::plugin::types::PluginCall;
 
     const MINIMAL_WASM: &[u8] = &[0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00];
 
@@ -284,7 +284,7 @@ mod tests {
 
         let driver = WasmDriver::new(name.clone(), MINIMAL_WASM, &perms, None, caps, None).unwrap();
 
-        let invocation = PluginInvocation::new("lifecycle.v1", "on_pre_bump", &serde_json::json!({})).unwrap();
+        let invocation = PluginInvocation::new(PluginCall::PreBump, &serde_json::json!({})).unwrap();
         let err = driver.invoke(&invocation).unwrap_err();
         match err {
             PluginError::UnsupportedCapability {
@@ -317,14 +317,12 @@ mod tests {
 
     #[test]
     fn test_load_wasm_bytes_local_file() {
-        let temp_dir = std::env::temp_dir();
-        let file_path = temp_dir.join("cutver_test_minimal.wasm");
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("cutver_test_minimal.wasm");
         fs::write(&file_path, MINIMAL_WASM).unwrap();
 
         let name = PluginName::new("test-load").unwrap();
         let loaded = load_wasm_bytes(&name, file_path.to_str().unwrap(), None).unwrap();
         assert_eq!(loaded, MINIMAL_WASM);
-
-        let _ = fs::remove_file(file_path);
     }
 }

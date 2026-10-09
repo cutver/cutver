@@ -11,6 +11,7 @@ use std::collections::{HashMap, HashSet};
 
 use cutver::plugin::driver::WasmDriver;
 use cutver::plugin::dto::{ChangelogRenderRequest, PluginInvocation};
+use cutver::plugin::types::PluginCall;
 use cutver::plugin::{Capability, PluginConfig, PluginDriver, PluginManager, PluginName, RuntimeKind};
 
 /// Echo fixture: copies the Extism input bytes verbatim into the output.
@@ -89,8 +90,7 @@ fn test_wasm_invoke_export_echoes_envelope_byte_for_byte() {
     let driver = echo_driver();
 
     let invocation = PluginInvocation::new(
-        "changelog.v1",
-        "render",
+        PluginCall::ChangelogRender,
         &serde_json::json!({
             "root_dir": "/workspace",
             "version": "1.4.0",
@@ -122,8 +122,8 @@ fn test_wasm_invoke_export_echoes_envelope_byte_for_byte() {
 fn test_plugin_manager_wasm_round_trip() {
     let wasm = wat::parse_str(FIXED_RESPONSE_WAT).expect("fixed-response WAT should compile");
 
-    let temp_dir = std::env::temp_dir();
-    let wasm_file = temp_dir.join(format!("cutver_wasm_plugin_test_{}.wasm", std::process::id()));
+    let dir = tempfile::tempdir().unwrap();
+    let wasm_file = dir.path().join("plugin.wasm");
     std::fs::write(&wasm_file, &wasm).unwrap();
 
     let name = PluginName::new("wasm-render-plugin").unwrap();
@@ -161,8 +161,6 @@ fn test_plugin_manager_wasm_round_trip() {
         .dispatch_changelog(&name, &req)
         .expect("dispatch_changelog should execute guest and deserialize response");
     assert_eq!(response.body, "rendered by wasm");
-
-    let _ = std::fs::remove_file(wasm_file);
 }
 
 #[test]
@@ -172,7 +170,7 @@ fn test_wasm_missing_invoke_export_is_detected() {
     let driver = WasmDriver::new(name, MINIMAL_WASM, &Default::default(), Some(5), capabilities, None)
         .expect("minimal module should load");
 
-    let invocation = PluginInvocation::new("changelog.v1", "render", &serde_json::json!({})).unwrap();
+    let invocation = PluginInvocation::new(PluginCall::ChangelogRender, &serde_json::json!({})).unwrap();
 
     let err = driver
         .invoke(&invocation)

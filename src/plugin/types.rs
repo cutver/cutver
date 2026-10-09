@@ -127,6 +127,101 @@ impl FromStr for Capability {
 #[error("unsupported capability '{0}': expected one of manifest.v1, lifecycle.v1, changelog.v1, versioning.v1")]
 pub struct ParseCapabilityError(pub String);
 
+/// Canonical operation within a capability. Wire form is snake_case.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PluginOperation {
+    Read,
+    Write,
+    OnPreBump,
+    OnPostBump,
+    OnPostRelease,
+    Render,
+    Compute,
+}
+
+impl PluginOperation {
+    /// Returns the canonical operation wire identifier.
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Read => "read",
+            Self::Write => "write",
+            Self::OnPreBump => "on_pre_bump",
+            Self::OnPostBump => "on_post_bump",
+            Self::OnPostRelease => "on_post_release",
+            Self::Render => "render",
+            Self::Compute => "compute",
+        }
+    }
+}
+
+impl fmt::Display for PluginOperation {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl FromStr for PluginOperation {
+    type Err = ParsePluginOperationError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "read" => Ok(Self::Read),
+            "write" => Ok(Self::Write),
+            "on_pre_bump" => Ok(Self::OnPreBump),
+            "on_post_bump" => Ok(Self::OnPostBump),
+            "on_post_release" => Ok(Self::OnPostRelease),
+            "render" => Ok(Self::Render),
+            "compute" => Ok(Self::Compute),
+            _ => Err(ParsePluginOperationError(s.to_string())),
+        }
+    }
+}
+
+/// Error returned when parsing an unrecognized operation string.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[error(
+    "unsupported operation '{0}': expected one of read, write, on_pre_bump, on_post_bump, on_post_release, render, compute"
+)]
+pub struct ParsePluginOperationError(pub String);
+
+/// A dispatchable plugin call. Capability and operation are coupled by construction.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PluginCall {
+    ManifestRead,
+    ManifestWrite,
+    PreBump,
+    PostBump,
+    PostRelease,
+    ChangelogRender,
+    VersioningCompute,
+}
+
+impl PluginCall {
+    /// Returns the capability this call targets.
+    pub const fn capability(self) -> Capability {
+        match self {
+            Self::ManifestRead | Self::ManifestWrite => Capability::ManifestV1,
+            Self::PreBump | Self::PostBump | Self::PostRelease => Capability::LifecycleV1,
+            Self::ChangelogRender => Capability::ChangelogV1,
+            Self::VersioningCompute => Capability::VersioningV1,
+        }
+    }
+
+    /// Returns the operation this call performs.
+    pub const fn operation(self) -> PluginOperation {
+        match self {
+            Self::ManifestRead => PluginOperation::Read,
+            Self::ManifestWrite => PluginOperation::Write,
+            Self::PreBump => PluginOperation::OnPreBump,
+            Self::PostBump => PluginOperation::OnPostBump,
+            Self::PostRelease => PluginOperation::OnPostRelease,
+            Self::ChangelogRender => PluginOperation::Render,
+            Self::VersioningCompute => PluginOperation::Compute,
+        }
+    }
+}
+
 /// Plugin runtime kind: WebAssembly or native system process.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -219,6 +314,36 @@ mod tests {
         assert_eq!(json, "\"lifecycle.v1\"");
         let deserialized: Capability = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized, Capability::LifecycleV1);
+    }
+
+    #[test]
+    fn test_operation_wire_form_roundtrip() {
+        for (op, wire) in [
+            (PluginOperation::Read, "read"),
+            (PluginOperation::Write, "write"),
+            (PluginOperation::OnPreBump, "on_pre_bump"),
+            (PluginOperation::OnPostBump, "on_post_bump"),
+            (PluginOperation::OnPostRelease, "on_post_release"),
+            (PluginOperation::Render, "render"),
+            (PluginOperation::Compute, "compute"),
+        ] {
+            assert_eq!(op.as_str(), wire);
+            assert_eq!(wire.parse::<PluginOperation>().unwrap(), op);
+            assert_eq!(serde_json::to_string(&op).unwrap(), format!("\"{wire}\""));
+        }
+        assert!("bogus".parse::<PluginOperation>().is_err());
+    }
+
+    #[test]
+    fn test_plugin_call_couples_capability_and_operation() {
+        assert_eq!(PluginCall::ManifestRead.capability(), Capability::ManifestV1);
+        assert_eq!(PluginCall::ManifestRead.operation(), PluginOperation::Read);
+        assert_eq!(PluginCall::PreBump.capability(), Capability::LifecycleV1);
+        assert_eq!(PluginCall::PreBump.operation(), PluginOperation::OnPreBump);
+        assert_eq!(PluginCall::ChangelogRender.capability(), Capability::ChangelogV1);
+        assert_eq!(PluginCall::ChangelogRender.operation(), PluginOperation::Render);
+        assert_eq!(PluginCall::VersioningCompute.capability(), Capability::VersioningV1);
+        assert_eq!(PluginCall::VersioningCompute.operation(), PluginOperation::Compute);
     }
 
     #[test]

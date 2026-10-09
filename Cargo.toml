@@ -37,6 +37,12 @@ plugins = ["dep:extism", "dep:sha2"]
 # (Pillar VI.4 stays dependency-free).
 wat = "1"
 
+# `tempfile` is already in Cargo.lock as a transitive dependency of `cbindgen`
+# (build tooling) and `wasmtime` (pulled in by the optional `extism` dependency),
+# so this adds NO new crates to the resolved dependency graph. It provides the
+# isolated, ephemeral temp directories Pillar IV.1 mandates for integration tests.
+tempfile = "3"
+
 [profile.release]
 opt-level = 3
 lto = "fat"

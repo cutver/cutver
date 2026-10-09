@@ -73,10 +73,10 @@ Local builds resolve by path; `cargo publish` resolves by version.
 ---
 
 ## Task Breakdown
-- [ ] Task 1: Create `crates/cutver-pdk` with the contract types and their tests.
-- [ ] Task 2: Convert the repository to a workspace and point the core at the PDK.
-- [ ] Task 3: Turn `src/plugin/types.rs` and `src/plugin/dto.rs` into facade re-exports and remove the duplicated definitions.
-- [ ] Task 4: Full verification suite.
+- [x] Task 1: Create `crates/cutver-pdk` with the contract types and their tests.
+- [x] Task 2: Convert the repository to a workspace and point the core at the PDK.
+- [x] Task 3: Turn `src/plugin/types.rs` and `src/plugin/dto.rs` into facade re-exports and remove the duplicated definitions.
+- [x] Task 4: Full verification suite.
 
 ---
 
@@ -93,4 +93,32 @@ Local builds resolve by path; `cargo publish` resolves by version.
 
 ## Evidence & Verification
 - **Branch**: `feat/extract-cutver-pdk`
-- **Validation**: pending
+- **Commit**: `c08fb2a` `refactor(plugin): move the wire contract into a shared cutver-pdk crate` (16 files, +666/-408; git detected the DTO moves as renames)
+- **Published**: `cutver-pdk v0.1.0` on crates.io (11 files packaged, 28.7 KiB, 6.9 KiB compressed)
+- **Validation** (committed state):
+  - `cargo fmt -- --check`: ok
+  - `cargo clippy --workspace --all-targets --all-features -- -D warnings`: ok, 0 warnings
+  - `cargo test`: 445 passed, 0 failed (root package)
+  - `cargo test --features plugins`: 453 passed, 0 failed
+  - `cargo test -p cutver-pdk`: 9 passed, 0 failed
+  - `cargo metadata --no-deps`: both members registered, `cutver-pdk` and `cutver`
+  - `cargo publish --dry-run --locked`: **passes**, resolving `cutver-pdk v0.1.0` from crates.io
+- **The two binary acceptance checks**:
+  1. `tests/plugin_wire_contract.rs` passes **unmodified**, proving the wire format did not change by a byte.
+  2. `pub struct ChangelogRenderRequest`, `pub enum Capability`, `pub enum PluginOperation` appear **nowhere** under `src/`, and exactly once each under `crates/cutver-pdk/src/`.
+- **Coverage moved, not lost**: the DTO serde tests went from 7 (split across `dto.rs` and `dto/invocation.rs`) to 9 in the PDK.
+
+## Two defects this work unit exposed
+
+### CI silently stopped covering the new member
+
+`cargo test` and `cargo clippy` at a workspace root do not run or lint sibling members, so the
+conversion would have skipped the PDK's nine tests. `ci.yml` now uses `--workspace` on test, clippy
+and build, and `--all` on format.
+
+### The extraction and the release pipeline are coupled
+
+`cargo publish --dry-run` for `cutver` fails until `cutver-pdk` exists on the registry (`no matching
+package named cutver-pdk found`). There is no way to have a shared contract crate and a green
+publish dry-run without publishing it first. WU-B is therefore not optional follow-up but a
+prerequisite for a coherent state, and it was completed as part of this unit: the PDK is published.

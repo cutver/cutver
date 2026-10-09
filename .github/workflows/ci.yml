@@ -9,6 +9,10 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # Runs WITHOUT `--features plugins` on purpose: this job is the Pillar VI.4
+  # guard that the lean build (no Extism, no WASM dependency tree) keeps
+  # compiling, linting and passing. Do not replace it with the feature job
+  # below — the two cover different configurations, not the same one twice.
   test:
     name: Test (${{ matrix.os }})
     strategy:
@@ -36,6 +40,37 @@ jobs:
       - name: Format
         if: matrix.os == 'ubuntu-latest'
         run: cargo fmt --all --check
+
+  # Covers the `plugins` feature: Extism, the WASM driver, and the seven
+  # `#[cfg(feature = "plugins")]` sites under src/. Without this job the whole
+  # WebAssembly path is never compiled, including tests/wasm_plugin.rs, which is
+  # gated behind `#![cfg(feature = "plugins")]`.
+  #
+  # All three OSes, because the feature is platform-sensitive: the plugin cache
+  # resolves $HOME, which is normally unset on Windows.
+  #
+  # No `target` matrix key here: the job above declares one that no step
+  # consumes, and these runners already are the declared triples.
+  test-plugins:
+    name: Test with plugins feature (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: plugins-feature
+      - name: Build
+        run: cargo build --locked --workspace --all-targets --features plugins
+      - name: Test
+        run: cargo test --locked --workspace --features plugins
+      - name: Clippy
+        if: matrix.os == 'ubuntu-latest'
+        run: cargo clippy --locked --workspace --all-targets --features plugins -- -D warnings
 
   publish-dry-run:
     name: Publish dry-run

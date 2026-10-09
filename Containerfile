@@ -24,10 +24,17 @@ RUN mkdir -p src crates/cutver-pdk/src && \
     cargo build --release && \
     rm -rf src crates/cutver-pdk/src
 
-# Compile application source code
+# Compile application source code.
+#
+# The `touch` is not cosmetic. BuildKit does not advance the mtimes of copied
+# files, so without it Cargo treats the artifacts from the caching layer as fresh
+# and reuses them — including the placeholder `lib.rs` compiled for each workspace
+# member, which exports none of the API the real sources define. Touching only
+# `src/main.rs` was enough while the root package was the only member; every
+# member's sources have to be touched now.
 COPY src ./src
 COPY crates/cutver-pdk/src ./crates/cutver-pdk/src
-RUN touch src/main.rs && \
+RUN touch src/main.rs crates/cutver-pdk/src/*.rs && \
     cargo build --release --locked && \
     strip target/release/cutver
 

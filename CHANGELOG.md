@@ -3,6 +3,39 @@
 All notable changes to this project are documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com).
 
+## [v0.12.0] - 2026-10-09
+### ⚠️ Breaking Changes
+- **plugin**: type the invocation operation and couple it to the capability ([763c244](https://github.com/cutver/cutver/commit/763c2444f5beb69ba1a069e48c20bc177f31f155)) by @Row0902
+  > ⚠️ **Migration**: the plugin invocation carries typed fields. The JSON wire
+- **plugin**: replace capability-as-export ABI with an explicit invocation envelope ([3710632](https://github.com/cutver/cutver/commit/371063249b990c9a9c0faebbe63b4cb33e9a8ed4)) by @Row0902
+  > ⚠️ **Migration**: plugins must export `invoke` instead of an export named after
+
+### 🐛 Bug Fixes
+- **test**: tolerate CRLF when reading the byte-significant wire fixture ([01e8dba](https://github.com/cutver/cutver/commit/01e8dba5afad8fd57d0ed02f3e546b7a17a1c108)) by @Row0902
+- **contract**: surface swallowed degradations and restore domain boundary purity ([fe249d7](https://github.com/cutver/cutver/commit/fe249d70d6d2f240837c9b1d718665cae239460d)) by @Row0902
+- **ci**: escape changelog heading match in release notes extraction ([d9c8979](https://github.com/cutver/cutver/commit/d9c8979c984a1f89a0a5c0f390809f736d624898)) by @Row0902
+
+### 📚 Documentation
+- **odd**: index the deferred findings and point them at their issues ([963fde9](https://github.com/cutver/cutver/commit/963fde961b8b7077b6c145d40a050033dc762ff2)) by @Row0902
+- **odd**: record the cutver-pdk extraction evidence ([6458522](https://github.com/cutver/cutver/commit/6458522fe7954d75b622aa591148528e71925691)) by @Row0902
+- **rfc**: document the plugin invocation contract ([328a0b3](https://github.com/cutver/cutver/commit/328a0b3c1ab2a368df7842d2d30aef272744c6ba)) by @Row0902
+- **odd**: record contract-compliance-hardening evidence and the RDD false positive ([680636f](https://github.com/cutver/cutver/commit/680636fd8611b31d6dd53e6dd100f90b208a7384)) by @Row0902
+
+### 🔄 Code Refactoring
+- **plugin**: move the wire contract into a shared cutver-pdk crate ([c08fb2a](https://github.com/cutver/cutver/commit/c08fb2a4606b931152a0fd9bfe9b7db4708633bd)) by @Row0902
+
+### 🛠️ Maintenance & Dependencies
+- **plugin**: pin the plugin wire contract with a golden fixture ([61c2720](https://github.com/cutver/cutver/commit/61c27204f1bff189222874e1b22906f9f9c0c01d)) by @Row0902
+
+### 🚀 Features & Enhancements
+- **changelog**: compute first-time contributors and expose release context to plugins ([fab9c1c](https://github.com/cutver/cutver/commit/fab9c1cc4dd1e37a346f105c0a222441c2dd4b3b)) by @Row0902
+
+### 👥 Contributors
+- @Row0902
+
+
+---
+**Full Changelog**: https://github.com/cutver/cutver/compare/v0.11.0...v0.12.0 • *CI Build #17*
 ## [v0.11.0] - 2026-10-08
 ### 🚀 Features & Enhancements
 - **plugin**: introduce versioning.v1 DTOs and pluggable bump strategy engine in [#158](https://github.com/cutver/cutver/pull/158) ([d4d8660](https://github.com/cutver/cutver/commit/d4d86607e873d94dab3af7a3c578a57dd67fb6d9)) by @Row0902

@@ -215,6 +215,7 @@ pub struct AssembleContextParams<'a> {
     pub parsed_commits: &'a [crate::conventional::ConventionalCommit],
     pub raw_commits: Option<&'a [crate::git::RawCommit]>,
     pub contributors: Vec<String>,
+    pub first_time_contributors: Vec<String>,
     pub changelog_config: &'a crate::config::ChangelogConfig,
 }
 

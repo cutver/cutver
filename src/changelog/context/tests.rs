@@ -18,6 +18,7 @@ fn test_assemble_release_context() {
         parsed_commits: &commits,
         raw_commits: None,
         contributors: vec!["Alice".into()],
+        first_time_contributors: vec![],
         changelog_config: &changelog_config,
     };
     let ctx = assemble_release_context(params);
@@ -29,6 +30,44 @@ fn test_assemble_release_context() {
     assert_eq!(ctx.repository.as_deref(), Some("https://github.com/owner/repo"));
     assert_eq!(ctx.contributors, vec!["Alice"]);
     assert_eq!(ctx.features, "- add feature");
+}
+
+#[test]
+fn test_first_time_contributors_flag_present_before_vs_new() {
+    let changelog_config = crate::config::Changelog::default();
+    let commits = vec![];
+    let params = AssembleContextParams {
+        version: "2.0.0",
+        prev_version: Some("1.0.0"),
+        tag: "v2.0.0",
+        prev_tag: Some("v1.0.0"),
+        date: "2026-01-01",
+        repository: Some("https://github.com/owner/repo".into()),
+        parsed_commits: &commits,
+        raw_commits: None,
+        contributors: vec!["Alice".into(), "Bob".into()],
+        // Bob was absent before this window, so he is flagged; Alice is a veteran.
+        first_time_contributors: vec!["Bob".into()],
+        changelog_config: &changelog_config,
+    };
+    let ctx = assemble_release_context(params);
+    assert_eq!(ctx.first_time_contributors, vec!["Bob".to_string()]);
+
+    let req = ctx.to_changelog_render_request("/workspace");
+    assert_eq!(req.repository.as_deref(), Some("https://github.com/owner/repo"));
+    assert_eq!(
+        req.compare_url.as_deref(),
+        Some("https://github.com/owner/repo/compare/v1.0.0...v2.0.0")
+    );
+    assert!(!req.is_prerelease);
+
+    let alice = req.contributors.iter().find(|c| c.name == "Alice").unwrap();
+    let bob = req.contributors.iter().find(|c| c.name == "Bob").unwrap();
+    assert!(
+        !alice.is_first_contribution,
+        "a contributor present before must not be flagged"
+    );
+    assert!(bob.is_first_contribution, "a contributor absent before must be flagged");
 }
 
 #[test]
@@ -308,6 +347,7 @@ fn test_linear_raw_commits_distinct_attribution_for_duplicates() {
         &commits,
         Some(&raw_commits),
         vec![],
+        Vec::new(),
         false,
         "fallback",
         false,
@@ -605,6 +645,7 @@ fn test_interpolation_context_build_and_serialization() {
             all_changes: String::new(),
             commits: Vec::new(),
             contributors: Vec::new(),
+            first_time_contributors: Vec::new(),
             major: 1,
             minor: 0,
             patch: 0,

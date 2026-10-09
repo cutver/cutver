@@ -11,6 +11,15 @@ use std::os::unix::fs::PermissionsExt;
 const MOCK_VERSIONING_SCRIPT: &str = r####"#!/bin/sh
 INPUT=$(cat)
 
+# Envelope guard: fail closed if the invocation envelope is malformed.
+case "$INPUT" in
+  *'"capability":"versioning.v1"'*'"operation":"compute"'*) : ;;
+  *)
+    echo '{"error":"unexpected envelope"}'
+    exit 1
+    ;;
+esac
+
 case "$INPUT" in
   *"INVALID_SEMVER"*)
     cat << 'JSON'

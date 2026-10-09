@@ -1,4 +1,5 @@
 use semver::Version;
+use std::io;
 use std::path::Path;
 
 use crate::atomic;
@@ -28,10 +29,47 @@ pub(crate) struct ChangelogUpdate {
     pub(crate) updated: Option<String>,
 }
 
-pub(crate) fn prepare_changelog(params: ChangelogPlanParams<'_>) -> Result<Option<ChangelogUpdate>, Error> {
+/// Result of planning a changelog update: the optional update plus every non-fatal degradation
+/// recorded as data. Terminal output belongs to the boundary adapters (Pillar I.1).
+pub(crate) struct ChangelogPlan {
+    pub(crate) update: Option<ChangelogUpdate>,
+    pub(crate) warnings: Vec<String>,
+}
+
+/// Records an unreadable contributor list as data instead of silently swallowing it (Pillar III.4).
+fn contributor_list_or_warn(result: io::Result<Vec<String>>, warnings: &mut Vec<String>) -> Vec<String> {
+    match result {
+        Ok(authors) => authors,
+        Err(err) => {
+            warnings.push(format!(
+                "contributor list omitted, could not read commit authors: {err}"
+            ));
+            Vec::new()
+        }
+    }
+}
+
+/// Records unreadable prior history as data instead of silently swallowing it (Pillar III.4).
+fn first_time_contributors_or_warn(result: io::Result<Vec<String>>, warnings: &mut Vec<String>) -> Vec<String> {
+    match result {
+        Ok(names) => names,
+        Err(err) => {
+            warnings.push(format!(
+                "\"New Contributors\" section omitted, prior history is unreadable: {err}"
+            ));
+            Vec::new()
+        }
+    }
+}
+
+pub(crate) fn prepare_changelog(params: ChangelogPlanParams<'_>) -> Result<ChangelogPlan, Error> {
     let Some(cl_path) = &params.config.changelog.path else {
-        return Ok(None);
+        return Ok(ChangelogPlan {
+            update: None,
+            warnings: Vec::new(),
+        });
     };
+    let mut warnings = Vec::new();
     let original = if !params.dry_run { Some(read(cl_path)?) } else { None };
     let updated = if !params.dry_run {
         let latest_tag = if params.first_release {
@@ -51,7 +89,16 @@ pub(crate) fn prepare_changelog(params: ChangelogPlanParams<'_>) -> Result<Optio
                 conventional::parse_and_deduce_bump(&msgs).1
             }
         };
-        let contributors = git::list_authors_since(params.repo, latest_tag.as_deref()).unwrap_or_default();
+        let contributors = contributor_list_or_warn(
+            git::list_authors_since(params.repo, latest_tag.as_deref()),
+            &mut warnings,
+        );
+        // Fail-safe policy lives in `git::first_time_contributors`: a first release marks
+        // everyone new, but unreadable prior history announces nobody and is reported here.
+        let first_time_contributors = first_time_contributors_or_warn(
+            git::first_time_contributors(params.repo, latest_tag.as_deref(), &contributors),
+            &mut warnings,
+        );
         let repository = git::remote_url(params.repo);
         let today = changelog::format_date(std::time::SystemTime::now());
         let (next_ver, curr_ver) = (params.next.to_string(), params.current.to_string());
@@ -65,6 +112,7 @@ pub(crate) fn prepare_changelog(params: ChangelogPlanParams<'_>) -> Result<Optio
             parsed_commits: &commits,
             raw_commits: raw_commits.as_deref(),
             contributors,
+            first_time_contributors,
             changelog_config: &params.config.changelog,
         });
         let body = changelog::render_body_with_plugin(
@@ -85,11 +133,14 @@ pub(crate) fn prepare_changelog(params: ChangelogPlanParams<'_>) -> Result<Optio
     } else {
         None
     };
-    Ok(Some(ChangelogUpdate {
-        path: cl_path.clone(),
-        original,
-        updated,
-    }))
+    Ok(ChangelogPlan {
+        update: Some(ChangelogUpdate {
+            path: cl_path.clone(),
+            original,
+            updated,
+        }),
+        warnings,
+    })
 }
 
 pub(crate) fn apply_changelog(
@@ -114,4 +165,23 @@ pub(crate) fn apply_changelog(
     }
     paths_to_stage.push(update.path);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unreadable_prior_history_is_captured_as_warning_data() {
+        let mut warnings = Vec::new();
+        let cause = io::Error::other("git log failed");
+
+        let names = first_time_contributors_or_warn(Err(cause), &mut warnings);
+
+        assert!(names.is_empty());
+        assert_eq!(
+            warnings,
+            vec!["\"New Contributors\" section omitted, prior history is unreadable: git log failed".to_string()]
+        );
+    }
 }

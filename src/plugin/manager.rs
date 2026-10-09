@@ -3,11 +3,11 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use crate::plugin::driver::{PluginDriver, ProcessDriver};
 use crate::plugin::dto::{
     ChangelogRenderRequest, ChangelogRenderResponse, ManifestReadRequest, ManifestReadResponse, ManifestWriteRequest,
-    ManifestWriteResponse, PostBumpPayload, PostReleasePayload, PreBumpPayload, PreBumpResponse,
+    ManifestWriteResponse, PluginInvocation, PostBumpPayload, PostReleasePayload, PreBumpPayload, PreBumpResponse,
     VersioningComputeRequest, VersioningComputeResponse,
 };
 use crate::plugin::error::PluginError;
-use crate::plugin::types::{Capability, PluginConfig, PluginName, RuntimeKind};
+use crate::plugin::types::{Capability, PluginCall, PluginConfig, PluginName, RuntimeKind};
 
 /// Default timeout in seconds for process plugins when unspecified in config.
 const DEFAULT_PLUGIN_TIMEOUT_SECS: u64 = 30;
@@ -153,7 +153,7 @@ impl PluginManager {
         name: &PluginName,
         req: &ManifestReadRequest,
     ) -> Result<ManifestReadResponse, PluginError> {
-        self.dispatch_raw(name, Capability::ManifestV1, req)
+        self.dispatch_raw(name, PluginCall::ManifestRead, req)
     }
 
     /// Dispatches a `manifest.write` request to the target plugin.
@@ -162,7 +162,7 @@ impl PluginManager {
         name: &PluginName,
         req: &ManifestWriteRequest,
     ) -> Result<ManifestWriteResponse, PluginError> {
-        self.dispatch_raw(name, Capability::ManifestV1, req)
+        self.dispatch_raw(name, PluginCall::ManifestWrite, req)
     }
 
     /// Dispatches a lifecycle `pre_bump` check to the target plugin.
@@ -171,18 +171,18 @@ impl PluginManager {
         name: &PluginName,
         payload: &PreBumpPayload,
     ) -> Result<PreBumpResponse, PluginError> {
-        self.dispatch_raw(name, Capability::LifecycleV1, payload)
+        self.dispatch_raw(name, PluginCall::PreBump, payload)
     }
 
     /// Dispatches a lifecycle `post_bump` notification to the target plugin.
     pub fn dispatch_post_bump(&self, name: &PluginName, payload: &PostBumpPayload) -> Result<(), PluginError> {
-        let _: serde_json::Value = self.dispatch_raw(name, Capability::LifecycleV1, payload)?;
+        let _: serde_json::Value = self.dispatch_raw(name, PluginCall::PostBump, payload)?;
         Ok(())
     }
 
     /// Dispatches a lifecycle `post_release` notification to the target plugin.
     pub fn dispatch_post_release(&self, name: &PluginName, payload: &PostReleasePayload) -> Result<(), PluginError> {
-        let _: serde_json::Value = self.dispatch_raw(name, Capability::LifecycleV1, payload)?;
+        let _: serde_json::Value = self.dispatch_raw(name, PluginCall::PostRelease, payload)?;
         Ok(())
     }
 
@@ -192,7 +192,7 @@ impl PluginManager {
         name: &PluginName,
         req: &ChangelogRenderRequest,
     ) -> Result<ChangelogRenderResponse, PluginError> {
-        self.dispatch_raw(name, Capability::ChangelogV1, req)
+        self.dispatch_raw(name, PluginCall::ChangelogRender, req)
     }
 
     /// Dispatches a versioning compute request to the target plugin.
@@ -201,14 +201,14 @@ impl PluginManager {
         name: &PluginName,
         req: &VersioningComputeRequest,
     ) -> Result<VersioningComputeResponse, PluginError> {
-        self.dispatch_raw(name, Capability::VersioningV1, req)
+        self.dispatch_raw(name, PluginCall::VersioningCompute, req)
     }
 
     /// Helper dispatch method validating capability and executing IPC over driver.
     fn dispatch_raw<Req: serde::Serialize, Res: serde::de::DeserializeOwned>(
         &self,
         name: &PluginName,
-        capability: Capability,
+        call: PluginCall,
         payload: &Req,
     ) -> Result<Res, PluginError> {
         let driver = self
@@ -216,15 +216,16 @@ impl PluginManager {
             .get(name)
             .ok_or_else(|| PluginError::PluginNotFound { name: name.clone() })?;
 
+        let capability = call.capability();
         validate_capability(self.configs.get(name), name, capability)?;
 
-        let bytes = serde_json::to_vec(payload).map_err(|source| PluginError::InvalidPayload {
+        let invocation = PluginInvocation::new(call, payload).map_err(|source| PluginError::InvalidPayload {
             name: name.clone(),
             capability: capability.to_string(),
             source,
         })?;
 
-        let response_bytes = driver.invoke(capability.as_str(), &bytes)?;
+        let response_bytes = driver.invoke(&invocation)?;
         serde_json::from_slice(&response_bytes).map_err(|source| PluginError::InvalidPayload {
             name: name.clone(),
             capability: capability.to_string(),
@@ -379,11 +380,23 @@ fn glob_to_regex(pattern: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
+    use crate::plugin::types::PluginOperation;
+    use std::collections::{HashMap, VecDeque};
+    use std::sync::Mutex;
 
     #[derive(Debug)]
     struct MockEchoDriver {
         name: PluginName,
+        expected: Mutex<VecDeque<(Capability, PluginOperation)>>,
+    }
+
+    impl MockEchoDriver {
+        fn new(name: PluginName, expected: &[(Capability, PluginOperation)]) -> Self {
+            Self {
+                name,
+                expected: Mutex::new(expected.iter().copied().collect()),
+            }
+        }
     }
 
     impl PluginDriver for MockEchoDriver {
@@ -391,8 +404,22 @@ mod tests {
             &self.name
         }
 
-        fn invoke(&self, _capability: &str, payload: &[u8]) -> Result<Vec<u8>, PluginError> {
-            Ok(payload.to_vec())
+        fn invoke(&self, invocation: &PluginInvocation) -> Result<Vec<u8>, PluginError> {
+            let actual = (invocation.capability, invocation.operation);
+            let next = self
+                .expected
+                .lock()
+                .expect("mock driver expectation lock poisoned")
+                .pop_front();
+            assert_eq!(
+                next,
+                Some(actual),
+                "unexpected envelope at call: got capability={:?} operation={:?}, expected {:?}",
+                invocation.capability,
+                invocation.operation,
+                next
+            );
+            Ok(serde_json::to_vec(&invocation.payload).unwrap())
         }
     }
 
@@ -426,9 +453,9 @@ mod tests {
 
     #[test]
     #[cfg(feature = "plugins")]
-    fn test_from_config_wasm_supported_and_executes() {
-        let temp_dir = std::env::temp_dir();
-        let wasm_file = temp_dir.join("cutver_mgr_test.wasm");
+    fn test_from_config_wasm_registers_driver() {
+        let dir = tempfile::tempdir().unwrap();
+        let wasm_file = dir.path().join("cutver_mgr_test.wasm");
         let minimal_wasm: &[u8] = &[0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00];
         std::fs::write(&wasm_file, minimal_wasm).unwrap();
 
@@ -450,7 +477,6 @@ mod tests {
 
         let manager = PluginManager::from_config(&map).unwrap();
         assert!(manager.driver(&name).is_some());
-        let _ = std::fs::remove_file(wasm_file);
     }
 
     #[test]
@@ -542,7 +568,7 @@ mod tests {
     #[test]
     fn test_dispatch_missing_capability() {
         let name = PluginName::new("limited-plugin").unwrap();
-        let driver = MockEchoDriver { name: name.clone() };
+        let driver = MockEchoDriver::new(name.clone(), &[]);
 
         let cfg = PluginConfig {
             runtime: RuntimeKind::Process,
@@ -582,7 +608,17 @@ mod tests {
     #[test]
     fn test_dispatch_roundtrip_with_echo_driver() {
         let name = PluginName::new("echo-plugin").unwrap();
-        let driver = MockEchoDriver { name: name.clone() };
+        let driver = MockEchoDriver::new(
+            name.clone(),
+            &[
+                (Capability::LifecycleV1, PluginOperation::OnPreBump),
+                (Capability::ChangelogV1, PluginOperation::Render),
+                (Capability::ManifestV1, PluginOperation::Read),
+                (Capability::LifecycleV1, PluginOperation::OnPreBump),
+                (Capability::LifecycleV1, PluginOperation::OnPostBump),
+                (Capability::LifecycleV1, PluginOperation::OnPostRelease),
+            ],
+        );
 
         let cfg = PluginConfig {
             runtime: RuntimeKind::Process,
@@ -615,7 +651,7 @@ mod tests {
             reason: Some("Passed pre-bump checks".to_string()),
         };
         // Raw dispatch directly testing roundtrip deserialization
-        let pre_res: PreBumpResponse = manager.dispatch_raw(&name, Capability::LifecycleV1, &pre_req).unwrap();
+        let pre_res: PreBumpResponse = manager.dispatch_raw(&name, PluginCall::PreBump, &pre_req).unwrap();
         assert_eq!(pre_res, pre_req);
 
         // Test changelog render roundtrip
@@ -623,7 +659,7 @@ mod tests {
             body: "## [1.0.0] - notes".to_string(),
         };
         let cl_out: ChangelogRenderResponse = manager
-            .dispatch_raw(&name, Capability::ChangelogV1, &changelog_res)
+            .dispatch_raw(&name, PluginCall::ChangelogRender, &changelog_res)
             .unwrap();
         assert_eq!(cl_out.body, "## [1.0.0] - notes");
 

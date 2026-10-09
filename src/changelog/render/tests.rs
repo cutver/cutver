@@ -343,10 +343,11 @@ impl crate::plugin::driver::PluginDriver for MockChangelogDriver {
         &self.name
     }
 
-    fn invoke(&self, capability: &str, payload: &[u8]) -> Result<Vec<u8>, crate::plugin::PluginError> {
-        assert_eq!(capability, "changelog.v1");
+    fn invoke(&self, invocation: &crate::plugin::dto::PluginInvocation) -> Result<Vec<u8>, crate::plugin::PluginError> {
+        assert_eq!(invocation.capability, crate::plugin::types::Capability::ChangelogV1);
+        assert_eq!(invocation.operation, crate::plugin::types::PluginOperation::Render);
         let req: crate::plugin::dto::ChangelogRenderRequest =
-            serde_json::from_slice(payload).expect("valid changelog request payload");
+            serde_json::from_value(invocation.payload.clone()).expect("valid changelog request payload");
         assert_eq!(req.version, "1.0.0");
         let res = crate::plugin::dto::ChangelogRenderResponse {
             body: self.output_body.clone(),

@@ -27,15 +27,15 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Build
-        run: cargo build --locked --all-targets
+        run: cargo build --locked --workspace --all-targets
       - name: Test
-        run: cargo test --locked
+        run: cargo test --locked --workspace
       - name: Clippy
         if: matrix.os == 'ubuntu-latest'
-        run: cargo clippy --locked --all-targets -- -D warnings
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
       - name: Format
         if: matrix.os == 'ubuntu-latest'
-        run: cargo fmt --check
+        run: cargo fmt --all --check
 
   publish-dry-run:
     name: Publish dry-run

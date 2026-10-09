@@ -3,6 +3,11 @@ use std::fmt;
 use std::str::FromStr;
 use thiserror::Error;
 
+/// The wire-level capability and operation domains are owned by `cutver-pdk` and
+/// re-exported here so every existing `crate::plugin::types::*` caller keeps
+/// resolving against the same path.
+pub use cutver_pdk::{Capability, ParseCapabilityError, ParsePluginOperationError, PluginOperation};
+
 /// Error returned when validating a `PluginName`.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum PluginNameError {
@@ -77,55 +82,55 @@ impl From<PluginName> for String {
     }
 }
 
-/// Canonical capabilities supported by the Cutver Microkernel.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum Capability {
-    #[serde(rename = "manifest.v1")]
-    ManifestV1,
-    #[serde(rename = "lifecycle.v1")]
-    LifecycleV1,
-    #[serde(rename = "changelog.v1")]
-    ChangelogV1,
-    #[serde(rename = "versioning.v1")]
-    VersioningV1,
+/// A dispatchable plugin call. Capability and operation are coupled by construction.
+///
+/// This stays in the core on purpose: coupling a capability to an operation for
+/// host dispatch is a host convenience, not part of the plugin wire contract, so
+/// it is deliberately kept out of `cutver-pdk`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PluginCall {
+    ManifestRead,
+    ManifestWrite,
+    PreBump,
+    PostBump,
+    PostRelease,
+    ChangelogRender,
+    VersioningCompute,
 }
 
-impl Capability {
-    /// Returns the canonical capability wire identifier.
-    pub const fn as_str(&self) -> &'static str {
+impl PluginCall {
+    /// Returns the capability this call targets.
+    pub const fn capability(self) -> Capability {
         match self {
-            Self::ManifestV1 => "manifest.v1",
-            Self::LifecycleV1 => "lifecycle.v1",
-            Self::ChangelogV1 => "changelog.v1",
-            Self::VersioningV1 => "versioning.v1",
+            Self::ManifestRead | Self::ManifestWrite => Capability::ManifestV1,
+            Self::PreBump | Self::PostBump | Self::PostRelease => Capability::LifecycleV1,
+            Self::ChangelogRender => Capability::ChangelogV1,
+            Self::VersioningCompute => Capability::VersioningV1,
+        }
+    }
+
+    /// Returns the operation this call performs.
+    pub const fn operation(self) -> PluginOperation {
+        match self {
+            Self::ManifestRead => PluginOperation::Read,
+            Self::ManifestWrite => PluginOperation::Write,
+            Self::PreBump => PluginOperation::OnPreBump,
+            Self::PostBump => PluginOperation::OnPostBump,
+            Self::PostRelease => PluginOperation::OnPostRelease,
+            Self::ChangelogRender => PluginOperation::Render,
+            Self::VersioningCompute => PluginOperation::Compute,
         }
     }
 }
 
-impl fmt::Display for Capability {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
+/// Projects a host dispatch call onto the wire-level `(capability, operation)`
+/// pair, letting `PluginInvocation::new` build the envelope without the PDK
+/// depending on this host-only enum.
+impl From<PluginCall> for (Capability, PluginOperation) {
+    fn from(call: PluginCall) -> Self {
+        (call.capability(), call.operation())
     }
 }
-
-impl FromStr for Capability {
-    type Err = ParseCapabilityError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "manifest.v1" => Ok(Self::ManifestV1),
-            "lifecycle.v1" => Ok(Self::LifecycleV1),
-            "changelog.v1" => Ok(Self::ChangelogV1),
-            "versioning.v1" => Ok(Self::VersioningV1),
-            _ => Err(ParseCapabilityError(s.to_string())),
-        }
-    }
-}
-
-/// Error returned when parsing an unrecognized capability string.
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
-#[error("unsupported capability '{0}': expected one of manifest.v1, lifecycle.v1, changelog.v1, versioning.v1")]
-pub struct ParseCapabilityError(pub String);
 
 /// Plugin runtime kind: WebAssembly or native system process.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -208,17 +213,23 @@ mod tests {
     }
 
     #[test]
-    fn test_capability_serialization_and_parsing() {
-        let cap = Capability::ManifestV1;
-        assert_eq!(cap.as_str(), "manifest.v1");
-        assert_eq!(cap.to_string(), "manifest.v1");
-        assert_eq!("lifecycle.v1".parse::<Capability>().unwrap(), Capability::LifecycleV1);
-        assert!("unknown.v1".parse::<Capability>().is_err());
+    fn test_plugin_call_couples_capability_and_operation() {
+        assert_eq!(PluginCall::ManifestRead.capability(), Capability::ManifestV1);
+        assert_eq!(PluginCall::ManifestRead.operation(), PluginOperation::Read);
+        assert_eq!(PluginCall::PreBump.capability(), Capability::LifecycleV1);
+        assert_eq!(PluginCall::PreBump.operation(), PluginOperation::OnPreBump);
+        assert_eq!(PluginCall::ChangelogRender.capability(), Capability::ChangelogV1);
+        assert_eq!(PluginCall::ChangelogRender.operation(), PluginOperation::Render);
+        assert_eq!(PluginCall::VersioningCompute.capability(), Capability::VersioningV1);
+        assert_eq!(PluginCall::VersioningCompute.operation(), PluginOperation::Compute);
+    }
 
-        let json = serde_json::to_string(&Capability::LifecycleV1).unwrap();
-        assert_eq!(json, "\"lifecycle.v1\"");
-        let deserialized: Capability = serde_json::from_str(&json).unwrap();
-        assert_eq!(deserialized, Capability::LifecycleV1);
+    #[test]
+    fn test_plugin_call_projects_onto_the_wire_pair() {
+        assert_eq!(
+            <(Capability, PluginOperation)>::from(PluginCall::ChangelogRender),
+            (Capability::ChangelogV1, PluginOperation::Render)
+        );
     }
 
     #[test]

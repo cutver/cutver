@@ -7,8 +7,12 @@ use std::time::Duration;
 use sha2::{Digest, Sha256};
 
 use crate::plugin::driver::PluginDriver;
+use crate::plugin::dto::PluginInvocation;
 use crate::plugin::error::PluginError;
 use crate::plugin::types::{Capability, PermissionsConfig, PluginName};
+
+/// Stable Extism export every WASM plugin must expose to receive invocations.
+pub const INVOKE_EXPORT: &str = "invoke";
 
 /// WebAssembly plugin driver executing guest plugins inside an Extism sandbox.
 pub struct WasmDriver {
@@ -58,12 +62,12 @@ impl PluginDriver for WasmDriver {
         &self.name
     }
 
-    fn invoke(&self, capability: &str, payload: &[u8]) -> Result<Vec<u8>, PluginError> {
-        let is_supported = self.capabilities.iter().any(|cap| cap.as_str() == capability);
-        if !is_supported {
+    fn invoke(&self, invocation: &PluginInvocation) -> Result<Vec<u8>, PluginError> {
+        let capability = invocation.capability;
+        if !self.capabilities.contains(&capability) {
             return Err(PluginError::UnsupportedCapability {
                 name: self.name.clone(),
-                capability: capability.to_string(),
+                capability: capability.as_str().to_string(),
             });
         }
 
@@ -72,9 +76,15 @@ impl PluginDriver for WasmDriver {
             reason: "failed to acquire plugin lock (mutex poisoned)".to_string(),
         })?;
 
+        let payload = serde_json::to_vec(invocation).map_err(|source| PluginError::InvalidPayload {
+            name: self.name.clone(),
+            capability: capability.as_str().to_string(),
+            source,
+        })?;
+
         plugin
-            .call::<&[u8], Vec<u8>>(capability, payload)
-            .map_err(|err| map_extism_error(&self.name, capability, err))
+            .call::<&[u8], Vec<u8>>(INVOKE_EXPORT, &payload)
+            .map_err(|err| map_extism_error(&self.name, capability.as_str(), err))
     }
 }
 
@@ -230,6 +240,7 @@ pub fn cache_wasm_artifact(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::plugin::types::PluginCall;
 
     const MINIMAL_WASM: &[u8] = &[0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00];
 
@@ -273,7 +284,8 @@ mod tests {
 
         let driver = WasmDriver::new(name.clone(), MINIMAL_WASM, &perms, None, caps, None).unwrap();
 
-        let err = driver.invoke("lifecycle.v1", b"{}").unwrap_err();
+        let invocation = PluginInvocation::new(PluginCall::PreBump, &serde_json::json!({})).unwrap();
+        let err = driver.invoke(&invocation).unwrap_err();
         match err {
             PluginError::UnsupportedCapability {
                 name: err_name,
@@ -305,14 +317,12 @@ mod tests {
 
     #[test]
     fn test_load_wasm_bytes_local_file() {
-        let temp_dir = std::env::temp_dir();
-        let file_path = temp_dir.join("cutver_test_minimal.wasm");
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("cutver_test_minimal.wasm");
         fs::write(&file_path, MINIMAL_WASM).unwrap();
 
         let name = PluginName::new("test-load").unwrap();
         let loaded = load_wasm_bytes(&name, file_path.to_str().unwrap(), None).unwrap();
         assert_eq!(loaded, MINIMAL_WASM);
-
-        let _ = fs::remove_file(file_path);
     }
 }

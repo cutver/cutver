@@ -11,6 +11,15 @@ use std::os::unix::fs::PermissionsExt;
 const MOCK_CHANGELOG_SCRIPT: &str = r####"#!/bin/sh
 INPUT=$(cat)
 
+# Envelope guard: fail closed if the invocation envelope is malformed.
+case "$INPUT" in
+  *'"capability":"changelog.v1"'*'"operation":"render"'*) : ;;
+  *)
+    echo '{"error":"unexpected envelope"}'
+    exit 1
+    ;;
+esac
+
 case "$INPUT" in
   *"FAIL_PLUGIN"*)
     echo "Simulated changelog plugin failure" >&2

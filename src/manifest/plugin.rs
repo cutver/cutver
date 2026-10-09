@@ -60,8 +60,8 @@ impl ManifestEditor for PluginManifestEditor {
 mod tests {
     use super::*;
     use crate::plugin::driver::PluginDriver;
-    use crate::plugin::dto::{ManifestReadResponse, ManifestWriteResponse};
-    use crate::plugin::types::{Capability, PluginConfig, RuntimeKind};
+    use crate::plugin::dto::{ManifestReadResponse, ManifestWriteResponse, PluginInvocation};
+    use crate::plugin::types::{Capability, PluginConfig, PluginOperation, RuntimeKind};
     use std::collections::HashMap;
 
     #[derive(Debug)]
@@ -74,9 +74,11 @@ mod tests {
             &self.name
         }
 
-        fn invoke(&self, capability: &str, payload: &[u8]) -> Result<Vec<u8>, crate::plugin::PluginError> {
-            assert_eq!(capability, Capability::ManifestV1.as_str());
-            if let Ok(req) = serde_json::from_slice::<ManifestWriteRequest>(payload) {
+        fn invoke(&self, invocation: &PluginInvocation) -> Result<Vec<u8>, crate::plugin::PluginError> {
+            assert_eq!(invocation.capability, Capability::ManifestV1);
+            let payload = serde_json::to_vec(&invocation.payload).unwrap();
+            if let Ok(req) = serde_json::from_slice::<ManifestWriteRequest>(&payload) {
+                assert_eq!(invocation.operation, PluginOperation::Write);
                 let replaced = req.content.replace(
                     &format!("version = {}", req.current_version),
                     &format!("version = {}", req.next_version),
@@ -85,7 +87,8 @@ mod tests {
                 return Ok(serde_json::to_vec(&resp).unwrap());
             }
 
-            if let Ok(req) = serde_json::from_slice::<ManifestReadRequest>(payload) {
+            if let Ok(req) = serde_json::from_slice::<ManifestReadRequest>(&payload) {
+                assert_eq!(invocation.operation, PluginOperation::Read);
                 // Mock parse logic: e.g. line starts with "version = "
                 let ver = req
                     .content

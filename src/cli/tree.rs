@@ -208,6 +208,9 @@ pub fn render_release_plan(summary: &Summary, theme: &Theme) -> String {
 /// Prints the release plan and simulation banner if in dry-run mode.
 pub fn print_tree_summary(summary: &Summary) {
     let theme = Theme::stdout();
+    for warning in &summary.warnings {
+        crate::cli::style::warn_degradation(warning);
+    }
     if summary.dry_run {
         println!("{}\n", render_simulation_banner(&theme));
     }
@@ -243,6 +246,7 @@ mod tests {
             tag_skipped: false,
             floating_tag: None,
             post_bump: None,
+            warnings: Vec::new(),
             publish_push: true,
             publish_push_command: Some("git push origin main --tags".into()),
             publish_commands: vec!["cargo publish".into()],

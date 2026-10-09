@@ -1,0 +1,13 @@
+[package]
+name = "cutver-pdk"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99.0"
+authors = ["Row0902"]
+description = "Wire contract shared by the Cutver core and its plugins"
+license = "MIT"
+repository = "https://github.com/cutver/cutver"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

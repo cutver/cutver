@@ -9,8 +9,14 @@ path = "Cargo.toml"
 kind = "cargo-package"
 
 [preflight]
-tests = "cargo test"
-default_timeout = 600
+# The plugin feature gates the WebAssembly driver, so the default build never
+# compiles or tests it. Cutting a release through this configuration without the
+# feature would ship the plugin contract without exercising it.
+tests = "cargo test --features plugins"
+# The feature pulls in the Extism and Wasmtime stack, which is the slowest thing
+# this gate compiles from a cold cache. The previous 600s budget was sized for a
+# build that never touched it.
+default_timeout = 1200
 
 [changelog]
 path = "CHANGELOG.md"
@@ -26,7 +32,8 @@ require_branch = "main"
 floating_major_tag = true
 
 [hooks]
-post_bump = "cargo check --workspace"
+# `--workspace` covers the `cutver-pdk` member, which a release also republishes.
+post_bump = "cargo check --workspace --features plugins"
 
 [publish]
 push = true

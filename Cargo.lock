@@ -561,6 +561,7 @@ name = "cutver"
 version = "0.11.0"
 dependencies = [
  "clap",
+ "cutver-pdk",
  "extism",
  "minijinja",
  "rayon",
@@ -574,6 +575,14 @@ dependencies = [
  "toml",
  "toml_edit 0.23.10+spec-1.0.0",
  "wat",
+]
+
+[[package]]
+name = "cutver-pdk"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

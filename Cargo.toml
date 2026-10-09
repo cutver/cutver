@@ -11,7 +11,12 @@ keywords = ["release", "semver", "version", "changelog", "tag"]
 categories = ["command-line-utilities", "development-tools"]
 exclude = ["odd/"]
 
+[workspace]
+resolver = "2"
+members = ["crates/cutver-pdk"]
+
 [dependencies]
+cutver-pdk = { version = "0.1.0", path = "crates/cutver-pdk" }
 clap = { version = "4", features = ["derive"] }
 semver = "1"
 thiserror = "2"

@@ -71,3 +71,61 @@ pub struct ChangelogRenderResponse {
     /// Rendered Markdown content of the changelog section body.
     pub body: String,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_changelog_dto_roundtrip() {
+        let entry = PluginCommitEntry {
+            sha: "12345678".to_string(),
+            message: "feat: new plugin system".to_string(),
+            r#type: Some("feat".to_string()),
+            scope: Some("plugin".to_string()),
+            author_name: Some("Row".to_string()),
+            pr_number: Some("#42".to_string()),
+            is_breaking: false,
+        };
+        let req = ChangelogRenderRequest {
+            root_dir: "/workspace".to_string(),
+            version: "1.1.0".to_string(),
+            tag_name: "v1.1.0".to_string(),
+            previous_tag: Some("v1.0.0".to_string()),
+            release_date: "2025-05-18".to_string(),
+            commits: vec![entry],
+            repository: Some("https://github.com/Row0902/cutver".to_string()),
+            compare_url: Some("https://github.com/Row0902/cutver/compare/v1.0.0...v1.1.0".to_string()),
+            is_prerelease: false,
+            contributors: vec![PluginContributor {
+                name: "Row".to_string(),
+                is_first_contribution: true,
+            }],
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        let deserialized: ChangelogRenderRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(req, deserialized);
+
+        // Backwards compatibility: a payload without any of the v2 fields deserializes.
+        let legacy = serde_json::json!({
+            "root_dir": "/workspace",
+            "version": "1.1.0",
+            "tag_name": "v1.1.0",
+            "release_date": "2025-05-18",
+            "commits": []
+        });
+        let legacy_req: ChangelogRenderRequest = serde_json::from_value(legacy).unwrap();
+        assert_eq!(legacy_req.previous_tag, None);
+        assert_eq!(legacy_req.repository, None);
+        assert_eq!(legacy_req.compare_url, None);
+        assert!(!legacy_req.is_prerelease);
+        assert!(legacy_req.contributors.is_empty());
+
+        let res = ChangelogRenderResponse {
+            body: "### Features\n- new plugin system".to_string(),
+        };
+        let res_json = serde_json::to_string(&res).unwrap();
+        let deserialized_res: ChangelogRenderResponse = serde_json::from_str(&res_json).unwrap();
+        assert_eq!(res, deserialized_res);
+    }
+}

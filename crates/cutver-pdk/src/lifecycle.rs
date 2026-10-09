@@ -60,3 +60,55 @@ pub struct PostReleasePayload {
     /// Whether this is a simulation run (`--dry-run`).
     pub dry_run: bool,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_lifecycle_dto_roundtrip() {
+        let pre_req = PreBumpPayload {
+            root_dir: "/workspace".to_string(),
+            current_version: "1.0.0".to_string(),
+            next_version: "1.1.0".to_string(),
+            bump_level: "minor".to_string(),
+            tag_name: "v1.1.0".to_string(),
+            dry_run: false,
+        };
+        let pre_json = serde_json::to_string(&pre_req).unwrap();
+        let deserialized_pre: PreBumpPayload = serde_json::from_str(&pre_json).unwrap();
+        assert_eq!(pre_req, deserialized_pre);
+
+        let pre_res = PreBumpResponse {
+            allow: true,
+            reason: None,
+        };
+        let res_json = serde_json::to_string(&pre_res).unwrap();
+        assert!(!res_json.contains("reason"));
+        let deserialized_res: PreBumpResponse = serde_json::from_str(&res_json).unwrap();
+        assert_eq!(pre_res, deserialized_res);
+
+        let post_bump = PostBumpPayload {
+            root_dir: "/workspace".to_string(),
+            current_version: "1.0.0".to_string(),
+            next_version: "1.1.0".to_string(),
+            tag_name: "v1.1.0".to_string(),
+            modified_files: vec!["Cargo.toml".to_string()],
+            dry_run: false,
+        };
+        let post_json = serde_json::to_string(&post_bump).unwrap();
+        let deserialized_post: PostBumpPayload = serde_json::from_str(&post_json).unwrap();
+        assert_eq!(post_bump, deserialized_post);
+
+        let post_rel = PostReleasePayload {
+            root_dir: "/workspace".to_string(),
+            version: "1.1.0".to_string(),
+            tag_name: "v1.1.0".to_string(),
+            commit_sha: "abcdef123456".to_string(),
+            dry_run: false,
+        };
+        let post_rel_json = serde_json::to_string(&post_rel).unwrap();
+        let deserialized_rel: PostReleasePayload = serde_json::from_str(&post_rel_json).unwrap();
+        assert_eq!(post_rel, deserialized_rel);
+    }
+}

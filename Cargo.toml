@@ -49,7 +49,7 @@ wat = "1"
 tempfile = "3"
 
 [profile.release]
-opt-level = 3
+opt-level = "z"
 lto = "fat"
 codegen-units = 1
 panic = "abort"

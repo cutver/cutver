@@ -1,8 +1,8 @@
 # RFC 0001: Cutver Microkernel & Unified Plugin Engine
 
-> **Status**: Proposed / Under Review  
-> **Issue**: [#32](https://github.com/cutver/cutver/issues/32)  
-> **Target Version**: `v0.11.0` (Core Microkernel & Drivers) / `v0.12.0` (Ecosystem Adapters)
+> **Status**: Accepted — core and adapters shipped in `v0.11.0` / `v0.12.0`
+> **Issue**: [#32](https://github.com/cutver/cutver/issues/32)
+> **Implementation Milestones**: `v0.11.0` (Microkernel & Drivers) · `v0.12.0` (Capability Adapters) · `v0.13.0` (Plugin Ecosystem)
 
 ---
 
@@ -42,22 +42,71 @@ Both WASM modules and native processes communicate through referentially transpa
 ```
 
 - **`WasmDriver` (Extism)**: Executes guest WASM modules with capability-based isolation (explicit network allowlists, directory preopens, and environment mappings). Gated behind the `plugins` Cargo feature flag.
-- **`ProcessDriver`**: Spawns system binaries or scripts, transmitting JSON payloads over `stdin` and capturing structured responses from `stdout` with fail-closed timeout guards.
+- **`ProcessDriver`**: Spawns system binaries or scripts, transmitting the invocation over `stdin` and capturing the response DTO from `stdout` with fail-closed timeout guards.
 
 ---
 
-## 4. Decoupled Capability Domains
+## 4. Invocation Contract
 
-Plugins declare and implement one or more of four canonical capabilities:
+Every call, in both runtimes, uses one envelope:
 
-1. **`manifest.v1`**: Arbitrary manifest reading and updating (`read_version`, `write_version`).
+```json
+{
+  "capability": "changelog.v1",
+  "operation": "render",
+  "payload": { "...": "capability-specific request DTO" }
+}
+```
+
+`capability` and `operation` are a fixed pair; the host models them as a single `PluginCall`, so an impossible combination cannot be expressed. The capability and operation domains are closed:
+
+| `capability` | `operation` | Request DTO | Response DTO |
+| --- | --- | --- | --- |
+| `manifest.v1` | `read` | `ManifestReadRequest` | `ManifestReadResponse` |
+| `manifest.v1` | `write` | `ManifestWriteRequest` | `ManifestWriteResponse` |
+| `lifecycle.v1` | `on_pre_bump` | `PreBumpPayload` | `PreBumpResponse` |
+| `lifecycle.v1` | `on_post_bump` | `PostBumpPayload` | ignored |
+| `lifecycle.v1` | `on_post_release` | `PostReleasePayload` | ignored |
+| `changelog.v1` | `render` | `ChangelogRenderRequest` | `ChangelogRenderResponse` |
+| `versioning.v1` | `compute` | `VersioningComputeRequest` | `VersioningComputeResponse` |
+
+### WebAssembly guests
+
+A WASM plugin exports exactly one function, `invoke`. It takes no parameters, receives the envelope as the Extism input, and returns an `i32` exit code where `0` is success and any non-zero value is an error.
+
+> **Gotcha**: Extism hosts buffers in kernel memory, so a guest cannot return data by pointing at its own linear memory. Write the response through `alloc` + `store_u8` (or `input_load_u8` to copy the input) and then `output_set`. A static data segment in guest memory is invisible to the host and produces correct-length, all-zero output.
+
+Language PDKs hide this. The Extism Rust PDK allocates and writes on your behalf:
+
+```rust
+use extism_pdk::*;
+
+#[plugin_fn]
+pub fn invoke(input: String) -> FnResult<String> {
+    let request: serde_json::Value = serde_json::from_str(&input)?;
+    // read request["operation"], build the response DTO
+    Ok(serde_json::json!({ "body": "## What's Changed\n" }).to_string())
+}
+```
+
+### Native process plugins
+
+The envelope is written to the child's `stdin` as a single JSON document; the child writes the response DTO to `stdout`. Execution is bounded by `timeout_seconds` and fails closed when it is exceeded.
+
+---
+
+## 5. Decoupled Capability Domains
+
+Plugins declare one or more of four canonical capabilities. The operation names in §4 are the wire contract.
+
+1. **`manifest.v1`**: Arbitrary manifest reading and updating (`read`, `write`).
 2. **`lifecycle.v1`**: Transactional lifecycle hooks (`on_pre_bump`, `on_post_bump`, `on_post_release`).
-3. **`changelog.v1`**: Custom release note formatting, LLM-assisted summaries, and issue tracker grouping.
-4. **`versioning.v1`**: Alternative version computation schemes (CalVer, commit hashes, or custom release trains).
+3. **`changelog.v1`**: Custom release note formatting, LLM-assisted summaries, and issue tracker grouping (`render`).
+4. **`versioning.v1`**: Alternative version computation schemes (CalVer, commit hashes, or custom release trains) (`compute`).
 
 ---
 
-## 5. Configuration Schema
+## 6. Configuration Schema
 
 Plugins are configured declaratively in `cutver.toml`:
 
@@ -83,8 +132,12 @@ timeout_seconds = 10
 
 ---
 
-## 6. Implementation Strategy
+## 7. Implementation Strategy
 
 - **Cargo Feature Flag**: The Extism WASM engine is gated behind `features = ["plugins"]`, ensuring zero binary size inflation (~4 MB) for minimal installations.
 - **AOT Cache**: Precompiles `.wasm` to native machine code in `~/.cache/cutver/plugins/`, maintaining sub-millisecond execution.
-- **Companion Diagnostics**: Unhandled plugin exit codes or schema mismatch errors surface structured, actionable remediation guides.
+- **Companion Diagnostics**: Unhandled plugin exit codes and schema mismatches surface structured, actionable remediation guides.
+
+### Status
+
+Everything in §1–§6 is implemented and covered by tests, including a hermetic WebAssembly fixture that proves the `invoke` export path end to end. The remaining work is ecosystem tooling: a published plugin SDK, a registry, and the first official plugins.

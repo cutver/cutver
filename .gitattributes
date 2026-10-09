@@ -1,0 +1,5 @@
+# The wire-contract fixture is byte-significant: `tests/plugin_wire_contract.rs`
+# compares the core's serialized output against these exact bytes. Git must not
+# rewrite its line endings on checkout, or the test fails on any platform with
+# `core.autocrlf` enabled.
+tests/fixtures/plugin_wire_contract/changelog_request.json -text

@@ -95,11 +95,16 @@ fn envelope_serializes_to_the_canonical_wire_format() {
     let invocation =
         PluginInvocation::new(PluginCall::ChangelogRender, &canonical_request()).expect("request serializes");
 
-    // The fixture file carries a trailing newline for text-file hygiene; the wire
-    // form does not.
+    // The wire form has no line endings at all, so normalize before comparing.
+    // `.gitattributes` marks the fixture `-text` to stop git rewriting it, but a
+    // tree already checked out before that landed can still hand us CRLF, and
+    // failing on a developer's git configuration rather than on the contract
+    // would make this test a nuisance instead of a guard.
+    let canonical = CANONICAL_ENVELOPE.replace("\r\n", "\n");
+
     assert_eq!(
         serde_json::to_string(&invocation).expect("envelope serializes"),
-        CANONICAL_ENVELOPE.trim_end_matches('\n'),
+        canonical.trim_end_matches('\n'),
         "the core serialized an envelope that differs from the committed canonical fixture. \
          Update the fixture in BOTH this repository and cutver/plugins, or the plugin will drift."
     );

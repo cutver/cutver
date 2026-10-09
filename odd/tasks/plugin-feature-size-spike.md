@@ -131,9 +131,16 @@ no workflow change, and both artefacts shrink.
 
 Two things belong with that change rather than after it:
 
-1. **State the trade-off with a number.** The delta against `opt-level = 3` is unmeasured, because the
-   previous-profile binary no longer exists and re-deriving it costs a full rebuild. The ~1 s heavy
-   command bounds it, but a before/after timing of `bump --dry-run` is cheap and should be in the change.
+1. **State the trade-off with a number, or state the noise floor.** The delta against `opt-level = 3` is
+   unmeasured: the previous-profile binary no longer exists and re-deriving it costs a full rebuild, which
+   is precisely why the change is the cheap moment to measure it — both binaries are being built anyway.
+
+   A naive timing will not do, and this line replaces an earlier, wrong version of this recommendation.
+   Three identical `bump --dry-run` runs on this repository took 0.91 s, 1.21 s and 1.30 s: a ±30% spread,
+   which is larger than the effect the flag is expected to have here. This repository cannot resolve it. If
+   the number is produced it needs a heavy workload instead — thousands of commits and hundreds of
+   manifests, the monorepo case the tool targets — with both binaries kept side by side, interleaved runs
+   and at least five samples per side. If the spread still swamps the difference, report the spread.
 2. **Give the shipped artefact a behavioural gate.** CI tests in debug, so the size profile — and any
    future profile or dependency change — reaches users without ever being executed. A `--version` plus
    `doctor` smoke step in the release workflow would close that, and it is a gap this spike found rather

@@ -79,13 +79,32 @@ The worker stopped and asked instead of forcing the wider scope, which is the co
   `bump -> cli` dependency in `src/bump/`, violating Pillar I.1. The domain now returns a data-only
   `ChangelogPlan { update, warnings }`, the pipeline carries warnings into `Summary.warnings`, and a
   single boundary helper renders them. This also made the degradation unit-testable.
-- [ ] Task 7: Full verification suite.
+- [x] Task 7: Full verification suite.
 
 ---
 
 ## Evidence & Verification
 - **Branch**: `feat/contract-compliance-hardening`
-- **Validation**: pending
+- **Commits**:
+  - `763c244` `refactor(plugin)!: type the invocation operation and couple it to the capability` (11 files, 414 lines)
+  - `fe249d7` `fix(contract): surface swallowed degradations and restore domain boundary purity` (8 files, 211 lines)
+  - The split keeps each commit inside the Pillar IV.4 review budget. `cargo check --all-targets --all-features` passes on `763c244` in isolation, so the history stays bisectable.
+- **Validation** (on the committed state):
+  - `cargo fmt -- --check`: ok
+  - `cargo clippy --all-targets --all-features -- -D warnings`: ok, 0 warnings
+  - `cargo test`: 445 passed, 0 failed
+  - `cargo test --features plugins`: 453 passed, 0 failed
+  - `grep -rn "eprintln\|println" src/bump/`: nothing
+  - `grep -rn "cli::style" src/bump/`: nothing
+  - `git diff -- Cargo.lock`: one added line; 328 packages before and after
+  - The three process-plugin integration scripts (`tests/manifest_plugin.rs`, `tests/versioning_plugin.rs`, `tests/changelog_plugin.rs`) are unmodified and pass, confirming the envelope wire format and field order survived.
+- **RDD**: lineage `review-8dca03aaaebab328` returned `correction_required` with a CRITICAL finding on
+  `src/plugin/manager.rs:614-619` claiming the FIFO mock would panic. **Verified false**: the frozen
+  candidate tree the reviewer read is byte-identical to the working tree, the expected list does
+  contain `(ChangelogV1, Render)` at line 615, the six expected pairs match the six dispatches in
+  order (`654`, `662`, `666`, `689`, `701`, `710`), and both gate runs pass. No code was changed to
+  satisfy the false finding; the review switch was disabled for this clone by explicit user decision
+  (`gentle-ai review mode disable --scope clone`). Recorded at Engram observation 1008.
 
 ---
 

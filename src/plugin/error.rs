@@ -149,6 +149,13 @@ pub enum PluginError {
         matches.iter().map(|p| p.as_str()).collect::<Vec<_>>().join(", ")
     )]
     AmbiguousVersioningPlugin { matches: Vec<PluginName> },
+
+    #[error(
+        "could not resolve the Cutver plugin cache directory: neither '{variable}' nor '{fallback}' (or 'USERPROFILE' on Windows) is set.\n  \
+        Where: resolving the plugin cache root before loading a WASM plugin artifact\n  \
+        Fix: set '{variable}' to the directory that should hold installed plugins (for example, {variable}=~/.cache/cutver/plugins), or set '{fallback}' to the user's home directory."
+    )]
+    UnresolvableCacheRoot { variable: String, fallback: String },
 }
 
 #[cfg(test)]

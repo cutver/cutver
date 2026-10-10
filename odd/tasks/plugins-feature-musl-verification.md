@@ -1,0 +1,139 @@
+# Feature: Verify the plugins feature on the musl targets and the Alpine image (Issue #175)
+
+> **Status**: In Progress
+> **Target Version**: v0.13.0
+> **Issue**: [#175](https://github.com/cutver/cutver/issues/175)
+> **Constitutional Law**: [CONTRACT.md](../../CONTRACT.md)
+> **Blocks**: #169 decision A (the plugin-enabled artifact variant and the `:plugins` container tag).
+
+---
+
+## Problem
+
+The `plugins` feature has never been built for the musl targets or for the Alpine image. PR #171 brought
+it under CI for `x86_64-unknown-linux-gnu`, `aarch64-apple-darwin` and `x86_64-pc-windows-msvc` only.
+
+Untested with the feature:
+
+- `x86_64-unknown-linux-musl`
+- `aarch64-unknown-linux-musl` (built through `cross`, as `release.yml` does)
+- the `rust:alpine` build stage of the `Containerfile`
+
+The feature pulls 27 `wasmtime`/`cranelift` crates into a static musl build — the one place where it can
+fail in ways the gnu builds never reveal. Both musl targets and the container image are published, and
+#169's decision A is to publish a plugin-enabled variant for every target, so a failure discovered at a
+tag is a failure discovered at the worst moment.
+
+## Design decisions (parent-owned)
+
+**D1 — The verification runs in GitHub Actions on real runners, not locally.** The builds are heavy (a
+cold `wasmtime`/`cranelift` compile for musl) and this dev environment has no Docker and no `cross`, only
+`podman` and `qemu-aarch64-static`. It also has no musl target or musl linker installed. A throwaway
+`push`-triggered workflow on a temporary branch produces the evidence on the same runners and with the
+same tooling the release uses — the pattern proven in #174 (run 38021977381). The temporary branch and
+its workflow are deleted after the evidence is captured.
+
+**D2 — The `Containerfile` gains a behavior-preserving feature knob.** `ARG CUTVER_FEATURES=""`, threaded
+into both `cargo build` invocations of the builder stage, defaulting to empty. Rationale: acceptance item 3
+asks whether the *actual* `rust:alpine` stage compiles with the feature; without a knob that question is
+not expressible against the real stage, only against a replica. The default keeps today's lean image
+unchanged, and the same knob is what makes phase 2's `:plugins` image a one-line build.
+
+**D3 — Execution reuses #174's smoke.** The musl artifacts are executed with
+`.github/scripts/release-smoke/run.sh` (`--version` + `doctor --check-changelog` + `changelog latest
+--json`), and the wasm path is exercised for real with `tests/wasm_plugin.rs`, which compiles an inline
+WAT guest and drives the Extism driver end to end. A static musl test binary runs on the glibc runner.
+
+**D4 — The aarch64 path uses `cross`, exactly as `release.yml` does**, and the resulting static binary is
+executed under `qemu-aarch64-static`.
+
+**D5 — No permanent CI job by default.** If the musl feature build costs minutes per push on a cold
+cache, it does not belong in per-push CI; it is recorded and re-run on demand. The measured cost decides.
+
+**D6 — Failures are fixed or recorded as blockers**, with raw evidence, and the outcome is recorded in the
+repository (this document, plus a pointer from the workflow), never only in the issue.
+
+## Acceptance Criteria
+
+- [ ] `cargo build --locked --release --features plugins --target x86_64-unknown-linux-musl` succeeds.
+- [ ] The same for `aarch64-unknown-linux-musl`, through `cross` as the release matrix does it.
+- [ ] The `rust:alpine` build stage of the `Containerfile` compiles with the feature enabled.
+- [ ] The resulting artifacts execute: `--version` and `doctor`, plus a real wasm load check.
+- [ ] Every failure is either fixed or recorded as a blocker for the plugin-enabled variant, with evidence.
+- [ ] The outcome is recorded in the repository, not only in the issue.
+
+## Task Breakdown
+
+- [x] Task 1: Add the `CUTVER_FEATURES` knob to the `Containerfile` builder stage (default empty).
+- [x] Task 2: Author the throwaway verification workflow covering the three configurations and execution.
+- [ ] Task 3 (parent-owned): run it on a temporary branch and capture the raw result.
+- [ ] Task 4: Record the outcome here; fix a failure or record it as a blocker for #169 decision A.
+
+## Verification
+
+The verification runs in `.github/workflows/plugins-musl-verify-tmp.yml`, a throwaway `push`-triggered
+workflow on the temporary branch `chore/plugins-musl-verify` (D1, D2). `push` rather than
+`workflow_dispatch`: a dispatch workflow only becomes callable from the default branch, and this file
+lives only on the temporary branch. No permanent per-push CI job is added until the measured cost is known
+(D5). The result cells below are filled by the Task 3 run; no result is predicted here.
+
+### Exact commands per job
+
+The `<version>` argument is the crate version read from the first `version = "…"` line of `Cargo.toml`
+(the same extraction `container.yml` uses).
+
+**`musl-x86_64`** — `ubuntu-latest`, `dtolnay/rust-toolchain@stable` with `targets: x86_64-unknown-linux-musl`,
+`Swatinem/rust-cache@v2` `key: plugins-musl-x86_64`, `apt-get install -y musl-tools`.
+
+| # | Command | Acceptance item |
+| --- | --- | --- |
+| 1 | `cargo build --locked --release --features plugins --target x86_64-unknown-linux-musl` | 1 |
+| 2 | `sh .github/scripts/release-smoke/run.sh target/x86_64-unknown-linux-musl/release/cutver <version>` | 4 |
+| 3 | `cargo test --locked --features plugins --target x86_64-unknown-linux-musl --test wasm_plugin` | 4 |
+
+**`musl-aarch64`** — `ubuntu-latest`, `targets: aarch64-unknown-linux-musl`,
+`Swatinem/rust-cache@v2` `key: plugins-musl-aarch64`, `taiki-e/install-action@cross` (exactly as
+`release.yml`), `apt-get install -y qemu-user-static`.
+
+| # | Command | Acceptance item |
+| --- | --- | --- |
+| 1 | `cross build --locked --release --features plugins --target aarch64-unknown-linux-musl` | 2 |
+| 2 | `qemu-aarch64-static target/aarch64-unknown-linux-musl/release/cutver --version` | 4 |
+| 3 | `sh .github/scripts/release-smoke/run.sh .qemu-wrap/cutver <version>` | 4 |
+
+For row 3 the workflow generates `.qemu-wrap/cutver`, a two-line wrapper that execs
+`qemu-aarch64-static <absolute-binary> "$@"`, because `run.sh` executes its argument directly and
+`cd`s into its fixture before each invocation. The wrapped binary path is absolute for that reason.
+
+The wasm load check is deliberately not repeated for aarch64: `cross test`'s qemu mechanics are an
+infrastructure concern of their own, and `musl-x86_64` already runs `tests/wasm_plugin.rs` natively on a
+musl target. This job's contract is the `cross` build plus executing the artifact under qemu.
+
+**`alpine`** — `ubuntu-latest`. One job builds the image with the knob and runs it; the full build
+compiles the same builder stage acceptance item 3 asks about, so this covers items 3 and 4 together.
+
+| # | Command | Acceptance item |
+| --- | --- | --- |
+| 1 | `docker build --build-arg CUTVER_FEATURES="--features plugins" -t cutver-plugins .` | 3 |
+| 2 | `docker run --rm -v "$PWD:/repo:ro" --entrypoint /bin/sh cutver-plugins /repo/.github/scripts/release-smoke/run.sh /usr/local/bin/cutver <version>` | 4 |
+
+### Results (Task 3 run)
+
+Each job prints one `cutver-verify <job> (…): <job.status>` line. Raw evidence is the run URL and each
+job's log; failures are recorded here with the raw output and dispositioned in Task 4.
+
+| Job | Run URL | Outcome | Raw evidence |
+| --- | --- | --- | --- |
+| `musl-x86_64` | | | |
+| `musl-aarch64` | | | |
+| `alpine` | | | |
+
+## Evidence & Verification
+
+- Workflow: `.github/workflows/plugins-musl-verify-tmp.yml` (throwaway; branch `chore/plugins-musl-verify`).
+- `Containerfile` knob: `ARG CUTVER_FEATURES=""` threaded into both builder-stage `cargo build`
+  invocations; the empty default preserves the current image.
+- Parent-run, CI: the Task 3 run and its raw results are filled into the table above, then this workflow
+  and its temporary branch are deleted.
+- Not yet proven: nothing here has executed the musl or Alpine builds — this repository's dev environment
+  has no Docker and no `cross`, only `podman`. All build/execute evidence comes from the Task 3 run.

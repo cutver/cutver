@@ -7,6 +7,12 @@ FROM rust:alpine AS builder
 
 RUN apk add --no-cache musl-dev
 
+# Cargo feature set for both builds below. Defaults to empty, so the standard
+# image is byte-for-byte unchanged. It is the knob CI uses to compile the
+# Extism/Wasmtime stack into this same stage, and it feeds phase 2's
+# plugin-enabled `:plugins` image (`--build-arg CUTVER_FEATURES="--features plugins"`).
+ARG CUTVER_FEATURES=""
+
 WORKDIR /app
 
 # Cache dependency compilation layer.
@@ -21,7 +27,7 @@ COPY crates/cutver-pdk/Cargo.toml ./crates/cutver-pdk/Cargo.toml
 RUN mkdir -p src crates/cutver-pdk/src && \
     echo "fn main() {}" > src/main.rs && \
     touch crates/cutver-pdk/src/lib.rs && \
-    cargo build --release && \
+    cargo build --release $CUTVER_FEATURES && \
     rm -rf src crates/cutver-pdk/src
 
 # Compile application source code.
@@ -35,7 +41,7 @@ RUN mkdir -p src crates/cutver-pdk/src && \
 COPY src ./src
 COPY crates/cutver-pdk/src ./crates/cutver-pdk/src
 RUN touch src/main.rs crates/cutver-pdk/src/*.rs && \
-    cargo build --release --locked && \
+    cargo build --release --locked $CUTVER_FEATURES && \
     strip target/release/cutver
 
 # ==============================================================================

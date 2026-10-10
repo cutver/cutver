@@ -155,7 +155,7 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Build the image with the plugins feature (acceptance item 3)
-        run: docker build --build-arg CUTVER_FEATURES="--features plugins" -t cutver-plugins .
+        run: docker build -f Containerfile --build-arg CUTVER_FEATURES="--features plugins" -t cutver-plugins .
 
       - name: Execute artifact inside the image (acceptance item 4)
         run: |

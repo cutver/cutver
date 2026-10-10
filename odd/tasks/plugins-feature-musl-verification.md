@@ -114,7 +114,7 @@ compiles the same builder stage acceptance item 3 asks about, so this covers ite
 
 | # | Command | Acceptance item |
 | --- | --- | --- |
-| 1 | `docker build --build-arg CUTVER_FEATURES="--features plugins" -t cutver-plugins .` | 3 |
+| 1 | `docker build -f Containerfile --build-arg CUTVER_FEATURES="--features plugins" -t cutver-plugins .` | 3 |
 | 2 | `docker run --rm -v "$PWD:/repo:ro" --entrypoint /bin/sh cutver-plugins /repo/.github/scripts/release-smoke/run.sh /usr/local/bin/cutver <version>` | 4 |
 
 ### Results (Task 3 run)

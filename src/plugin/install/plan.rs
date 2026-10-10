@@ -216,7 +216,7 @@ fn insert_plugins_table(
     table: Table,
     label: &str,
 ) -> Result<(), PluginError> {
-    let plugins = doc.as_table_mut().entry("plugins").or_insert(Item::Table(Table::new()));
+    let plugins = plugins_parent(doc);
     let Some(plugins) = plugins.as_table_mut() else {
         return Err(PluginError::PluginConfigEdit {
             path: label.to_string(),
@@ -226,4 +226,17 @@ fn insert_plugins_table(
     plugins.insert(name.as_str(), Item::Table(table));
 
     Ok(())
+}
+
+/// The `plugins` parent for an insertion (decision D23).
+///
+/// An absent key is created as an *implicit* table so toml_edit renders no
+/// `[plugins]` header of its own. An existing key is returned untouched, so a
+/// user's hand-written explicit table is never flipped to implicit.
+fn plugins_parent(doc: &mut DocumentMut) -> &mut Item {
+    doc.as_table_mut().entry("plugins").or_insert_with(|| {
+        let mut table = Table::new();
+        table.set_implicit(true);
+        Item::Table(table)
+    })
 }

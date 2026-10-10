@@ -12,6 +12,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use cutver::plugin::error::{InstallError, TransportError};
 use cutver::plugin::install::{AddOptions, InstallPlan, apply_add, plan_add};
+use cutver::plugin::manage::{execute_remove, plan_remove};
 use cutver::plugin::registry::{RegistryIndexUrl, Transport};
 use cutver::plugin::types::PluginName;
 use cutver::plugin::{PluginCacheRoot, PluginError};
@@ -164,6 +165,68 @@ fn add_installs_verified_artifact_and_writes_the_config() {
     assert_eq!(
         fs::read(project.artifact("demo-0.1.0.wasm")).expect("artifact"),
         PAYLOAD
+    );
+}
+
+#[test]
+fn add_creates_an_implicit_parent_without_a_plugins_header() {
+    let project = Project::new(BASE_CONFIG);
+    let fixture = Fixture::new(entry_body(&["changelog.v1"], PAYLOAD_HASH), PAYLOAD);
+
+    let plan = plan(&project, &AddOptions::default(), &fixture).expect("plan succeeds");
+    apply_add(&plan, &fixture).expect("apply succeeds");
+
+    let config = project.read_config();
+    assert!(
+        !config.lines().any(|line| line.trim() == "[plugins]"),
+        "the implicit parent must not render a header: {config}"
+    );
+    let expected = format!(
+        "{BASE_CONFIG}\n[plugins.demo]\nruntime = \"wasm\"\nsource = \"demo-0.1.0.wasm\"\nhash = \"{PAYLOAD_HASH}\"\ncapabilities = [\"changelog.v1\"]\n"
+    );
+    assert_eq!(config, expected, "the document must be the original plus the new table");
+}
+
+#[test]
+fn add_then_remove_restores_the_original_config_bytes() {
+    let project = Project::new(BASE_CONFIG);
+    let fixture = Fixture::new(entry_body(&["changelog.v1"], PAYLOAD_HASH), PAYLOAD);
+
+    let plan = plan(&project, &AddOptions::default(), &fixture).expect("plan succeeds");
+    apply_add(&plan, &fixture).expect("apply succeeds");
+    assert_ne!(project.read_config(), BASE_CONFIG, "add must change the config");
+
+    let removal = plan_remove(&project.config, &name(), false, &project.cache()).expect("remove plan");
+    execute_remove(&removal).expect("remove applies");
+
+    assert_eq!(
+        project.read_config().as_bytes(),
+        BASE_CONFIG.as_bytes(),
+        "an add -> remove round trip must restore the original bytes"
+    );
+}
+
+#[test]
+fn a_hand_written_explicit_plugins_table_survives_add_and_remove() {
+    let original = format!("{BASE_CONFIG}\n[plugins]\n");
+    let project = Project::new(&original);
+    let fixture = Fixture::new(entry_body(&["changelog.v1"], PAYLOAD_HASH), PAYLOAD);
+
+    let plan = plan(&project, &AddOptions::default(), &fixture).expect("plan succeeds");
+    apply_add(&plan, &fixture).expect("apply succeeds");
+    let after_add = project.read_config();
+    assert!(
+        after_add.lines().any(|line| line.trim() == "[plugins]"),
+        "the user's explicit parent must survive add: {after_add}"
+    );
+
+    let removal = plan_remove(&project.config, &name(), false, &project.cache()).expect("remove plan");
+    execute_remove(&removal).expect("remove applies");
+
+    assert_eq!(
+        project.read_config(),
+        original,
+        "the user's explicit parent must survive remove byte-for-byte"
     );
 }
 

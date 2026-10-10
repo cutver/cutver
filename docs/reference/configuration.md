@@ -140,8 +140,18 @@ Declares one target file to update. Multiple `[[manifest]]` blocks can be specif
 
 ---
 
+### `[plugins.<name>]`
+
+Each plugin gets its own table, written by `cutver plugin add` rather than by hand. The keys
+(`runtime`, `source`, `hash`, `capabilities`, `events`, `manifest_match`, `permissions`,
+`timeout_seconds`) and the two digest gates are documented in the
+[plugin reference](plugins.md).
+
+---
+
 ## Related Documentation
 
 - [Language Manifests and Surgical Diff Guarantees](manifests.md): In-depth formatting and AST preservation guarantees.
 - [CLI Commands and Exit Codes](cli.md): CLI command arguments, flags, and exit codes.
+- [Installing and Managing Plugins](plugins.md): The `[plugins.<name>]` table, install flow, digest verification, and cache location.
 - [Customizing Release Templates](../templates/release-notes.md): ReleaseContext variables, filters, and templates.

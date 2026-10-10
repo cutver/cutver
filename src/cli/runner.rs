@@ -5,6 +5,7 @@ pub mod dispatch;
 pub mod doctor;
 pub mod external;
 pub mod open;
+pub mod plugin;
 
 #[cfg(test)]
 mod tests;
@@ -25,3 +26,5 @@ pub use doctor::run_doctor;
 pub use external::run_external;
 #[allow(unused_imports)]
 pub use open::run_open;
+#[allow(unused_imports)]
+pub use plugin::run_plugin;

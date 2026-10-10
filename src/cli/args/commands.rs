@@ -1,6 +1,8 @@
 use clap::{Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
+use super::plugin::PluginCommands;
+
 /// Cut a release. Bump SemVer. Every project, every language.
 #[derive(Parser, Debug)]
 #[command(name = "cutver", version, about)]
@@ -66,6 +68,12 @@ pub enum Commands {
         /// Explicit browser or command to launch
         #[arg(long, value_name = "BROWSER")]
         browser: Option<String>,
+    },
+    /// Manage installed plugins
+    #[command(hide = !cfg!(feature = "plugins"))]
+    Plugin {
+        #[command(subcommand)]
+        command: PluginCommands,
     },
     /// External plugin subcommand resolved as `cutver-<subcommand>` from $PATH
     #[command(external_subcommand)]

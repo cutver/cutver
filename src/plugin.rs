@@ -2,6 +2,8 @@ pub mod cache;
 pub mod driver;
 pub mod dto;
 pub mod error;
+#[cfg(feature = "plugins")]
+pub mod manage;
 pub mod manager;
 #[cfg(feature = "plugins")]
 pub mod registry;

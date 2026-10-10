@@ -5,7 +5,7 @@
 //! (Pillar IV.1); the thin [`PluginCacheRoot::resolve`] constructor binds it to
 //! `std::env::var` at the I/O boundary.
 
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use crate::plugin::error::PluginError;
 
@@ -53,6 +53,73 @@ impl PluginCacheRoot {
     pub fn artifact_path(&self, artifact: &str) -> PathBuf {
         self.root.join(artifact)
     }
+
+    /// Where `remove` may delete the artifact for `source`.
+    ///
+    /// Reading and deleting are different questions. A `source` that is an
+    /// existing local file is the user's own file, and a candidate that escapes
+    /// the cache root (an absolute path, or `..` after lexical normalization) is
+    /// never a cached artifact. Only a path strictly inside the root is
+    /// deletable, so a destructive operation cannot escape the cache (D1).
+    pub fn delete_path(&self, source: &str) -> DeletePath {
+        let candidate = self.artifact_path(source);
+        let root = lexical_normalize(&self.root);
+        let normalized = lexical_normalize(&candidate);
+        if normalized == root || !normalized.starts_with(&root) {
+            return DeletePath::OutsideRoot(candidate);
+        }
+
+        let local = Path::new(source);
+        if local.is_file() {
+            return DeletePath::LocalFile(local.to_path_buf());
+        }
+
+        DeletePath::Deletable(candidate)
+    }
+}
+
+/// Where `plugin remove` may delete an artifact (the cache root, and only it).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DeletePath {
+    /// Inside the cache root; safe to delete.
+    Deletable(PathBuf),
+    /// `source` names an existing local file, which belongs to the user.
+    LocalFile(PathBuf),
+    /// The resolved path escapes the cache root (absolute or `..`); never delete it.
+    OutsideRoot(PathBuf),
+}
+
+/// The single canonical, lazy READ resolution for a declared plugin `source`.
+///
+/// An existing local file wins and the cache root is never resolved in that
+/// case; otherwise the artifact lives inside the resolved cache root. Used by
+/// `driver::wasm::load_wasm_bytes`, `plugin list` and `plugin remove` (Pillar V.6).
+pub fn read_path(
+    source: &str,
+    resolve_cache: impl FnOnce() -> Result<PluginCacheRoot, PluginError>,
+) -> Result<PathBuf, PluginError> {
+    let local = Path::new(source);
+    if local.is_file() {
+        return Ok(local.to_path_buf());
+    }
+
+    Ok(resolve_cache()?.artifact_path(source))
+}
+
+/// Lexically resolves `.` and `..` without touching the filesystem, so
+/// containment can be checked before any deletion.
+fn lexical_normalize(path: &Path) -> PathBuf {
+    let mut resolved = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                resolved.pop();
+            }
+            other => resolved.push(other.as_os_str()),
+        }
+    }
+    resolved
 }
 
 /// Drops absent and whitespace-only values so a blank override falls through.
@@ -191,6 +258,77 @@ mod tests {
             root.artifact_path("github-releases.wasm"),
             Path::new("/home/alice/.cache/cutver/plugins/github-releases.wasm")
         );
+    }
+
+    #[test]
+    fn read_path_prefers_an_existing_local_file_and_stays_lazy() {
+        let dir = tempfile::tempdir().unwrap();
+        let local = dir.path().join("local.wasm");
+        std::fs::write(&local, b"wasm").unwrap();
+
+        let resolved = read_path(local.to_str().unwrap(), || {
+            panic!("cache root must not be resolved for an existing local file")
+        })
+        .unwrap();
+        assert_eq!(resolved, local);
+    }
+
+    #[test]
+    fn read_path_falls_back_into_the_cache_root() {
+        let root = PluginCacheRoot::from_env_lookup(lookup_from(&[("HOME", "/home/alice")])).unwrap();
+
+        let resolved = read_path("absent.wasm", || Ok(root.clone())).unwrap();
+        assert_eq!(resolved, Path::new("/home/alice/.cache/cutver/plugins/absent.wasm"));
+    }
+
+    #[test]
+    fn delete_path_rejects_an_absolute_source() {
+        let root = PluginCacheRoot::from_env_lookup(lookup_from(&[("HOME", "/home/alice")])).unwrap();
+
+        let decision = root.delete_path("/etc/passwd");
+        assert!(
+            matches!(decision, DeletePath::OutsideRoot(_)),
+            "absolute source must be un-deletable: {decision:?}"
+        );
+    }
+
+    #[test]
+    fn delete_path_rejects_parent_traversal() {
+        let root = PluginCacheRoot::from_env_lookup(lookup_from(&[("HOME", "/home/alice")])).unwrap();
+
+        let decision = root.delete_path("../../escape.wasm");
+        assert!(
+            matches!(decision, DeletePath::OutsideRoot(_)),
+            "traversal source must be un-deletable: {decision:?}"
+        );
+    }
+
+    #[test]
+    fn delete_path_allows_a_subdirectory_inside_the_root() {
+        let root = PluginCacheRoot::from_env_lookup(lookup_from(&[("HOME", "/home/alice")])).unwrap();
+
+        match root.delete_path("nested/deep/artifact.wasm") {
+            DeletePath::Deletable(path) => {
+                assert_eq!(
+                    path,
+                    Path::new("/home/alice/.cache/cutver/plugins/nested/deep/artifact.wasm")
+                );
+            }
+            other => panic!("expected Deletable, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn delete_path_keeps_an_existing_local_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let local = dir.path().join("rel.wasm");
+        std::fs::write(&local, b"wasm").unwrap();
+        let root = PluginCacheRoot::from_env_lookup(|key| {
+            (key == CACHE_DIR_ENV).then(|| dir.path().to_string_lossy().to_string())
+        })
+        .unwrap();
+
+        assert_eq!(root.delete_path(local.to_str().unwrap()), DeletePath::LocalFile(local));
     }
 
     #[test]

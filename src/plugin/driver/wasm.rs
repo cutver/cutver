@@ -169,20 +169,11 @@ fn map_extism_error(name: &PluginName, capability: &str, err: extism::Error) -> 
 
 /// Resolves or loads WASM artifact bytes from a local file path or cache.
 pub fn load_wasm_bytes(name: &PluginName, source: &str, expected_hash: Option<&str>) -> Result<Vec<u8>, PluginError> {
-    let path = Path::new(source);
-    let bytes = if path.is_file() {
-        fs::read(path).map_err(|e| PluginError::MissingConfiguration {
-            name: name.clone(),
-            reason: format!("failed to read WASM file from '{source}': {e}"),
-        })?
-    } else {
-        let cache = PluginCacheRoot::resolve()?;
-        let cached = cache.artifact_path(source);
-        fs::read(&cached).map_err(|e| PluginError::MissingConfiguration {
-            name: name.clone(),
-            reason: format!("failed to read cached WASM artifact from '{source}': {e}"),
-        })?
-    };
+    let path = crate::plugin::cache::read_path(source, PluginCacheRoot::resolve)?;
+    let bytes = fs::read(&path).map_err(|e| PluginError::MissingConfiguration {
+        name: name.clone(),
+        reason: format!("failed to read WASM artifact '{source}': {e}"),
+    })?;
 
     if let Some(expected) = expected_hash {
         verify_sha256(name, &bytes, Some(expected))?;

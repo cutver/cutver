@@ -253,6 +253,52 @@ pub enum PluginError {
         Fix: pass --version with a pre-release requirement to opt in, or publish a stable release."
     )]
     RegistryNoStableRelease { name: String, available: String },
+
+    #[error(
+        "plugin '{name}' is not declared under [plugins.{name}] in '{config_path}'.\n  \
+        Where: removing a plugin declaration from the resolved cutver.toml\n  \
+        Fix: run 'cutver plugin list' to see configured plugins, or pass --config with the correct path."
+    )]
+    PluginNotConfigured { name: PluginName, config_path: String },
+
+    #[error(
+        "failed to read cutver.toml at '{path}' while removing a plugin: {reason}.\n  \
+        Where: reading the resolved configuration before a surgical plugin removal\n  \
+        Fix: ensure the file exists and is readable, or pass --config with the correct path."
+    )]
+    PluginConfigRead { path: String, reason: String },
+
+    #[error(
+        "failed to parse cutver.toml at '{path}' as a TOML document: {reason}.\n  \
+        Where: loading the configuration document for a surgical plugin removal\n  \
+        Fix: fix the TOML syntax error; no change has been written."
+    )]
+    PluginConfigEdit { path: String, reason: String },
+
+    #[error(
+        "failed to write updated cutver.toml at '{path}': {reason}.\n  \
+        Where: applying the plugin removal to the configuration\n  \
+        Fix: verify the file is writable and its directory exists, then retry."
+    )]
+    PluginConfigWrite { path: String, reason: String },
+
+    #[error(
+        "failed to delete plugin artifact '{path}': {source}.\n  \
+        Where: removing the cached artifact after cutver.toml was already updated\n  \
+        Fix: delete the file manually; the configuration is already correct."
+    )]
+    PluginArtifactDelete {
+        path: String,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error(
+        "this build of cutver was compiled without the 'plugins' feature, so 'cutver plugin {operation}' is unavailable.\n  \
+        Where: dispatching the 'plugin' subcommand\n  \
+        Fix: install or build a plugin-enabled cutver: 'cargo install cutver --features plugins' (or 'cargo build --features plugins')."
+    )]
+    PluginsFeatureDisabled { operation: String },
 }
 
 #[cfg(test)]

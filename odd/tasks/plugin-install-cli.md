@@ -61,10 +61,20 @@ even execute a wasm plugin (`release.yml` never passes `--features plugins`).
   digest gate and the RAII rollback are all exercised hermetically with `tempfile::tempdir()` and zero
   network. The thin `ureq` call remains compile-checked rather than behaviourally proven end to end,
   and that residual is stated rather than hidden.
-- **D11 — Hardening absorbed into slice 3**: `HttpsUrl::parse` must reject a backslash anywhere in the
-  URL (Pillar II.3) and a malformed or out-of-range port. Found by the slice-2 verifier, which accepted
+- **D11 — Hardening absorbed into slice 3a**: `HttpsUrl::parse` must reject a backslash anywhere in the
+  URL (Pillar II.3) and a malformed or out-of-range port, while still accepting what it accepted before
+  — over-rejection is as much a defect as under-rejection. Found by the slice-2 verifier, which accepted
   `https://github.com/a\b.wasm`, `https://github.com:notaport/x.wasm` and `https://.com/x.wasm`.
   Slice 2 was committed exactly as verified rather than mutated after its verification.
+- **D13 — Reading and deleting are different questions.** The artifact rule ("an existing local file
+  wins, otherwise the artifact lives inside the cache root") answers *where a load reads from*, and
+  lives in exactly one canonical, lazy function (`cache::read_path`) used by `list`, `remove` and the
+  loader. Deletion is a separate, containment-checked intent: `remove` may only delete inside the cache
+  root, keeps a `source` that is the user's own local file, and keeps anything that escapes the root
+  (absolute, or `..` after lexical normalization). Rationale: the first slice-3a attempt reused the
+  read path for deletion, and because `PathBuf::join` replaces the base with an absolute argument, a
+  `remove` could delete a file outside the cache root and report it as a cached artifact. Lexical
+  normalization is deliberate (no `canonicalize`), and deleting a symlink only unlinks the link.
 
 ## Slices
 
@@ -72,7 +82,8 @@ even execute a wasm plugin (`release.yml` never passes `--features plugins`).
 | --- | --- | --- | --- |
 | 1 | **Cache root** | `PluginCacheRoot` newtype + fail-closed resolution + `CUTVER_PLUGIN_CACHE_DIR` override; driver consumes it; lean and `plugins` builds green. (The `--features plugins` CI job already landed in #171.) | **done** — `d42b625` |
 | 2 | **Registry client** | `src/plugin/registry.rs`: typed entry, release selection (highest satisfying **stable** semver unless `--version` asks for a pre-release), digest-shape and capability validation, fetch with timeout + size cap. Fixture tests, no network. | **done** — `0f96632` |
-| 3 | **`add` / `remove` / `list`** | CLI args, runner dispatch, two-phase install with the rollback guard, surgical `toml_edit` edits, `--dry-run`, `--json`. Integration tests against a local HTTP fixture and a temp cache root. | pending |
+| 3a | **`list` / `remove`** | CLI scaffolding for the `plugin` subcommand (D12), read-only `list` with three digest states and `--json`, surgical `remove` with the shared-source rule and `--keep-artifact`, artifact deletion containment (D13), and the D11 URL hardening. | **done** — `1203692` |
+| 3b | **`add`** | Transport injection (D10), artifact download, the digest gate before the cache, temp file inside the target directory plus atomic move, the RAII rollback guard, `--dry-run`, `--force`, and the `events`/`manifest_match` requirement check. | pending |
 | 4 | **Docs** | Plugin reference: install flow, digest verification, cache location. Also unblocks #164. | pending |
 | 5 | **Artifact variant (decision A)** | `release.yml` second artifact `cutver-plugins` + `:plugins` container tag (`--build-arg CUTVER_FEATURES="--features plugins"`, already threaded). **Phase 2 — separate authorization**, because `release.yml` has broken releases twice. | deferred |
 
@@ -100,6 +111,7 @@ even execute a wasm plugin (`release.yml` never passes `--features plugins`).
 | 2026-10-10 | — | Decisions A/B authorized; branch `feat/plugin-install-cli` created off `main` @ `5d4887c`; `test-plugins` CI job (#171) and the `Containerfile` feature knob (#175) already on `main`. |
 | 2026-10-10 | 1 | Commit `d42b625` — `feat(plugin): fail closed on an unresolvable plugin cache root`. New `src/plugin/cache.rs` (210 lines, 11 unit tests), `UnresolvableCacheRoot` in `src/plugin/error.rs`, driver net −5 lines, `manager.rs` byte-identical (D6). RED observed before GREEN: with the legacy `"."` fallback reinstated, 4 cache tests fail and the root printed as `./.cache/cutver/plugins`. Independent verification PASS: `fmt` + `clippy` clean in both feature configurations, `cargo test --lib` 346 passed / `--features plugins` 351 passed, plus a falsification run with `HOME`, `USERPROFILE` and the override scrubbed from the process that confirmed a fail-closed error and no working-directory root. Design change during verification: `CUTVER_PLUGIN_CACHE_DIR` is used **verbatim** as the cache directory (the error text already promised this); only the home branches append `.cache/cutver/plugins`. |
 | 2026-10-10 | 2 | Commit `0f96632` — `feat(plugin): add a typed registry client behind the plugins feature`. Facade `src/plugin/registry.rs` (34 lines) over `digest` (60), `entry` (206), `fetch` (82), `release` (81), `tier` (63), `url` (115); 12 new `Registry*` variants in `src/plugin/error.rs` (286 lines, every one with `Where:` and `Fix:`); `tests/plugin_registry.rs` (21 tests) plus 11 fixtures. `manager.rs` and `driver/**` untouched. `ureq` added as an optional dep: `[[package]]` count 329 → 329, the only lock delta being cutver's own `"ureq"` line, and the lean tree contains neither `ureq` nor `extism`. Independent verification PASS: gates clean in both feature configurations (351 lib + 21 registry tests), falsification from a scratch crate outside the repo reproduced digest, URL, selection, name-mismatch and unknown-capability behaviour, and found D11 (a backslash and malformed ports survive `HttpsUrl::parse`) as an accepted-but-should-not input, carried into slice 3. |
+| 2026-10-10 | 3a | Commit `1203692` — `feat(plugin): add plugin list and a surgical plugin remove`. New `src/cli/args/plugin.rs` (26), `src/cli/runner/plugin.rs` (229), `src/plugin/manage.rs` (17) over `manage/status.rs` (167) and `manage/remove.rs` (333); 6 new `PluginError` variants; `tests/plugin_manage.rs` (283, 12 tests). The first verification round returned **FAIL** with three defects, all fixed and re-verified **PASS**: (1) `remove` resolved its deletion target with `artifact_path` instead of the canonical rule, so a relative local `source` was reported absent while the file stayed on disk, and an **absolute** `source` made `PathBuf::join` replace the base — `remove` deleted a file outside the cache root; (2) the D11 hardening over-rejected bracketed IPv6 authorities (`https://[::1]/x.wasm`) that it had accepted before, while accepting an unterminated `https://[::1`; (3) `PluginArtifactDelete` had no test at all. Fixes: one canonical lazy `read_path` used by `list`, `remove` and the loader with the duplicated rule removed from the driver; a separate containment-checked delete path (D13); bracketed-IPv6 authority parsing; and a hermetic deletion-failure test using a directory at the artifact path. Gates: fmt and clippy clean in both feature configurations, 355 lib tests (376 with `plugins`), 12 `plugin_manage` + 21 registry tests, `cargo build --locked` clean, lean tree free of `sha2`/`ureq`/`extism`, and the lean binary hides the subcommand and fails closed. |
 
 ## Out of scope
 

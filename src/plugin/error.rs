@@ -20,9 +20,9 @@ pub enum PluginError {
     MissingConfiguration { name: PluginName, reason: String },
 
     #[error(
-        "WASM runtime is currently not supported for plugin '{name}'.\n  \
+        "this build of cutver was compiled without the 'plugins' feature, so it cannot load WASM plugin '{name}'.\n  \
         Where: initializing plugin driver for '{name}'\n  \
-        Fix: set 'runtime = \"process\"' in [plugins.{name}] in cutver.toml."
+        Fix: install or build a plugin-enabled cutver: 'cargo install cutver --features plugins' (or 'cargo build --features plugins')."
     )]
     WasmNotSupported { name: PluginName },
 
@@ -149,4 +149,34 @@ pub enum PluginError {
         matches.iter().map(|p| p.as_str()).collect::<Vec<_>>().join(", ")
     )]
     AmbiguousVersioningPlugin { matches: Vec<PluginName> },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Pins the lean-binary advice so it cannot drift back to a remedy that cannot work.
+    ///
+    /// `WasmNotSupported` is reachable only from the `#[cfg(not(feature = "plugins"))]`
+    /// branch of `create_wasm_runtime_driver`, so it always means the binary was built
+    /// without the `plugins` feature. The fix must name that feature and the
+    /// plugin-enabled build, never a `cutver.toml` key.
+    #[test]
+    fn wasm_not_supported_names_the_plugins_feature_and_the_enabled_build() {
+        let name = PluginName::new("demo").unwrap();
+        let message = PluginError::WasmNotSupported { name }.to_string();
+
+        assert!(
+            message.contains("plugins"),
+            "message must name the 'plugins' feature token: {message}"
+        );
+        assert!(
+            message.contains("--features plugins"),
+            "message must show the plugin-enabled build command: {message}"
+        );
+        assert!(
+            !message.contains("runtime = \"process\""),
+            "message must not recommend a cutver.toml key that cannot help: {message}"
+        );
+    }
 }

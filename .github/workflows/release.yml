@@ -176,9 +176,85 @@ jobs:
           name: asset-${{ matrix.slug }}
           path: dist/*
 
+  smoke:
+    name: Smoke ${{ matrix.slug }}
+    needs: [version, build]
+    if: needs.version.outputs.released == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - slug: linux-x86_64
+            runner: ubuntu-latest
+            archive: tar.gz
+          - slug: linux-musl-x86_64
+            runner: ubuntu-latest
+            archive: tar.gz
+          - slug: linux-arm64
+            runner: ubuntu-24.04-arm
+            archive: tar.gz
+          - slug: linux-musl-arm64
+            runner: ubuntu-24.04-arm
+            archive: tar.gz
+          - slug: macos-x86_64
+            runner: macos-15-intel
+            archive: tar.gz
+          - slug: macos-arm64
+            runner: macos-latest
+            archive: tar.gz
+          - slug: windows-x86_64
+            runner: windows-latest
+            archive: zip
+          - slug: windows-arm64
+            runner: windows-11-arm
+            archive: zip
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.version.outputs.tag }}
+
+      - name: Download asset artifact
+        uses: actions/download-artifact@v5
+        with:
+          name: asset-${{ matrix.slug }}
+          path: dist
+
+      - name: Extract archive (unix)
+        if: matrix.archive == 'tar.gz'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p extract
+          tar -xzf dist/*.tar.gz -C extract
+
+      - name: Extract archive (windows)
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path extract -Force | Out-Null
+          Get-ChildItem dist -Filter *.zip | ForEach-Object {
+            Expand-Archive -Path $_.FullName -DestinationPath extract -Force
+          }
+
+      - name: Run release smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -- extract/cutver-*/cutver
+          if [ ! -f "$1" ]; then
+            set -- extract/cutver-*/cutver.exe
+          fi
+          if [ ! -f "$1" ]; then
+            echo "::error::could not locate cutver binary in the extracted artifact"
+            exit 1
+          fi
+          sh .github/scripts/release-smoke/run.sh "$1" "${{ needs.version.outputs.version }}"
+
   publish:
     name: Upload release assets
-    needs: [version, build]
+    needs: [version, build, smoke]
     if: needs.version.outputs.released == 'true'
     runs-on: ubuntu-latest
     permissions:

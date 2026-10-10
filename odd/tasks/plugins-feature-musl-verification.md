@@ -133,12 +133,16 @@ Run [38023278006](https://github.com/cutver/cutver/actions/runs/38023278006) on 
 **workflow conclusion `success`, 3/3 jobs green.** Each job prints one `cutver-verify <job> (…): success`
 line; the raw logs are the evidence, summarized below.
 
+A follow-up run [38023959410](https://github.com/cutver/cutver/actions/runs/38023959410) added the
+`alpine-lean` guard and re-ran everything: **4/4 jobs green**, with warm-cache timings
+(`musl-x86_64` ≈1m53s, `musl-aarch64` ≈2m36s, `alpine` ≈5m49s, `alpine-lean` ≈1m39s).
+
 | Job | Outcome | Duration | Raw evidence |
 | --- | --- | --- | --- |
 | `musl-x86_64` | pass | 04:13:02 → 04:19:01 (≈6m) | `release-smoke: --version => cutver 0.12.0`, `release-smoke: OK 0.12.0`, and `test result: ok. 3 passed; 0 failed` for `tests/wasm_plugin.rs` on the musl target |
 | `musl-aarch64` | pass | 04:13:01 → 04:17:31 (≈4m30s) | `cross build` succeeded; `release-smoke: --version => cutver 0.12.0` and `release-smoke: OK 0.12.0` through the `qemu-aarch64-static` wrapper |
 | `alpine` | pass | 04:13:01 → 04:20:45 (≈7m45s) | image built with `CUTVER_FEATURES="--features plugins"`; inside the image `release-smoke: --version => cutver 0.12.0` and `release-smoke: OK 0.12.0` |
-| `alpine-lean` | pending | — | added after this run to guard the knob's default (empty feature set); a follow-up run on the same branch records it |
+| `alpine-lean` | pass | 04:24:38 → 04:26:17 (≈1m39s) | run 38023959410; image built with the empty default; `release-smoke: --version => cutver 0.12.0` and `release-smoke: OK 0.12.0` inside the lean image |
 
 **No product failure.** The only failure in this exercise was in the verification harness itself and was
 fixed (see below); nothing is recorded as a blocker for #169 decision A.
@@ -153,19 +157,20 @@ failure, not a compile error, is what identified it.
 
 #### Cost and the D5 decision
 
-Measured on cold caches: ≈4m30s (`musl-aarch64`), ≈6m (`musl-x86_64`), ≈7m45s (`alpine`), running in
-parallel. That is 3 heavy `wasmtime`/`cranelift` compiles per run, roughly the same order as, and on top
-of, the `test-plugins` job #171 added. **D5 is therefore resolved as: no permanent per-push CI job.** The
-musl and Alpine feature builds are a release-time or on-demand check, not a per-push one. Making them
-cheap enough to promote would need a real cross-job artifact cache, which is out of scope here.
+Measured: cold caches ≈4m30s (`musl-aarch64`), ≈6m (`musl-x86_64`), ≈7m45s (`alpine`), running in
+parallel; with a warm rust-cache ≈1m39s–5m49s, and the lean image ≈1m39s. That is three heavy
+`wasmtime`/`cranelift` compiles per run, roughly the same order as, and on top of, the `test-plugins` job
+#171 added. **D5 is therefore resolved as: no permanent per-push CI job.** The musl and Alpine feature
+builds are a release-time or on-demand check, not a per-push one. Making them cheap enough to promote
+would need a real cross-job artifact cache, which is out of scope here.
 
 ## Evidence & Verification
 
 - Workflow (throwaway, deleted before the PR): `.github/workflows/plugins-musl-verify-tmp.yml` on branch
-  `chore/plugins-musl-verify`; run [38023278006](https://github.com/cutver/cutver/actions/runs/38023278006),
-  3/3 green.
+  `chore/plugins-musl-verify`; runs [38023278006](https://github.com/cutver/cutver/actions/runs/38023278006)
+  (3/3) and [38023959410](https://github.com/cutver/cutver/actions/runs/38023959410) (4/4), both green.
 - `Containerfile` knob: `ARG CUTVER_FEATURES=""` threaded into both builder-stage `cargo build`
-  invocations; the empty default preserves the current image.
+  invocations; the empty default is proven to leave the standard image building and running unchanged.
 - Outcome: the `plugins` feature builds and runs on both musl targets and inside the plugin-enabled
   `rust:alpine` image, and the Extism path executes on a musl target. #169 decision A is unblocked.
 - No permanent CI job was added (D5, measured cost above).

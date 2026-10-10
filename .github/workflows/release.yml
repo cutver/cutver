@@ -176,6 +176,112 @@ jobs:
           name: asset-${{ matrix.slug }}
           path: dist/*
 
+  build-plugins:
+    name: Build plugins ${{ matrix.target }}
+    needs: version
+    if: needs.version.outputs.released == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            slug: linux-x86_64
+            archive: tar.gz
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            slug: linux-musl-x86_64
+            archive: tar.gz
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            slug: linux-arm64
+            archive: tar.gz
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-musl
+            slug: linux-musl-arm64
+            archive: tar.gz
+            use_cross: true
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            slug: macos-x86_64
+            archive: tar.gz
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            slug: macos-arm64
+            archive: tar.gz
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            slug: windows-x86_64
+            archive: zip
+          - os: windows-latest
+            target: aarch64-pc-windows-msvc
+            slug: windows-arm64
+            archive: zip
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.version.outputs.tag }}
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install musl tools
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Install aarch64 gcc compiler
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Install cross
+        if: matrix.use_cross == true
+        uses: taiki-e/install-action@cross
+
+      - name: Build (cross)
+        if: matrix.use_cross == true
+        run: cross build --locked --release --features plugins --target ${{ matrix.target }}
+
+      - name: Build
+        if: matrix.use_cross != true
+        run: cargo build --locked --release --features plugins --target ${{ matrix.target }}
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: ${{ matrix.target == 'aarch64-unknown-linux-gnu' && 'aarch64-linux-gnu-gcc' || '' }}
+
+      - name: Package (unix)
+        if: matrix.archive == 'tar.gz'
+        run: |
+          TAG="${{ needs.version.outputs.tag }}"
+          VERSION="${TAG#v}"
+          OUT="cutver-plugins-${VERSION}-${{ matrix.slug }}"
+          mkdir "$OUT"
+          cp target/${{ matrix.target }}/release/cutver "$OUT/"
+          tar -czf "${OUT}.tar.gz" "$OUT"
+          mkdir -p dist
+          mv "${OUT}.tar.gz" dist/
+
+      - name: Package (windows)
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        run: |
+          $tag = "${{ needs.version.outputs.tag }}"
+          $version = $tag.Substring(1)
+          $out = "cutver-plugins-$version-${{ matrix.slug }}"
+          New-Item -ItemType Directory -Path $out | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/cutver.exe" "$out/"
+          Compress-Archive -Path $out -DestinationPath "$out.zip"
+          New-Item -ItemType Directory -Path dist -Force | Out-Null
+          Move-Item "$out.zip" dist/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: asset-plugins-${{ matrix.slug }}
+          path: dist/*
+
   smoke:
     name: Smoke ${{ matrix.slug }}
     needs: [version, build]
@@ -252,9 +358,85 @@ jobs:
           fi
           sh .github/scripts/release-smoke/run.sh "$1" "${{ needs.version.outputs.version }}"
 
+  smoke-plugins:
+    name: Smoke plugins ${{ matrix.slug }}
+    needs: [version, build-plugins]
+    if: needs.version.outputs.released == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - slug: linux-x86_64
+            runner: ubuntu-latest
+            archive: tar.gz
+          - slug: linux-musl-x86_64
+            runner: ubuntu-latest
+            archive: tar.gz
+          - slug: linux-arm64
+            runner: ubuntu-24.04-arm
+            archive: tar.gz
+          - slug: linux-musl-arm64
+            runner: ubuntu-24.04-arm
+            archive: tar.gz
+          - slug: macos-x86_64
+            runner: macos-15-intel
+            archive: tar.gz
+          - slug: macos-arm64
+            runner: macos-latest
+            archive: tar.gz
+          - slug: windows-x86_64
+            runner: windows-latest
+            archive: zip
+          - slug: windows-arm64
+            runner: windows-11-arm
+            archive: zip
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.version.outputs.tag }}
+
+      - name: Download asset artifact
+        uses: actions/download-artifact@v5
+        with:
+          name: asset-plugins-${{ matrix.slug }}
+          path: dist
+
+      - name: Extract archive (unix)
+        if: matrix.archive == 'tar.gz'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p extract
+          tar -xzf dist/*.tar.gz -C extract
+
+      - name: Extract archive (windows)
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path extract -Force | Out-Null
+          Get-ChildItem dist -Filter *.zip | ForEach-Object {
+            Expand-Archive -Path $_.FullName -DestinationPath extract -Force
+          }
+
+      - name: Run plugins release smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -- extract/cutver-plugins-*/cutver
+          if [ ! -f "$1" ]; then
+            set -- extract/cutver-plugins-*/cutver.exe
+          fi
+          if [ ! -f "$1" ]; then
+            echo "::error::could not locate cutver binary in the extracted plugins artifact"
+            exit 1
+          fi
+          sh .github/scripts/release-smoke/run-plugins.sh "$1" "${{ needs.version.outputs.version }}"
+
   publish:
     name: Upload release assets
-    needs: [version, build, smoke]
+    needs: [version, build, smoke, build-plugins, smoke-plugins]
     if: needs.version.outputs.released == 'true'
     runs-on: ubuntu-latest
     permissions:

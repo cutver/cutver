@@ -4,17 +4,16 @@
 events to sandboxed WebAssembly plugins. `cutver plugin` installs one from the registry index, verifies
 it, and writes the configuration entry that makes `cutver` load it.
 
-> **Gotcha**: plugins are an opt-in build. `cargo install cutver` produces a lean binary with no
-> `plugin` command and no WebAssembly runtime; anything below needs `--features plugins`.
+> **Gotcha**: plugins are an opt-in build. The default `cutver` binary and `:latest` image are lean:
+> no `plugin` command and no WebAssembly runtime. Use a published `cutver-plugins-*` archive or the
+> `:plugins` image; the fallback for older versions is `--features plugins`.
 
 ---
 
 ## Quick Path
 
-1. Install a plugin-enabled binary:
-   ```bash
-   cargo install cutver --features plugins
-   ```
+1. Get a plugin-enabled binary from a `cutver-plugins-*` archive or the `:plugins` image (older
+   versions: `cargo install cutver --features plugins`).
 2. Install the official `github-releases` plugin:
    ```bash
    cutver plugin add github-releases
@@ -32,10 +31,15 @@ it, and writes the configuration entry that makes `cutver` load it.
 
 ## Building with Plugin Support
 
+Plugin support ships as its own artifact, so most users never build from source. Releases carry
+`cutver-plugins-<version>-<slug>` archives beside the lean ones, and the `:plugins` image
+(`ghcr.io/cutver/cutver:<version>-plugins`, also `:<major>.<minor>-plugins`) is the container equivalent.
+
 | Build | Command | Result |
 | :--- | :--- | :--- |
 | Lean (default) | `cargo install cutver` | ~1.25 MB compressed, no `plugin` command, no plugin runtime. |
-| Plugin-enabled | `cargo install cutver --features plugins` | ~5 MB compressed, `plugin` command and the WebAssembly runtime. |
+| Plugin-enabled archive | `cutver-plugins-<version>-<slug>` or the `:plugins` image | ~5 MB compressed, `plugin` command and the WebAssembly runtime. |
+| Plugin-enabled, pre-artifact versions | `cargo install cutver --features plugins` | Same build, compiled locally. |
 
 Both failure modes name the remedy, so a lean binary is never a dead end: `cutver plugin` fails closed
 with `--features plugins`, and loading a `[plugins.<name>]` entry at release time fails with the same

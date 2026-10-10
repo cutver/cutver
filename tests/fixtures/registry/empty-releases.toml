@@ -1,0 +1,6 @@
+name = "empty-releases"
+description = "Declares no releases at all."
+author = "cutver"
+tier = "community"
+repository = "https://github.com/cutver/plugins"
+capabilities = ["changelog.v1"]

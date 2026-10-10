@@ -9,6 +9,7 @@ cutver bump --help
 cutver doctor --help
 cutver init --help
 cutver changelog --help
+cutver plugin --help
 ```
 
 ---
@@ -103,6 +104,24 @@ cutver changelog show <VERSION> [-H/--include-header] [--template <PATH>]
 # Dispatch changelog or compare view in default browser
 cutver changelog open
 ```
+
+---
+
+### `cutver plugin`
+
+Installs, inspects and removes plugins from the registry index. Requires a plugin-enabled build
+(`--features plugins`): a lean binary hides the subcommand and fails closed naming the flag.
+
+```bash
+cutver plugin add <NAME> [--version <VERSION>] [--registry <BASE>] [--event <EVENT>]... [--manifest-match <GLOB>]... [--dry-run] [--force]
+cutver plugin list [--json]
+cutver plugin remove <NAME> [--keep-artifact]
+```
+
+`plugin` exits `1` on any failure: an unresolvable cache root, an unreachable registry, a digest
+mismatch, an unknown capability, or a declaration that already exists. The install flow, the digest
+trust model, the cache layout and the `[plugins.<name>]` keys live in the
+[plugin reference](plugins.md).
 
 ---
 

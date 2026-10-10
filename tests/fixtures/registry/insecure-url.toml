@@ -1,0 +1,11 @@
+name = "insecure-url"
+description = "Serves its artifact over plaintext HTTP."
+author = "cutver"
+tier = "community"
+repository = "https://github.com/cutver/plugins"
+capabilities = ["changelog.v1"]
+
+[[release]]
+version = "0.1.0"
+url = "http://github.com/cutver/plugins/releases/download/insecure-v0.1.0/insecure.wasm"
+sha256 = "a828cbabd247afdaf78fec358ae5a27271097c7c2ef6fc9ec0fe04af22edf841"

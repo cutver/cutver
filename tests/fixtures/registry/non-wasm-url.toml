@@ -1,0 +1,11 @@
+name = "non-wasm-url"
+description = "Points at an archive instead of a wasm module."
+author = "cutver"
+tier = "community"
+repository = "https://github.com/cutver/plugins"
+capabilities = ["changelog.v1"]
+
+[[release]]
+version = "0.1.0"
+url = "https://github.com/cutver/plugins/releases/download/non-wasm-v0.1.0/non-wasm.tar.gz"
+sha256 = "a828cbabd247afdaf78fec358ae5a27271097c7c2ef6fc9ec0fe04af22edf841"

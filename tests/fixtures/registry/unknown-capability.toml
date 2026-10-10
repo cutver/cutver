@@ -1,0 +1,11 @@
+name = "unknown-capability"
+description = "Declares a capability outside the closed Cutver set."
+author = "cutver"
+tier = "community"
+repository = "https://github.com/cutver/plugins"
+capabilities = ["time-travel.v9"]
+
+[[release]]
+version = "0.1.0"
+url = "https://github.com/cutver/plugins/releases/download/unknown-capability-v0.1.0/unknown-capability.wasm"
+sha256 = "a828cbabd247afdaf78fec358ae5a27271097c7c2ef6fc9ec0fe04af22edf841"

@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use sha2::{Digest, Sha256};
 
+use crate::plugin::cache::PluginCacheRoot;
 use crate::plugin::driver::PluginDriver;
 use crate::plugin::dto::PluginInvocation;
 use crate::plugin::error::PluginError;
@@ -166,29 +167,13 @@ fn map_extism_error(name: &PluginName, capability: &str, err: extism::Error) -> 
     }
 }
 
-/// Resolves the Cutver plugin cache directory: `~/.cache/cutver/plugins/`.
-pub fn plugin_cache_dir() -> PathBuf {
-    let home = std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .unwrap_or_else(|_| ".".to_string());
-    PathBuf::from(home).join(".cache").join("cutver").join("plugins")
-}
-
 /// Resolves or loads WASM artifact bytes from a local file path or cache.
 pub fn load_wasm_bytes(name: &PluginName, source: &str, expected_hash: Option<&str>) -> Result<Vec<u8>, PluginError> {
-    let path = Path::new(source);
-    let bytes = if path.is_file() {
-        fs::read(path).map_err(|e| PluginError::MissingConfiguration {
-            name: name.clone(),
-            reason: format!("failed to read WASM file from '{source}': {e}"),
-        })?
-    } else {
-        let cached = plugin_cache_dir().join(source);
-        fs::read(&cached).map_err(|e| PluginError::MissingConfiguration {
-            name: name.clone(),
-            reason: format!("failed to read cached WASM artifact from '{source}': {e}"),
-        })?
-    };
+    let path = crate::plugin::cache::read_path(source, PluginCacheRoot::resolve)?;
+    let bytes = fs::read(&path).map_err(|e| PluginError::MissingConfiguration {
+        name: name.clone(),
+        reason: format!("failed to read WASM artifact '{source}': {e}"),
+    })?;
 
     if let Some(expected) = expected_hash {
         verify_sha256(name, &bytes, Some(expected))?;
@@ -208,8 +193,9 @@ pub fn cache_wasm_artifact(
         return Ok(src_path.to_path_buf());
     }
 
-    let cache_dir = plugin_cache_dir();
-    fs::create_dir_all(&cache_dir).map_err(|e| PluginError::MissingConfiguration {
+    let cache = PluginCacheRoot::resolve()?;
+    let cache_dir = cache.path();
+    fs::create_dir_all(cache_dir).map_err(|e| PluginError::MissingConfiguration {
         name: name.clone(),
         reason: format!("failed to create plugin cache directory '{cache_dir:?}': {e}"),
     })?;
@@ -218,7 +204,7 @@ pub fn cache_wasm_artifact(
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("plugin.wasm");
-    let dest_path = cache_dir.join(file_name);
+    let dest_path = cache.artifact_path(file_name);
 
     if dest_path.is_file() {
         let bytes = fs::read(&dest_path).map_err(|e| PluginError::MissingConfiguration {

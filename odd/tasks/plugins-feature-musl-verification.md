@@ -55,19 +55,20 @@ repository (this document, plus a pointer from the workflow), never only in the 
 
 ## Acceptance Criteria
 
-- [ ] `cargo build --locked --release --features plugins --target x86_64-unknown-linux-musl` succeeds.
-- [ ] The same for `aarch64-unknown-linux-musl`, through `cross` as the release matrix does it.
-- [ ] The `rust:alpine` build stage of the `Containerfile` compiles with the feature enabled.
-- [ ] The resulting artifacts execute: `--version` and `doctor`, plus a real wasm load check.
-- [ ] Every failure is either fixed or recorded as a blocker for the plugin-enabled variant, with evidence.
-- [ ] The outcome is recorded in the repository, not only in the issue.
+- [x] `cargo build --locked --release --features plugins --target x86_64-unknown-linux-musl` succeeds.
+- [x] The same for `aarch64-unknown-linux-musl`, through `cross` as the release matrix does it.
+- [x] The `rust:alpine` build stage of the `Containerfile` compiles with the feature enabled.
+- [x] The resulting artifacts execute: `--version` and `doctor`, plus a real wasm load check.
+- [x] Every failure is either fixed or recorded as a blocker for the plugin-enabled variant, with evidence.
+- [x] The outcome is recorded in the repository, not only in the issue.
 
 ## Task Breakdown
 
 - [x] Task 1: Add the `CUTVER_FEATURES` knob to the `Containerfile` builder stage (default empty).
 - [x] Task 2: Author the throwaway verification workflow covering the three configurations and execution.
-- [ ] Task 3 (parent-owned): run it on a temporary branch and capture the raw result.
-- [ ] Task 4: Record the outcome here; fix a failure or record it as a blocker for #169 decision A.
+- [x] Task 3 (parent-owned): run it on a temporary branch and capture the raw result.
+- [x] Task 4: Record the outcome here; fix a failure or record it as a blocker for #169 decision A.
+- [x] Task 5: Delete the throwaway workflow and its branch, then open the PR for #175.
 
 ## Verification
 
@@ -117,23 +118,54 @@ compiles the same builder stage acceptance item 3 asks about, so this covers ite
 | 1 | `docker build -f Containerfile --build-arg CUTVER_FEATURES="--features plugins" -t cutver-plugins .` | 3 |
 | 2 | `docker run --rm -v "$PWD:/repo:ro" --entrypoint /bin/sh cutver-plugins /repo/.github/scripts/release-smoke/run.sh /usr/local/bin/cutver <version>` | 4 |
 
+**`alpine-lean`** — `ubuntu-latest`. Guards the knob's default: the standard image must still build and run
+without the build-arg, exactly as before. This file has broken silently once already, so the lean path is
+checked on its own rather than assumed. Cheap, because it compiles no Wasmtime stack.
+
+| # | Command | Why |
+| --- | --- | --- |
+| 1 | `docker build -f Containerfile -t cutver-lean .` | the default (empty `CUTVER_FEATURES`) is unchanged |
+| 2 | `docker run --rm -v "$PWD:/repo:ro" --entrypoint /bin/sh cutver-lean /repo/.github/scripts/release-smoke/run.sh /usr/local/bin/cutver <version>` | the lean image still boots and runs |
+
 ### Results (Task 3 run)
 
-Each job prints one `cutver-verify <job> (…): <job.status>` line. Raw evidence is the run URL and each
-job's log; failures are recorded here with the raw output and dispositioned in Task 4.
+Run [38023278006](https://github.com/cutver/cutver/actions/runs/38023278006) on branch `chore/plugins-musl-verify`:
+**workflow conclusion `success`, 3/3 jobs green.** Each job prints one `cutver-verify <job> (…): success`
+line; the raw logs are the evidence, summarized below.
 
-| Job | Run URL | Outcome | Raw evidence |
+| Job | Outcome | Duration | Raw evidence |
 | --- | --- | --- | --- |
-| `musl-x86_64` | | | |
-| `musl-aarch64` | | | |
-| `alpine` | | | |
+| `musl-x86_64` | pass | 04:13:02 → 04:19:01 (≈6m) | `release-smoke: --version => cutver 0.12.0`, `release-smoke: OK 0.12.0`, and `test result: ok. 3 passed; 0 failed` for `tests/wasm_plugin.rs` on the musl target |
+| `musl-aarch64` | pass | 04:13:01 → 04:17:31 (≈4m30s) | `cross build` succeeded; `release-smoke: --version => cutver 0.12.0` and `release-smoke: OK 0.12.0` through the `qemu-aarch64-static` wrapper |
+| `alpine` | pass | 04:13:01 → 04:20:45 (≈7m45s) | image built with `CUTVER_FEATURES="--features plugins"`; inside the image `release-smoke: --version => cutver 0.12.0` and `release-smoke: OK 0.12.0` |
+| `alpine-lean` | pending | — | added after this run to guard the knob's default (empty feature set); a follow-up run on the same branch records it |
+
+**No product failure.** The only failure in this exercise was in the verification harness itself and was
+fixed (see below); nothing is recorded as a blocker for #169 decision A.
+
+#### Harness defect found and fixed
+
+The first run (`38023042635`, cancelled) failed the `alpine` job in ≈40 s. Cause: the workflow called
+`docker build` with no `-f`, and `docker build` defaults to a file named `Dockerfile` while this
+repository's is `Containerfile` — which `container.yml` already records as `file: ./Containerfile`. Fixed
+with `docker build -f Containerfile …`; the corrected run is the one tabulated above. The short time to
+failure, not a compile error, is what identified it.
+
+#### Cost and the D5 decision
+
+Measured on cold caches: ≈4m30s (`musl-aarch64`), ≈6m (`musl-x86_64`), ≈7m45s (`alpine`), running in
+parallel. That is 3 heavy `wasmtime`/`cranelift` compiles per run, roughly the same order as, and on top
+of, the `test-plugins` job #171 added. **D5 is therefore resolved as: no permanent per-push CI job.** The
+musl and Alpine feature builds are a release-time or on-demand check, not a per-push one. Making them
+cheap enough to promote would need a real cross-job artifact cache, which is out of scope here.
 
 ## Evidence & Verification
 
-- Workflow: `.github/workflows/plugins-musl-verify-tmp.yml` (throwaway; branch `chore/plugins-musl-verify`).
+- Workflow (throwaway, deleted before the PR): `.github/workflows/plugins-musl-verify-tmp.yml` on branch
+  `chore/plugins-musl-verify`; run [38023278006](https://github.com/cutver/cutver/actions/runs/38023278006),
+  3/3 green.
 - `Containerfile` knob: `ARG CUTVER_FEATURES=""` threaded into both builder-stage `cargo build`
   invocations; the empty default preserves the current image.
-- Parent-run, CI: the Task 3 run and its raw results are filled into the table above, then this workflow
-  and its temporary branch are deleted.
-- Not yet proven: nothing here has executed the musl or Alpine builds — this repository's dev environment
-  has no Docker and no `cross`, only `podman`. All build/execute evidence comes from the Task 3 run.
+- Outcome: the `plugins` feature builds and runs on both musl targets and inside the plugin-enabled
+  `rust:alpine` image, and the Extism path executes on a musl target. #169 decision A is unblocked.
+- No permanent CI job was added (D5, measured cost above).

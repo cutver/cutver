@@ -169,3 +169,38 @@ jobs:
         if: always()
         run: |
           echo "cutver-verify alpine (alpine:3.24 plugin-enabled image): ${{ job.status }}"
+
+  # The knob's default (no build-arg) must leave the standard image exactly as it
+  # was. This file has broken silently before (the workspace conversion), and the
+  # change being verified edits its build commands, so the lean path is checked on
+  # its own rather than assumed. It compiles no Wasmtime stack, so it is cheap.
+  alpine-lean:
+    name: Alpine lean image (default, unchanged)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Determine expected version
+        id: version
+        run: |
+          set -euo pipefail
+          version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)"
+          test -n "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Build the image with the default (empty) feature set
+        run: docker build -f Containerfile -t cutver-lean .
+
+      - name: Execute artifact inside the lean image
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v "$PWD:/repo:ro" \
+            --entrypoint /bin/sh \
+            cutver-lean /repo/.github/scripts/release-smoke/run.sh /usr/local/bin/cutver "${{ steps.version.outputs.version }}"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "cutver-verify alpine-lean (alpine:3.24 default image): ${{ job.status }}"

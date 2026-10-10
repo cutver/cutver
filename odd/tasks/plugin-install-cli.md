@@ -50,13 +50,28 @@ even execute a wasm plugin (`release.yml` never passes `--features plugins`).
   (Pillar I.3).
 - **D8 — Slices map 1:1 to work-unit commits and to review-sized PRs** (Pillar IV.4). Each PR stays
   inside the 300–400 effective-line budget.
+- **D9 — The registry index base stays `https`-only, on purpose.** The index is what *distributes the
+  digest*, so TLS on the index is load-bearing trust, not merely transport: an http index would let a
+  network attacker supply both the entry and a matching digest, defeating the whole model. Consequence:
+  a loopback HTTP fixture cannot exercise the real transport, so the I/O is injected instead (D10).
+  This is a deliberate, recorded deviation from the issue's "local HTTP fixture" wording; the intent
+  behind it (hermetic tests, no network) is preserved and improved.
+- **D10 — Transport injection.** The install path takes an injectable transport (the production `ureq`
+  implementation plus a fixture implementation), so `add`/`remove`/`list`, the two-phase apply, the
+  digest gate and the RAII rollback are all exercised hermetically with `tempfile::tempdir()` and zero
+  network. The thin `ureq` call remains compile-checked rather than behaviourally proven end to end,
+  and that residual is stated rather than hidden.
+- **D11 — Hardening absorbed into slice 3**: `HttpsUrl::parse` must reject a backslash anywhere in the
+  URL (Pillar II.3) and a malformed or out-of-range port. Found by the slice-2 verifier, which accepted
+  `https://github.com/a\b.wasm`, `https://github.com:notaport/x.wasm` and `https://.com/x.wasm`.
+  Slice 2 was committed exactly as verified rather than mutated after its verification.
 
 ## Slices
 
 | # | Slice | Deliverable | State |
 | --- | --- | --- | --- |
 | 1 | **Cache root** | `PluginCacheRoot` newtype + fail-closed resolution + `CUTVER_PLUGIN_CACHE_DIR` override; driver consumes it; lean and `plugins` builds green. (The `--features plugins` CI job already landed in #171.) | **done** — `d42b625` |
-| 2 | **Registry client** | `src/plugin/registry.rs`: typed entry, release selection (highest satisfying **stable** semver unless `--version` asks for a pre-release), digest-shape and capability validation, fetch with timeout + size cap. Fixture tests, no network. | pending |
+| 2 | **Registry client** | `src/plugin/registry.rs`: typed entry, release selection (highest satisfying **stable** semver unless `--version` asks for a pre-release), digest-shape and capability validation, fetch with timeout + size cap. Fixture tests, no network. | **done** — `0f96632` |
 | 3 | **`add` / `remove` / `list`** | CLI args, runner dispatch, two-phase install with the rollback guard, surgical `toml_edit` edits, `--dry-run`, `--json`. Integration tests against a local HTTP fixture and a temp cache root. | pending |
 | 4 | **Docs** | Plugin reference: install flow, digest verification, cache location. Also unblocks #164. | pending |
 | 5 | **Artifact variant (decision A)** | `release.yml` second artifact `cutver-plugins` + `:plugins` container tag (`--build-arg CUTVER_FEATURES="--features plugins"`, already threaded). **Phase 2 — separate authorization**, because `release.yml` has broken releases twice. | deferred |
@@ -84,6 +99,7 @@ even execute a wasm plugin (`release.yml` never passes `--features plugins`).
 | --- | --- | --- |
 | 2026-10-10 | — | Decisions A/B authorized; branch `feat/plugin-install-cli` created off `main` @ `5d4887c`; `test-plugins` CI job (#171) and the `Containerfile` feature knob (#175) already on `main`. |
 | 2026-10-10 | 1 | Commit `d42b625` — `feat(plugin): fail closed on an unresolvable plugin cache root`. New `src/plugin/cache.rs` (210 lines, 11 unit tests), `UnresolvableCacheRoot` in `src/plugin/error.rs`, driver net −5 lines, `manager.rs` byte-identical (D6). RED observed before GREEN: with the legacy `"."` fallback reinstated, 4 cache tests fail and the root printed as `./.cache/cutver/plugins`. Independent verification PASS: `fmt` + `clippy` clean in both feature configurations, `cargo test --lib` 346 passed / `--features plugins` 351 passed, plus a falsification run with `HOME`, `USERPROFILE` and the override scrubbed from the process that confirmed a fail-closed error and no working-directory root. Design change during verification: `CUTVER_PLUGIN_CACHE_DIR` is used **verbatim** as the cache directory (the error text already promised this); only the home branches append `.cache/cutver/plugins`. |
+| 2026-10-10 | 2 | Commit `0f96632` — `feat(plugin): add a typed registry client behind the plugins feature`. Facade `src/plugin/registry.rs` (34 lines) over `digest` (60), `entry` (206), `fetch` (82), `release` (81), `tier` (63), `url` (115); 12 new `Registry*` variants in `src/plugin/error.rs` (286 lines, every one with `Where:` and `Fix:`); `tests/plugin_registry.rs` (21 tests) plus 11 fixtures. `manager.rs` and `driver/**` untouched. `ureq` added as an optional dep: `[[package]]` count 329 → 329, the only lock delta being cutver's own `"ureq"` line, and the lean tree contains neither `ureq` nor `extism`. Independent verification PASS: gates clean in both feature configurations (351 lib + 21 registry tests), falsification from a scratch crate outside the repo reproduced digest, URL, selection, name-mismatch and unknown-capability behaviour, and found D11 (a backslash and malformed ports survive `HttpsUrl::parse`) as an accepted-but-should-not input, carried into slice 3. |
 
 ## Out of scope
 

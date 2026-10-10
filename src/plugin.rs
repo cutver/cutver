@@ -3,6 +3,8 @@ pub mod driver;
 pub mod dto;
 pub mod error;
 pub mod manager;
+#[cfg(feature = "plugins")]
+pub mod registry;
 pub mod types;
 
 pub use cache::PluginCacheRoot;

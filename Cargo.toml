@@ -28,11 +28,16 @@ regex = "1"
 minijinja = { version = "2", features = ["builtins"] }
 rayon = "1"
 extism = { version = "1.30", optional = true }
+# ureq 3.x is the blocking HTTP client behind the plugin install surface. It is
+# optional and only reachable through the `plugins` feature (decision A/B). Both
+# `ureq 3.4.2` and `rustls` are already direct dependencies of `extism 1.30`, so
+# enabling ureq's default (rustls) features adds NO new crates to Cargo.lock.
+ureq = { version = "3", optional = true }
 sha2 = { version = "0.10", optional = true }
 
 [features]
 default = []
-plugins = ["dep:extism", "dep:sha2"]
+plugins = ["dep:extism", "dep:ureq", "dep:sha2"]
 
 [dev-dependencies]
 # `wat` is already in Cargo.lock as a transitive dependency of `wasmtime` and

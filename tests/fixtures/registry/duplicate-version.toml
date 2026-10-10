@@ -1,0 +1,16 @@
+name = "duplicate-version"
+description = "Publishes the same version twice."
+author = "cutver"
+tier = "community"
+repository = "https://github.com/cutver/plugins"
+capabilities = ["changelog.v1"]
+
+[[release]]
+version = "0.1.0"
+url = "https://github.com/cutver/plugins/releases/download/duplicate-version-v0.1.0/duplicate-version.wasm"
+sha256 = "a828cbabd247afdaf78fec358ae5a27271097c7c2ef6fc9ec0fe04af22edf841"
+
+[[release]]
+version = "0.1.0"
+url = "https://github.com/cutver/plugins/releases/download/duplicate-version-v0.1.0/duplicate-version-again.wasm"
+sha256 = "a828cbabd247afdaf78fec358ae5a27271097c7c2ef6fc9ec0fe04af22edf841"

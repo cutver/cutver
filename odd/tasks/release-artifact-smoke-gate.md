@@ -60,16 +60,16 @@ inside it.
 
 ## Acceptance Criteria
 
-- [ ] `release.yml` executes the built artifact at least once per matrix target, before upload.
+- [x] `release.yml` executes the built artifact at least once per matrix target, before upload.
 - [x] The check runs real logic, not only `--version` (`doctor --check-changelog` + `changelog latest --json`).
 - [x] A failure fails the release; no skipped-target silent green (no `continue-on-error`; `publish` needs `smoke`).
-- [ ] Runs on every target, including both musl targets, executing that target's binary.
-- [ ] Windows targets included (PATHEXT/batch resolution has bitten this repo before: #152).
+- [x] Runs on every target, including both musl targets, executing that target's binary.
+- [x] Windows targets included (PATHEXT/batch resolution has bitten this repo before: #152).
 - [x] The container image gets the same check (both `linux/amd64` and `linux/arm64`).
 - [x] Cost stays bounded: the smoke is three short CLI invocations, no test suite, no rebuild.
 
-The three unchecked boxes depend on Task 5 (proving the native runner labels); they stay unchecked
-until that proof runs, then this list is updated.
+Every box above is backed by the local runs, the real-host runner proof (run 38021977381, six jobs
+green) and the container design review recorded below.
 
 ## Task Breakdown
 
@@ -78,7 +78,8 @@ until that proof runs, then this list is updated.
 - [x] Task 3: Add the container smoke to `container.yml`.
 - [x] Task 4: Verify — validate workflow YAML, execute the same smoke commands against a real built
       binary locally, and prove the script fails closed.
-- [ ] Task 5 (parent-owned): prove the native runner labels before merge, then commit/push/PR.
+- [x] Task 5 (parent-owned): proved the runner labels on real hosted runners before merge, then
+      committed and opened the PR.
 
 ## Verification
 
@@ -106,15 +107,27 @@ until that proof runs, then this list is updated.
 - `release-assets.yml` (the manual backfill path) is not covered here; it is a recovery workflow, not the
   release workflow, and stays out of scope.
 
-### Not proven here
+### Proven on real hosts (Task 5)
 
-- The eight native runner labels (`ubuntu-24.04-arm`, `macos-15-intel`, `windows-11-arm`, and Git Bash on
-  the Windows ARM image) — proved separately in Task 5.
-- `release.yml` cannot be exercised by PR CI: it is `workflow_dispatch`-only.
+A temporary `push`-triggered workflow (branch `chore/runner-label-proof`, deleted after the proof)
+mirrored the package -> extract -> locate -> smoke chain with a debug build on every native runner.
+Run [38021977381](https://github.com/cutver/cutver/actions/runs/38021977381): **all six jobs green** —
+`ubuntu-latest`, `ubuntu-24.04-arm`, `macos-latest`, `macos-15-intel`, `windows-latest`,
+`windows-11-arm`. The last one also proves Git Bash runs on the Windows ARM image, which was the one
+item local verification could not cover.
+
+### Not proven
+
+- `release.yml` cannot be exercised by PR CI: it is `workflow_dispatch`-only, so the real release run is
+  the first place the job executes end to end.
+- The container smoke was not executed locally (no Docker in the dev environment); its mechanics rest on
+  the `Containerfile` review above.
 
 ## Evidence & Verification
 
 - Files: `.github/scripts/release-smoke/run.sh`, `tests/fixtures/release-smoke/{cutver.toml,package.json,CHANGELOG.md}`,
   `.github/workflows/release.yml` (new `smoke` job, `publish.needs`), `.github/workflows/container.yml`
   (digest output + new `smoke` job).
-- Commit / PR: pending (Task 5).
+- Commit: `df773d5` on branch `ci/release-artifact-smoke-gate`.
+- PR: [#177](https://github.com/cutver/cutver/pull/177) (`Closes #174`).
+- Runner proof: run [38021977381](https://github.com/cutver/cutver/actions/runs/38021977381), 6/6 green.

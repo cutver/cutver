@@ -12,6 +12,9 @@ use std::path::Path;
 use crate::cli::args::PluginCommands;
 
 #[cfg(feature = "plugins")]
+mod add;
+
+#[cfg(feature = "plugins")]
 use crate::cli::style::Theme;
 #[cfg(feature = "plugins")]
 use crate::plugin::PluginCacheRoot;
@@ -28,6 +31,7 @@ use super::dispatch::{load_config, load_config_with_path, print_error};
 pub fn run_plugin(config_override: Option<PathBuf>, command: PluginCommands) -> i32 {
     match command {
         PluginCommands::List { json } => run_list(config_override, json),
+        PluginCommands::Add(args) => add::run_add(config_override, &args),
         PluginCommands::Remove { name, keep_artifact } => run_remove(config_override, &name, keep_artifact),
     }
 }
@@ -37,6 +41,7 @@ pub fn run_plugin(config_override: Option<PathBuf>, command: PluginCommands) -> 
 pub fn run_plugin(_config_override: Option<PathBuf>, command: PluginCommands) -> i32 {
     let operation = match command {
         PluginCommands::List { .. } => "list",
+        PluginCommands::Add(_) => "add",
         PluginCommands::Remove { .. } => "remove",
     };
 

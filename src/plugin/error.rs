@@ -1,5 +1,7 @@
-use super::types::PluginName;
-use thiserror::Error;
+use {super::types::PluginName, thiserror::Error};
+mod install;
+mod transport;
+pub use self::{install::InstallError, transport::TransportError};
 
 /// Rich, actionable errors for the Cutver Plugin Subsystem.
 /// Follows CONTRACT.md: What failed, Where did it fail, How to fix it.
@@ -299,34 +301,11 @@ pub enum PluginError {
         Fix: install or build a plugin-enabled cutver: 'cargo install cutver --features plugins' (or 'cargo build --features plugins')."
     )]
     PluginsFeatureDisabled { operation: String },
+    #[error(transparent)]
+    Transport(#[from] TransportError),
+    #[error(transparent)]
+    Install(#[from] InstallError),
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Pins the lean-binary advice so it cannot drift back to a remedy that cannot work.
-    ///
-    /// `WasmNotSupported` is reachable only from the `#[cfg(not(feature = "plugins"))]`
-    /// branch of `create_wasm_runtime_driver`, so it always means the binary was built
-    /// without the `plugins` feature. The fix must name that feature and the
-    /// plugin-enabled build, never a `cutver.toml` key.
-    #[test]
-    fn wasm_not_supported_names_the_plugins_feature_and_the_enabled_build() {
-        let name = PluginName::new("demo").unwrap();
-        let message = PluginError::WasmNotSupported { name }.to_string();
-
-        assert!(
-            message.contains("plugins"),
-            "message must name the 'plugins' feature token: {message}"
-        );
-        assert!(
-            message.contains("--features plugins"),
-            "message must show the plugin-enabled build command: {message}"
-        );
-        assert!(
-            !message.contains("runtime = \"process\""),
-            "message must not recommend a cutver.toml key that cannot help: {message}"
-        );
-    }
-}
+mod tests;

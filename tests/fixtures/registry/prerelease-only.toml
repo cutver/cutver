@@ -1,0 +1,11 @@
+name = "prerelease-only"
+description = "Carries only pre-release versions."
+author = "cutver"
+tier = "community"
+repository = "https://github.com/cutver/plugins"
+capabilities = ["changelog.v1"]
+
+[[release]]
+version = "0.1.0-alpha.1"
+url = "https://github.com/cutver/plugins/releases/download/prerelease-only-v0.1.0-alpha.1/prerelease-only.wasm"
+sha256 = "4444444444444444444444444444444444444444444444444444444444444444"

@@ -156,6 +156,103 @@ pub enum PluginError {
         Fix: set '{variable}' to the directory that should hold installed plugins (for example, {variable}=~/.cache/cutver/plugins), or set '{fallback}' to the user's home directory."
     )]
     UnresolvableCacheRoot { variable: String, fallback: String },
+
+    #[error(
+        "registry entry for plugin '{name}' could not be fetched from '{url}': {reason}.\n  \
+        Where: downloading the registry index entry for '{name}'\n  \
+        Fix: check your network connection or proxy, then retry; the entry URL is built from the Cutver registry index."
+    )]
+    RegistryUnreachable { name: String, url: String, reason: String },
+
+    #[error(
+        "registry server returned HTTP {status} for plugin '{name}' at '{url}'.\n  \
+        Where: downloading the registry index entry for '{name}'\n  \
+        Fix: confirm the plugin name is published in the Cutver registry index; an HTTP 404 means it is not."
+    )]
+    RegistryHttpStatus { name: String, url: String, status: u16 },
+
+    #[error(
+        "registry entry for plugin '{name}' at '{url}' exceeds the {cap_bytes}-byte response size cap.\n  \
+        Where: reading the registry index response body for '{name}'\n  \
+        Fix: the entry is malformed or oversized; report it to the Cutver registry maintainers."
+    )]
+    RegistryResponseTooLarge { name: String, url: String, cap_bytes: u64 },
+
+    #[error(
+        "registry entry for plugin '{name}' is malformed: {reason}.\n  \
+        Where: parsing the registry index entry for '{name}'\n  \
+        Fix: correct the named field in the Cutver registry index entry to match the registry schema."
+    )]
+    RegistryMalformedEntry { name: String, reason: String },
+
+    #[error(
+        "registry entry file '{requested}' declares name '{declared}', which does not match the requested plugin.\n  \
+        Where: validating the registry index entry requested as '{requested}'\n  \
+        Fix: rename the entry file to match its declared 'name', or fix the 'name' field in the Cutver registry index."
+    )]
+    RegistryNameMismatch { requested: String, declared: String },
+
+    #[error(
+        "registry entry for plugin '{name}' declares unsupported tier '{tier}'.\n  \
+        Where: validating the 'tier' field of the registry index entry for '{name}'\n  \
+        Fix: set 'tier' to one of: official, verified, community in the Cutver registry index."
+    )]
+    RegistryUnsupportedTier { name: String, tier: String },
+
+    #[error(
+        "registry entry for plugin '{name}' declares unknown capability '{capability}'.\n  \
+        Where: validating the 'capabilities' field of the registry index entry for '{name}'\n  \
+        Fix: use one of the Cutver capabilities: manifest.v1, lifecycle.v1, changelog.v1, versioning.v1."
+    )]
+    RegistryUnknownCapability { name: String, capability: String },
+
+    #[error(
+        "registry release '{version}' for plugin '{name}' has an invalid artifact URL '{url}': {reason}.\n  \
+        Where: validating a release URL in the registry index entry for '{name}'\n  \
+        Fix: use an absolute https:// URL whose path ends in '.wasm' in the Cutver registry index."
+    )]
+    RegistryReleaseUrl {
+        name: String,
+        version: String,
+        url: String,
+        reason: String,
+    },
+
+    #[error(
+        "registry entry for plugin '{name}' has an invalid sha256 digest '{value}': expected exactly 64 lowercase hexadecimal characters.\n  \
+        Where: validating a release digest in the registry index entry for '{name}'\n  \
+        Fix: set 'sha256' to the artifact's real lower-case hex SHA-256 in the Cutver registry index."
+    )]
+    RegistryDigestShape { name: String, value: String },
+
+    #[error(
+        "'{requirement}' is not a valid version requirement for plugin '{name}': {reason}.\n  \
+        Where: parsing the requested version before release selection for '{name}'\n  \
+        Fix: pass a semver requirement such as '1.2.3' or '^1.0' to --version."
+    )]
+    RegistryInvalidVersionRequirement {
+        name: String,
+        requirement: String,
+        reason: String,
+    },
+
+    #[error(
+        "no release of plugin '{name}' satisfies '{requirement}': available versions are {available}.\n  \
+        Where: selecting a release from the registry index entry for '{name}'\n  \
+        Fix: pass one of the available versions to --version, or publish a matching release."
+    )]
+    RegistryNoMatchingRelease {
+        name: String,
+        requirement: String,
+        available: String,
+    },
+
+    #[error(
+        "registry entry for plugin '{name}' has no stable release: available versions are {available}.\n  \
+        Where: selecting the latest stable release from the registry index entry for '{name}'\n  \
+        Fix: pass --version with a pre-release requirement to opt in, or publish a stable release."
+    )]
+    RegistryNoStableRelease { name: String, available: String },
 }
 
 #[cfg(test)]

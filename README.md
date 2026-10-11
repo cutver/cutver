@@ -2,9 +2,10 @@
 
 # cutver
 
-**Cut a release. Bump SemVer. Every project, every language.**
+**A release engine you can extend: one core, four typed capability slots, and plugins that run
+sandboxed by default.**
 
-> *cutver versions itself, tests itself, generates its own changelogs, and publishes itself.*
+> *Cut a release. Bump SemVer. Every project, every language.*
 
 [![CI](https://github.com/cutver/cutver/actions/workflows/ci.yml/badge.svg)](https://github.com/cutver/cutver/actions/workflows/ci.yml)
 [![Release](https://github.com/cutver/cutver/actions/workflows/release.yml/badge.svg)](https://github.com/cutver/cutver/actions/workflows/release.yml)
@@ -16,51 +17,57 @@
 <br/>
 
 <p align="center">
-  <img src="assets/demo.svg" alt="cutver bump auto preview" width="680">
+  <img src="assets/cutver_bump_showcase.png" alt="cutver bump auto preview" width="680">
 </p>
 
 </div>
 
 ---
 
-`cutver` is a standalone, format-preserving release orchestration engine written in pure Rust. It synchronizes version numbers across any set of manifests, runs verification checks with process-tree timeouts, renders changelogs with expressive release templates, commits, tags, and publishes — all driven by one declarative `cutver.toml` configuration.
+`cutver` is a standalone release orchestration engine written in pure Rust. It synchronizes versions
+across your manifests, runs your preflight checks, renders the changelog, commits, tags and
+publishes — driven by one declarative `cutver.toml`. It versions itself, tests itself, generates its
+own changelogs and publishes itself.
 
-**Zero Node.js runtime. Zero external dependencies. Zero broken comments or stripped formatting.**
-
----
-
-## 30-Second Mental Model
+What separates it from a version-bumping script: **four stages are typed capability slots**. The core
+orchestrates; the behaviour is pluggable.
 
 ```text
-       cutver.toml (single source of truth)
-                       │
-         ┌─────────────┼─────────────┐
-         ▼             ▼             ▼
-   Cargo.toml    package.json   build.gradle.kts
-  (toml_edit)    (byte-span)        (regex)
-         │             │             │
-         └─────────────┼─────────────┘
-                       ▼
-       Preflight Checks (Process Groups)
-                       ▼
-       Conventional Commits SemVer Math
-                       ▼
-       Atomic In-Memory Write + Rollback Guard
-                       ▼
-       Release Commit + SemVer Tag + Push
+                      cutver.toml
+                           │
+      ┌────────────────────┴────────────────────┐
+      │               cutver core               │
+      │   orchestration · preflights · SemVer   │
+      │   atomic apply · surgical diffs         │
+      └──┬──────────┬───────────┬───────────┬───┘
+         │          │           │           │
+   manifest.v1  lifecycle.v1  changelog.v1  versioning.v1
+         │          │           │           │
+      ┌──┴──────────┴───────────┴───────────┴───┐
+      │ plugins: sandboxed WASM · native process │
+      │ one versioned wire contract (cutver-pdk) │
+      └──────────────────────────────────────────┘
 ```
 
-`cutver` treats releases as atomic transactions. It computes all diffs in memory, verifies preflights, applies surgical single-line updates without disturbing comments or formatting, and automatically rolls back if any step fails.
+| Capability | What a plugin takes over |
+| :--- | :--- |
+| `manifest.v1` | Read and write a manifest format the core does not know. |
+| `lifecycle.v1` | Run on `pre_bump`, `post_bump` and `post_release`. |
+| `changelog.v1` | Render the release notes. |
+| `versioning.v1` | Decide the next version from your commits. |
 
----
+The core ships its own implementation of every slot, so nothing is required to cut a release.
+Plugins replace or extend a stage when your project needs it. A plugin is a sandboxed WebAssembly
+module or a native process, and both speak the same versioned contract
+([`cutver-pdk`](https://crates.io/crates/cutver-pdk)). A WASM plugin gets **no filesystem, no network
+and no environment** unless you grant it under `[plugins.<name>.permissions]`.
 
-## Quick Install
+## Install
 
 > **Two builds — pick one.** Homebrew carries two formulae (`cutver`, `cutver-plugins`) and Scoop two
-> manifests; the plugin variant is published from the next release on, so older versions need
-> `cargo install cutver --features plugins`. Both install a binary named `cutver`; the plugin-enabled
-> build adds the WebAssembly plugin runtime (`cutver plugin add/remove/list`) at ~5 MB compressed,
-> against ~1.25 MB lean.
+> manifests, both available for 0.13.0 and later. Both install a binary named `cutver`; the
+> plugin-enabled build adds the WebAssembly plugin runtime (`cutver plugin add/remove/list`) at ~5 MB
+> compressed, against ~1.25 MB lean.
 
 ```bash
 # Homebrew (macOS & Linux) — pick one
@@ -72,50 +79,67 @@ scoop bucket add row https://github.com/Row0902/scoop-bucket
 scoop install cutver            # lean (~1.25 MB)
 scoop install cutver-plugins    # plugin runtime (~5 MB)
 
-# Cargo
+# Cargo — add --features plugins for the plugin runtime
 cargo install cutver
 
-# OCI Container (Docker / Podman)
+# OCI Container (Docker / Podman) — add :plugins for the plugin runtime
 docker pull ghcr.io/cutver/cutver:latest
-podman pull ghcr.io/cutver/cutver:latest
 ```
 
-### Precompiled Binaries
-
-Download Cosign-signed binaries from [GitHub Releases](https://github.com/cutver/cutver/releases) for 8 modern 64-bit platforms:
-
-| Platform | Target Slug | Target Triple | Archive |
-| :--- | :--- | :--- | :--- |
-| **Linux x86_64** (glibc) | `linux-x86_64` | `x86_64-unknown-linux-gnu` | `.tar.gz` |
-| **Linux x86_64** (musl) | `linux-musl-x86_64` | `x86_64-unknown-linux-musl` | `.tar.gz` |
-| **Linux ARM64** (glibc) | `linux-arm64` | `aarch64-unknown-linux-gnu` | `.tar.gz` |
-| **Linux ARM64** (musl) | `linux-musl-arm64` | `aarch64-unknown-linux-musl` | `.tar.gz` |
-| **macOS Intel** | `macos-x86_64` | `x86_64-apple-darwin` | `.tar.gz` |
-| **macOS Apple Silicon** | `macos-arm64` | `aarch64-apple-darwin` | `.tar.gz` |
-| **Windows x86_64** | `windows-x86_64` | `x86_64-pc-windows-msvc` | `.zip` |
-| **Windows ARM64** | `windows-arm64` | `aarch64-pc-windows-msvc` | `.zip` |
-
----
-
-## The 3-Step Happy Path
+## The 30-Second Path
 
 ```bash
-# 1. Detect project manifests and scaffold cutver.toml
-cutver init
-
-# 2. Verify manifest health and check for version drift
-cutver doctor
-
-# 3. Simulate release with dry-run, then cut the release
-cutver bump auto --dry-run
-cutver bump auto
+cutver init                  # discover manifests, scaffold cutver.toml
+cutver doctor                # validate config, manifests and version drift
+cutver bump auto --dry-run   # see the whole release without writing anything
+cutver bump auto             # compute in memory, apply atomically
 ```
 
----
+Every mutating command validates in memory first and then applies atomically. Comments, key order
+and formatting survive the diff, and a failed step rolls the workspace back rather than leaving it
+half-released.
 
-## Documentation Directory
+## Plugins, First-Class
 
-Explore the complete modular guides and technical references:
+```bash
+cutver plugin add github-releases    # resolve, download, verify, install, configure
+cutver plugin list                   # declared vs installed vs digest-matched
+cutver plugin remove github-releases # surgical removal, artifact included
+```
+
+`add` reads the [Cutver registry](https://github.com/cutver/registry), downloads the release
+artifact, verifies its SHA-256 **before** the file enters the cache, and writes the declaration for
+you. From then on the loader re-verifies that digest on **every** load. The install gate has no
+bypass — there is no `--insecure` flag and no fallback to whatever the URL returned — and `add`
+always writes the `hash` that the load gate checks.
+
+```toml
+[plugins.github-releases]
+runtime = "wasm"
+source = "github-releases-0.1.0.wasm"
+hash = "a828cbabd247afdaf78fec358ae5a27271097c7c2ef6fc9ec0fe04af22edf841"
+capabilities = ["changelog.v1"]
+```
+
+> **Gotcha**: a `changelog.v1` plugin is only dispatched when `[changelog] format = "plugin"`. With
+> the default `keep-a-changelog`, the built-in renderer runs and the installed plugin stays idle.
+
+Full detail in [Installing & Managing Plugins](docs/reference/plugins.md) and the
+[plugin engine architecture](docs/rfcs/0001-wasm-plugin-architecture.md).
+
+## Supported Manifests
+
+Each format has its own editor, chosen for what it must preserve: comments, key order and whitespace
+survive in `Cargo.toml` and `pyproject.toml`, JSON is touched only inside the version string's byte
+span, and Gradle or any text file goes through a capture-group replacement — so the diff is the
+version and nothing else. Precompiled Cosign-signed binaries cover 8 targets — Linux glibc and
+musl on x86_64 and ARM64, macOS Intel and Apple Silicon, Windows x86_64 and ARM64 — plus
+plugin-enabled variants of each, on the [releases page](https://github.com/cutver/cutver/releases).
+
+[Language Manifests & Diff Guarantees](docs/reference/manifests.md) documents every kind and what it
+preserves.
+
+## Documentation
 
 | Category | Guide | Description |
 | :--- | :--- | :--- |
@@ -129,7 +153,7 @@ Explore the complete modular guides and technical references:
 | **Integrations** | [GitHub Actions Integration Guide](docs/integrations/github-actions.md) | Official `cutver/setup` and `cutver/release` action workflows. |
 | | [Container Integration Guide](docs/integrations/containers.md) | Running cutver with Podman, Docker, `docker://`, and GitLab CI. |
 | **Internals** | [Architecture & Design Decisions](docs/internals/design.md) | Two-phase release pipeline, atomic scanner, and design history. |
-| | [Technical Specification Archive](docs/internals/references.md) | Comprehensive legacy reference and internal specifications. |
+| | [Plugin Engine Architecture](docs/rfcs/0001-wasm-plugin-architecture.md) | The microkernel, the capability contract, and the two runtimes. |
 
 ---
 

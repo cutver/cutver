@@ -239,14 +239,25 @@ fn check_plugin_item(item: &Item, path: &str) -> Result<(), ConfigError> {
 
 /// Builds the error for an unknown top-level key. For an unknown table the
 /// first key inside it is named, so the message identifies both the table and a
-/// concrete offending key.
+/// concrete offending key. When a nested unknown table is empty there is no key
+/// to name, so the message names the table instead.
 fn first_unknown(item: &Item, key: &str) -> ConfigError {
-    first_unknown_key(item, key)
-        .map(|(table, key)| ConfigError::UnknownKey { table, key })
-        .unwrap_or_else(|| ConfigError::UnknownRootKey { key: key.to_string() })
+    match first_unknown_key(item, key) {
+        Some(UnknownItem::Key { table, key }) => ConfigError::UnknownKey { table, key },
+        Some(UnknownItem::Table { table }) => ConfigError::UnknownTable { table },
+        None => ConfigError::UnknownRootKey { key: key.to_string() },
+    }
 }
 
-fn first_unknown_key(item: &Item, path: &str) -> Option<(String, String)> {
+/// The first offending item found while descending an unknown top-level table.
+enum UnknownItem {
+    /// A concrete key inside known path `table`.
+    Key { table: String, key: String },
+    /// A table that contains no keys to name as the offending key.
+    Table { table: String },
+}
+
+fn first_unknown_key(item: &Item, path: &str) -> Option<UnknownItem> {
     match item {
         Item::Table(t) => first_from_table(t, path),
         Item::Value(Value::InlineTable(t)) => first_from_inline(t, path),
@@ -255,39 +266,39 @@ fn first_unknown_key(item: &Item, path: &str) -> Option<(String, String)> {
     }
 }
 
-fn first_from_table(table: &Table, path: &str) -> Option<(String, String)> {
+fn first_from_table(table: &Table, path: &str) -> Option<UnknownItem> {
     let (key, value) = table.iter().next()?;
-    first_from_item(value, key, path)
+    Some(first_from_item(value, key, path))
 }
 
-fn first_from_inline(table: &InlineTable, path: &str) -> Option<(String, String)> {
+fn first_from_inline(table: &InlineTable, path: &str) -> Option<UnknownItem> {
     let (key, value) = table.iter().next()?;
     let child = format!("{path}.{key}");
-    match value {
-        Value::InlineTable(inner) => first_from_inline(inner, &child).or(Some((child, String::new()))),
-        _ => Some((path.to_string(), key.to_string())),
-    }
+    Some(match value {
+        Value::InlineTable(inner) => first_from_inline(inner, &child).unwrap_or(UnknownItem::Table { table: child }),
+        _ => UnknownItem::Key {
+            table: path.to_string(),
+            key: key.to_string(),
+        },
+    })
 }
 
-fn first_from_item(item: &Item, key: &str, path: &str) -> Option<(String, String)> {
+fn first_from_item(item: &Item, key: &str, path: &str) -> UnknownItem {
+    let child = format!("{path}.{key}");
     match item {
-        Item::Table(inner) => {
-            let child = format!("{path}.{key}");
-            first_from_table(inner, &child).or(Some((child, String::new())))
-        }
-        Item::ArrayOfTables(entries) => {
-            let child = format!("{path}.{key}");
-            entries
-                .iter()
-                .next()
-                .and_then(|t| first_from_table(t, &child))
-                .or(Some((child, String::new())))
-        }
+        Item::Table(inner) => first_from_table(inner, &child).unwrap_or(UnknownItem::Table { table: child }),
+        Item::ArrayOfTables(entries) => entries
+            .iter()
+            .next()
+            .and_then(|t| first_from_table(t, &child))
+            .unwrap_or(UnknownItem::Table { table: child }),
         Item::Value(Value::InlineTable(inner)) => {
-            let child = format!("{path}.{key}");
-            first_from_inline(inner, &child).or(Some((child, String::new())))
+            first_from_inline(inner, &child).unwrap_or(UnknownItem::Table { table: child })
         }
-        _ => Some((path.to_string(), key.to_string())),
+        _ => UnknownItem::Key {
+            table: path.to_string(),
+            key: key.to_string(),
+        },
     }
 }
 

@@ -36,6 +36,8 @@ pub enum ConfigError {
     ConflictingPrimaryManifest(String, String),
     #[error("unknown configuration key '{key}' in [{table}] table in cutver.toml")]
     UnknownKey { table: String, key: String },
+    #[error("unknown table [{table}] in cutver.toml")]
+    UnknownTable { table: String },
     #[error("unknown top-level key '{key}' in cutver.toml")]
     UnknownRootKey { key: String },
 }

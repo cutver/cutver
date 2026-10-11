@@ -222,6 +222,113 @@ version_strategy = "manual"
 }
 
 // ---------------------------------------------------------------------------
+// Empty nested unknown tables must name the table, not an empty key.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn empty_nested_unknown_table_names_the_table_not_an_empty_key() {
+    let err = load(
+        r#"
+[[manifest]]
+path = "Cargo.toml"
+kind = "cargo-package"
+
+[foo]
+[foo.bar]
+"#,
+    )
+    .unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("unknown table [foo.bar]"),
+        "error did not name the offending table: {msg}"
+    );
+    assert!(!msg.contains("''"), "error contains an empty key: {msg}");
+}
+
+#[test]
+fn empty_inline_nested_unknown_table_names_the_table_not_an_empty_key() {
+    let err = load(
+        r#"
+foo = { bar = {} }
+
+[[manifest]]
+path = "Cargo.toml"
+kind = "cargo-package"
+"#,
+    )
+    .unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("unknown table [foo.bar]"),
+        "error did not name the offending table: {msg}"
+    );
+    assert!(!msg.contains("''"), "error contains an empty key: {msg}");
+}
+
+#[test]
+fn neighbouring_unknown_cases_still_name_a_real_table_or_key() {
+    // Empty top-level unknown table keeps naming the key.
+    let err = load(
+        r#"
+[[manifest]]
+path = "Cargo.toml"
+kind = "cargo-package"
+
+[foo]
+"#,
+    )
+    .unwrap_err();
+    let msg = err.to_string();
+    assert!(msg.contains("unknown top-level key 'foo'"), "{msg}");
+
+    // Nested unknown table with keys names a real key, never an empty one.
+    let err = load(
+        r#"
+[[manifest]]
+path = "Cargo.toml"
+kind = "cargo-package"
+
+[foo]
+[foo.bar]
+baz = 1
+"#,
+    )
+    .unwrap_err();
+    let msg = err.to_string();
+    assert!(msg.contains("baz"), "{msg}");
+    assert!(!msg.contains("''"), "{msg}");
+
+    // An unknown key inside a known table names the enclosing table and the key.
+    let err = load(
+        r#"
+[[manifest]]
+path = "Cargo.toml"
+kind = "cargo-package"
+
+[changelog]
+x = 1
+"#,
+    )
+    .unwrap_err();
+    let msg = err.to_string();
+    assert!(msg.contains("changelog") && msg.contains("'x'"), "{msg}");
+
+    // An unknown key inside [[manifest]] names the key.
+    let err = load(
+        r#"
+[[manifest]]
+path = "Cargo.toml"
+kind = "cargo-package"
+typpo = 1
+"#,
+    )
+    .unwrap_err();
+    let msg = err.to_string();
+    assert!(msg.contains("manifest") && msg.contains("typpo"), "{msg}");
+}
+
+// ---------------------------------------------------------------------------
 // Why `#[serde(deny_unknown_fields)]` cannot be used as written.
 // ---------------------------------------------------------------------------
 

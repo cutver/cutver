@@ -130,11 +130,11 @@ Declares one target file to update. Multiple `[[manifest]]` blocks can be specif
 | `path` | `string` | `None` | Changelog file to update. Without it, no changelog is rendered. |
 | `format` | `string` | `"keep-a-changelog"` | `"keep-a-changelog"` renders with the built-in renderer; `"plugin"` dispatches a `changelog.v1` plugin instead. |
 | `plugin` | `string` | `None` | With `format = "plugin"`, names the plugin to use. Omit it when exactly one declares `changelog.v1`. |
-| `mode` | `string` | `"conventional"` | `"conventional"` groups entries by commit type; `"template"` renders `template_file`. |
-| `template_file` | `string` | `None` | Template used when `mode = "template"`. |
+| `mode` | `string` | `"conventional"` | `"conventional"` groups entries by commit type. A template is used whenever `template` or `template_file` is set, or when `mode = "template"`. |
+| `template_file` | `string` | `None` | Template file, used whenever it is set regardless of `mode`. With `mode = "template"` and no template set, `entry_template` is rendered instead. |
 
 The remaining keys (`entry_template`, `template`, `full_template`, `header_template`, `include_scopes`,
-`fallback_entry`, `ignore_release_commits`, `ignore_scopes`) appear in the full configuration template
+`fallback_entry`, `ignore_release_commits`, `ignore_scopes`) are accepted but not shown in the template
 above.
 
 ### `[preflight]`, `[git]`, `[hooks]`, & `[publish]`

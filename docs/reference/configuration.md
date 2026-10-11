@@ -24,10 +24,6 @@ Release behavior is configured in `cutver.toml`, which discovery walks up to fin
 current_source = "Cargo.toml"     # Optional: explicit path to primary manifest
 strategy = "conventional"         # "conventional" or "manual"
 
-[workspace]
-mode = "unified"                  # "unified" or "independent"
-members = ["crates/*", "packages/*"]
-
 [[manifest]]
 path = "Cargo.toml"
 kind = "cargo-package"
@@ -94,14 +90,14 @@ commands = [
 
 ## Configuration Tables
 
-### `[version]` & `[workspace]`
+### `[version]`
+
+`cutver` does not read a `[workspace]` table: `mode` and `members` are ignored if present. Independent per-package releases remain future work ([design](../internals/design.md)).
 
 | Table | Key | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
 | `[version]` | `strategy` | `string` | `"conventional"` | Strategy for bumps: `"conventional"` (commits) or `"manual"`. |
 | `[version]` | `current_source` | `string` | `None` | Path to primary manifest. If omitted, first `[[manifest]]` is used. |
-| `[workspace]` | `mode` | `string` | `"unified"` | `"unified"` (synchronized workspace) or `"independent"`. |
-| `[workspace]` | `members` | `list<string>` | `[]` | Glob patterns designating workspace members. |
 
 ---
 
@@ -112,7 +108,7 @@ Declares one target file to update. Multiple `[[manifest]]` blocks can be specif
 | Key | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
 | `path` | `string` | Yes | Path to the manifest file relative to `cutver.toml`. |
-| `kind` | `string` | Yes | Parser kind: `"cargo-package"`, `"json"`, `"pyproject"`, `"gradle"`, or `"regex"`. |
+| `kind` | `string` | Yes | Parser kind: `"cargo-package"`, `"json"`, `"pyproject"`, `"gradle"`, `"regex"`, or `"plugin"`. |
 | `primary` | `bool` | No | When `true`, designates this manifest as primary source of truth. |
 | `field` | `string` | For `json` | Dotted field path to version string (e.g. `"version"`). Default: `"version"`. |
 | `table` | `string` | For `pyproject` | TOML table holding version: `"project"` (PEP 621) or `"tool.poetry"`. |
@@ -120,6 +116,7 @@ Declares one target file to update. Multiple `[[manifest]]` blocks can be specif
 | `version_code_field` | `string` | For `gradle` | Integer field name incremented on every bump. Default: `"versionCode"`. |
 | `pattern` | `string` | For `regex` | Regular expression capturing the version substring. |
 | `replacement` | `string` | For `regex` | Replacement template string; `{{version}}` is substituted. |
+| `plugin` | `string` | No | For `kind = "plugin"` only: names the `manifest.v1` plugin to use. When omitted, `cutver` matches the declared path against the plugins' `manifest_match` globs. Requires a plugin-enabled build. |
 
 ---
 

@@ -118,7 +118,7 @@ cutver bump auto
 
 ## Next Steps
 
-- [Monorepos and Multi-Package Strategies](monorepos.md): Coordinate unified workspaces or independent packages.
+- [Monorepos and Multi-Package Strategies](monorepos.md): Declare many package manifests under one shared version.
 - [Complete cutver.toml Configuration Reference](../reference/configuration.md): Explore all configuration keys and options.
 - [Language Manifests and Surgical Diff Guarantees](../reference/manifests.md): How cutver preserves comments and formatting.
 - [CLI Commands and Exit Codes](../reference/cli.md): Comprehensive CLI reference and exit statuses.

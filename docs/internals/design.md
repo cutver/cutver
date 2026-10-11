@@ -65,21 +65,12 @@ Invocation is intentionally terse: `cutver bump minor` or `cutver bump auto`.
 # Calculation strategy: "manual" (CLI argument) or "conventional" (git commit inspection)
 strategy = "conventional"
 
-[workspace]
-# "unified" (all packages bump together) or "independent" (per-package lifecycle)
-mode = "unified"
-members = ["crates/*", "packages/*"]
-
 # The FIRST declared manifest is the canonical source of truth by convention,
 # unless a manifest explicitly specifies `primary = true`.
 [[manifest]]
 path = "package.json"
 kind = "json"
 field = "version"
-
-[[manifest]]
-glob = "crates/*/Cargo.toml"
-kind = "cargo-package"
 
 [[manifest]]
 path = "src-tauri/tauri.conf.json"

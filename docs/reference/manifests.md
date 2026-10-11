@@ -17,6 +17,7 @@ Most release tools re-serialize entire files using generic object serializers. T
 | `json` | `*.json`, `*.jsonc` | Byte-span scanner | Replaces **strictly** the string byte range containing the version. Key order, indentation, comments, and newlines remain untouched. |
 | `gradle` | `build.gradle`, `*.gradle.kts` | Regex byte replacement | Updates `versionName` string and increments `versionCode` integer without altering Gradle DSL structure. |
 | `regex` | Arbitrary text files | Regex capture group | Replaces matched token with `replacement`, substituting `{{version}}`. |
+| `plugin` | Any file an installed `manifest.v1` plugin handles | Wasm plugin (`manifest.v1`) | Format preservation is the plugin's responsibility. Requires a plugin-enabled build. |
 
 ---
 
@@ -79,6 +80,17 @@ kind = "regex"
 pattern = 'release/v\d+\.\d+\.\d+'
 replacement = 'release/{{version}}'
 ```
+
+### Plugin (`plugin`)
+
+```toml
+[[manifest]]
+path = "custom.version"
+kind = "plugin"
+plugin = "my-manifest"   # optional; omit to match by manifest_match globs
+```
+
+Delegates reads and writes to an installed `manifest.v1` plugin. The `plugin` key is optional: without it, `cutver` matches the declared `path` against each plugin's `manifest_match` globs. Format preservation is the plugin's responsibility, not `cutver`'s. A lean build has no plugin runtime and fails with `PluginManagerRequired` (see [the plugin reference](plugins.md)).
 
 ---
 

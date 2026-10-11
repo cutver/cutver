@@ -10,7 +10,8 @@ Official minimal multi-architecture container images (`linux/amd64`, `linux/arm6
 
 - `ghcr.io/cutver/cutver:latest` — Built from `main` and from release tags (`.github/workflows/container.yml` enables `latest` on both), so it can be ahead of the latest stable release; pin a release with an explicit version tag instead.
 - `ghcr.io/cutver/cutver:0.13.0` — Pinned SemVer release tag (`:0.13` and the floating `:0` also exist).
-- `ghcr.io/cutver/cutver:0` — Floating major version tag; plugin-enabled variants append `-plugins` to the same tags ([plugin reference](../reference/plugins.md)).
+- `ghcr.io/cutver/cutver:0` — Floating major version tag.
+- `ghcr.io/cutver/cutver:0.13.0-plugins`, `:0.13-plugins`, and `:plugins` — the plugin-enabled image. It publishes `<version>-plugins`, `<major>.<minor>-plugins`, and the floating `:plugins`; there is no `:0-plugins` and no `:latest-plugins` ([plugin reference](../reference/plugins.md)).
 
 ---
 

@@ -24,7 +24,7 @@ it, and writes the configuration entry that makes `cutver` load it.
    ```bash
    cutver plugin list
    ```
-4. Preview the next install without writing or downloading:
+4. Preview the next install without writing or downloading the artifact (the registry entry is still resolved):
    ```bash
    cutver plugin add github-releases --dry-run
    ```
@@ -68,7 +68,7 @@ cutver plugin add <NAME> [--version <VERSION>] [--registry <BASE>] \
 | `--registry <BASE>` | Registry index base. `https` only, default `https://raw.githubusercontent.com/cutver/registry/main/plugins/`. |
 | `--event <EVENT>` | Lifecycle event the plugin handles. Repeatable. Required when the entry declares `lifecycle.v1`. |
 | `--manifest-match <GLOB>` | Manifest glob the plugin matches. Repeatable. Required when the entry declares `manifest.v1`. |
-| `--dry-run` | Resolves and prints version, URL, digest and the config diff. Downloads nothing, writes nothing. |
+| `--dry-run` | Resolves the registry entry and prints version, URL, digest and the config diff. Downloads no artifact, writes nothing. |
 | `--force` | Replaces an existing `[plugins.<name>]` declaration instead of failing closed. |
 
 `--event` and `--manifest-match` are not cosmetic. An empty `events` list matches **every** lifecycle

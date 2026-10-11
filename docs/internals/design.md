@@ -33,11 +33,11 @@ crates.io and GitHub on the day of creation.
    - *Deterministic*: Identical Git states yield identical SemVer bumps and manifest diffs. The
      changelog entry is stamped with the date it was cut, so that part also depends on the day.
    - *Organic*: The tool scales naturally from a single-file crate to a polyglot monorepo without friction.
-4. **Safe Git by default.** Require a clean working tree and selective
-   staging of only the files `cutver` itself modified — never `git add .`.
+4. **Safe Git by default.** Require a clean working tree and selective staging of the
+   files `cutver` itself modified, plus recognized lockfiles the `post_bump` hook regenerated — never `git add .`.
 5. **Fail-fast preflight.** Run the project's declared verification commands;
    abort before any manifest mutation when any step fails.
-6. **Dry-run first.** Every mutation-capable run can be simulated end to end.
+6. **Dry-run first.** `bump` and `plugin add` can be simulated end to end with `--dry-run`; `init` and `plugin remove` have no such flag.
 
 ## CLI Surface
 

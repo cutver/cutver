@@ -102,7 +102,7 @@ commands = [                      # Commands executed post-tag/post-push
 
 ## Manifest Editors (`kind`)
 
-Every manifest editor is format-preserving and designed to produce minimal, single-line diffs.
+For the AST and byte-span editors the diff is the version and nothing else; the Gradle editor also increments `versionCode`, and the regex editor replaces every match, so those two can touch more than one line.
 
 | Kind | Target File | Editor Mechanism | Formatting Preservation |
 | :--- | :--- | :--- | :--- |

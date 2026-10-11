@@ -131,9 +131,10 @@ Full detail in [Installing & Managing Plugins](docs/reference/plugins.md) and th
 ## Supported Manifests
 
 Each format has its own editor, chosen for what it must preserve: comments, key order and whitespace
-survive in `Cargo.toml` and `pyproject.toml`, JSON is touched only inside the version string's byte
-span, and Gradle or any text file goes through a capture-group replacement — so the diff is the
-version and nothing else. Precompiled Cosign-signed binaries cover 8 targets — Linux glibc and
+survive in `Cargo.toml` and `pyproject.toml`, and JSON is touched only inside the version string's byte
+span. Gradle and arbitrary text files go through a capture-group replacement, which can touch more than
+the version — Gradle also increments `versionCode`, and every regex match is replaced. Precompiled
+Cosign-signed binaries cover 8 targets — Linux glibc and
 musl on x86_64 and ARM64, macOS Intel and Apple Silicon, Windows x86_64 and ARM64 — plus
 plugin-enabled variants of each, on the [releases page](https://github.com/cutver/cutver/releases).
 

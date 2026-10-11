@@ -88,14 +88,34 @@ The real `cutver/release@v1` outputs are exactly `released`, `version`, `tag`, `
 | 3 | `dd39702` | `docs: document the real workspace behaviour and the plugin manifest kind` — 6 files, `[workspace]` removed, `plugin` kind documented, `-plugins` suffix corrected |
 | — | `84c311d` | `docs(odd): record the round 3 findings and the method change` |
 | 4 | `7c6d215` | `docs: correct the documented defaults and fill the reference gaps` — 7 files, 9 false claims plus the completeness gaps |
+| — | `9e77b4e` | `docs(odd): record the round 4 findings` |
+| 5 | `ec08155` | `docs: scope the versioning strategy claim to its one implemented value` — 4 files; `strategy` is a plugin switch, and the missing `plugin` kind row entered at the file's `main` size |
+| 6 | `6f0581b` | `docs: correct the pyproject table key and scope the legacy reference title` — `configuration.md:123` required→optional, `references.md:3` drops "complete" |
 
-## Method
+## Round 5 findings
 
-Three rounds used one method (grep the absolutes, check each against code) and left blindness: it cannot see a **wrong vocabulary** (the `pre_bump` vs `on_pre_bump` event names contain no absolute) and it cannot see an **omission or a negative** (a documented config table the loader never reads). Round 3 added the complementary method: cross-check each documented table item by item against the struct or artifact that defines it. Round 4 makes that the primary method.
+- **`[version] strategy` is a plugin switch, not a bump strategy.** `grep -rn "\.strategy" src/` returns exactly one production read: `src/bump/exec/pipeline.rs:148`, `== "plugin"`. `"manual"` and `"conventional"` are read nowhere; `src/config/validation.rs:28-29` only substitutes the default `"manual"` for an empty value. The bump level comes from the CLI argument. Documented wrongly in `configuration.md:25,99`, `design.md:65`, and implied by the monorepo example. Fixed in `ec08155`.
+- **`versionCode` on `--first-release`.** The row "incremented on every bump" is TRUE even on a first release: `resolve_next_version` returns the current version, but `GradleEditor::write_version` (`src/manifest/gradle.rs:57-71`) writes `code + 1` unconditionally with no equality guard. The false string is the CLI help at `src/cli/args/commands.rs:46`, which promises "without incrementing the version in manifests".
+- **The last false claim:** `configuration.md:123` marked the `pyproject` `table` key as required. It is `#[serde(default)] Option<String>` (`types.rs:144-148`) and the editor auto-detects `[project]` then `[tool.poetry]` (`src/manifest/pyproject.rs:43-65`).
 
-Repeat sweep by the writer found one extra instance **outside** the allowed surfaces: the clap help text at `src/cli/args/plugin.rs:48` repeats F2 (*"Resolve and print the plan without downloading or writing anything"*). The `cutver-docs-voice` skill excludes CLI help text from its activation contract, so it is recorded as a follow-up rather than fixed in this docs-only change.
+## Verification
+
+Six passes, the last two read-only over the frozen tree. Every claim fixed in this branch carries the `path:line` that decides it in the sections above. The final pass re-verified every sentence the branch itself introduced (a regression check is where the `strategy` class surfaced) and reported the surface free of known false claims after the final commit.
 
 ## Residual
 
-- `docs/internals/references.md` (424 lines) stays over the ceiling; tracked as #159.
-- `README.md` stays at 176 lines by explicit user decision.
+**Not verified — inference from source, not execution:**
+- No test, build, lint or binary was run. Every verdict is static (`grep`/read). Runtime behaviour of plugin dispatch, atomic writes and the CLI parser was read from source, not exercised.
+- The `plugin`-enabled build path was not exercised.
+- Out-of-repo artifacts: `cutver/setup@v1` and `cutver/release@v1` sources were inspected earlier in the branch (`action.yml` at `v1`, `release/src/main.ts`) but not the full action repositories; container tags were confirmed with `skopeo list-tags`, not by pulling an image.
+- `cutver-pdk` publication state (HTTP 403 when checked) — the RFC Status says so explicitly.
+
+**Accepted debt:**
+- `docs/internals/references.md` at 424 lines, over the 200 ceiling — pre-existing, tracked as #159. It is 424 on `main` too: this branch moved the `plugin` kind row in without growth.
+- `README.md` at 176 lines by explicit user decision.
+- `docs/templates/release-notes.md` documents 8 of the ~35 `ReleaseContext` fields — an omission, not a false statement.
+
+**Follow-ups outside this docs-only change (issues opened):**
+- `cutver.toml` accepts unknown keys silently (no `deny_unknown_fields`) — the root cause behind both the `[workspace]` phantom and the inert `hooks.pre_bump`.
+- `[hooks] pre_bump` is parsed and never executed; only `hooks.post_bump` is read (`pipeline.rs:279`).
+- Two `--help` strings promise behaviour the code does not implement: `src/cli/args/commands.rs:46` (`--first-release`) and `src/cli/args/plugin.rs:48` (`plugin add --dry-run`).

@@ -8,7 +8,7 @@ Monorepos combine multiple ecosystems: Rust crates, Node/TypeScript apps, Tauri 
 
 ## One Shared Version, Many Manifests
 
-`cutver` has no independent per-package release mode. There is no `[workspace]` table, no `--package` flag, and no path-filtered commit logic; the binary reads none of them. Declaring a `[workspace]` table now fails the load, because unknown configuration keys are a hard error ([configuration reference](../reference/configuration.md)). Independent package releases are Phase 2 work, recorded in [the design document](../internals/design.md).
+`cutver` has no independent per-package release mode. There is no `[workspace]` table, no `--package` flag, and no path-filtered commit logic; the binary reads none of them. Declaring a `[workspace]` table now fails the load, because unknown configuration keys are a hard error ([configuration reference](../reference/configuration.md)). Independent package releases are deferred rather than planned: [the workspace releases decision record](../rfcs/0002-workspace-releases.md) holds the decision, its reasons and the condition that would reopen it.
 
 What a monorepo release is: one shared version across every declared `[[manifest]]`. One bump writes that version into all of them and cuts one shared tag. `primary = true` (or `[version] current_source`) selects the manifest that supplies the current version; when neither is set, the first declared manifest is the source.
 

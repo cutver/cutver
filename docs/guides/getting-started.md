@@ -112,7 +112,7 @@ cutver bump auto
 6. Git Actions   ──▶ Create release commit and SemVer tag (optional upstream push)
 ```
 
-> **Rollback Guarantee**: If any step in the pipeline fails, `cutver` restores original manifest contents from memory, unstages git index changes, and leaves your repository clean.
+> **Rollback Guarantee**: If a step fails **before the release commit**, `cutver` restores the original manifest contents from memory and unstages its own git index changes, leaving the workspace as it was. The commit, the tag and the publish come after that point and are not rolled back.
 
 ---
 

@@ -269,7 +269,7 @@ floating_major_tag = true # default: false
 ```
 
 When `floating_major_tag = true`:
-1. **Tag Filtering in `git::latest_tag`**: Floating tags matching `^[vV]?[0-9]+$` are ignored when resolving the previous release tag, ensuring commit distance and conventional bumping always resolve from full 3-part SemVer tags (`vX.Y.Z`).
+1. **Tag Filtering in `git::latest_tag`**: Floating tags matching `^[vV]?[0-9]+$` are ignored when resolving the previous release tag, so commit distance and conventional bumping resolve from a version tag rather than from the floating major tag. Other tags stay eligible: a two-part or non-SemVer tag can be selected when it is the latest non-floating one.
 2. **Drift Immunity in `cutver doctor`**: `cutver doctor --check-changelog` automatically ignores floating major tags so they don't produce false changelog drift warnings when git tags are compared against `CHANGELOG.md`.
 3. **Automated Lifecycle**: During `cutver bump`, `cutver` creates or force-updates the local floating tag `vX` pointing to the release commit. If `publish.push = true`, the floating tag is pushed with a force refspec (`+refs/tags/vX:refs/tags/vX`) alongside the release tag.
 
@@ -413,7 +413,12 @@ cutver changelog show <VERSION> [OPTIONS]
 2. **Preflight Phase**: Executes verification steps; aborts cleanly on error or timeout.
 3. **Phase 1 (Compute)**: In-memory evaluation. All new manifest contents and changelog entries are calculated in memory. No disk mutation occurs.
 4. **Phase 2 (Apply)**: Atomic write. Files are written to unique temporary files (`.{name}.cutver-tmp-{pid}-{seq}`), flushed with `fsync` (`sync_all()`), and renamed over the target files.
-5. **Rollback Guarantee**: If any disk write, hook execution, or git command fails:
+5. **Rollback Guarantee**: If a disk write, hook execution, or git command fails **before the release
+   commit**, best-effort rollback restores the workspace:
    - Previously modified manifests are restored to their original in-memory snapshots.
    - Any staged Git index changes made by `cutver` are unstaged (`git reset HEAD`).
    - Temporary files are unlinked via RAII guard cleanup.
+
+   The guarantee ends at `transaction.commit()`: the release commit, the tag and the publish come after
+   it, and a failure there is reported rather than rolled back. The restore itself is best-effort — a
+   restore failure cannot be propagated out of the drop guard.

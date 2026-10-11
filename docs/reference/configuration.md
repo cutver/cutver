@@ -133,9 +133,8 @@ Declares one target file to update. Multiple `[[manifest]]` blocks can be specif
 | `mode` | `string` | `"conventional"` | `"conventional"` groups entries by commit type. A template is used whenever `template` or `template_file` is set, or when `mode = "template"`. |
 | `template_file` | `string` | `None` | Template file, used whenever it is set regardless of `mode`. With `mode = "template"` and no template set, `entry_template` is rendered instead. |
 
-The remaining keys (`entry_template`, `template`, `full_template`, `header_template`, `include_scopes`,
-`fallback_entry`, `ignore_release_commits`, `ignore_scopes`) are accepted but not shown in the template
-above.
+All of these are accepted. Only `template` and `plugin` are absent from the full configuration template
+above — `template` is an inline template string, an alternative to `template_file`.
 
 ### `[preflight]`, `[git]`, `[hooks]`, & `[publish]`
 

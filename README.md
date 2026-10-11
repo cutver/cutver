@@ -96,8 +96,9 @@ cutver bump auto             # compute in memory, apply atomically
 ```
 
 Every mutating command validates in memory first and then applies atomically. Comments, key order
-and formatting survive the diff, and a failed step rolls the workspace back rather than leaving it
-half-released.
+and formatting survive the diff, and a failure before the release commit rolls the workspace back
+rather than leaving it half-mutated. The commit is the point of no return: the tag and the publish
+follow it and are reported, not undone.
 
 ## Plugins, First-Class
 

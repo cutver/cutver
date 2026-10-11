@@ -51,9 +51,31 @@ update), then the workspace RFC, then the cache/proxy RFC.
 
 | Task | Commit | Note |
 | --- | --- | --- |
-| — | — | — |
+| — | `7fff633` | `docs(odd): open the design document evolution feature` |
+| 1 | explorer | Architecture map plus the roadmap audit; it uncovered three false claims outside this document |
+| 3 | `184e5d3` | `docs(internals): evolve the design document with explicit capability status` — `design.md` 170 -> 180, plus the two reference fixes |
+
+## Claims the audit uncovered (fixed here because they are the same class)
+
+| Claim | Truth | Where |
+| --- | --- | --- |
+| `require_branch` accepts a list | The type is `Option<String>` — one branch | `configuration.md:77`, `:163`, and the design spec |
+| The Cargo editor preserves workspace inheritance and updates `[workspace.package] version` | `src/manifest/cargo_toml.rs:11,27` reads and writes `package.version` only; a Cargo workspace with `version.workspace = true` fails with `FieldNotFound("package.version")` | `manifests.md:15`, `:35`, `design.md:123` |
+
+`design.md` contradicted itself on the second one — the kind table asserted the support while the roadmap listed it as Phase 2. The rewrite makes that impossible by construction: the roadmap states status and nothing else in the document asserts an unshipped capability.
+
+## Roadmap classifications (the reviewable artifact)
+
+Implemented: canonical `cutver.toml`; the primary-manifest convention; Conventional Commits and `bump auto`; structured changelog categorization; the `post_bump` and `[publish]` hooks; `cutver init`; `doctor --check-changelog`; the Pi release skill, shipped as `cutver-release` (the roadmap called it `release-creator`).
+
+Partial: `doctor --fix` — the checks run, the flag does not exist.
+
+Planned: `glob` in `[[manifest]]`; Cargo `[workspace.package]` and `version.workspace = true`; independent workspace mode; internal workspace dependency cascade; pre-release channels.
+
+External: the GitHub Actions step outputs, emitted by the `cutver/release@v1` action rather than by this tree.
 
 ## Residual
 
+- `design.md` is 180 lines: inside the 200 ceiling, above the 150 target. The rewrite traded length for the plugin section the document never had; trimming it further means moving the module layout to its own page, which is available as a follow-up but not done here.
 - `[workspace]`, `glob` in `[[manifest]]` and Cargo workspace inheritance stay unimplemented and marked Planned until the RFC lands.
 - Until #193 is fixed, a config declaring a key this tree does not know is still accepted silently, which is how the previous drift stayed invisible.

@@ -39,6 +39,8 @@ Plugin support ships as its own artifact, so most users never build from source.
 | :--- | :--- | :--- |
 | Lean (default) | `cargo install cutver` | ~1.25 MB compressed, no `plugin` command, no plugin runtime. |
 | Plugin-enabled archive | `cutver-plugins-<version>-<slug>` or the `:plugins` image | ~5 MB compressed, `plugin` command and the WebAssembly runtime. |
+| Plugin-enabled, Homebrew | `brew install Row0902/tap/cutver-plugins` | Same as above; installs the `cutver` binary. |
+| Plugin-enabled, Scoop | `scoop bucket add row https://github.com/Row0902/scoop-bucket && scoop install cutver-plugins` | Same as above, on Windows. |
 | Plugin-enabled, pre-artifact versions | `cargo install cutver --features plugins` | Same build, compiled locally. |
 
 Both failure modes name the remedy, so a lean binary is never a dead end: `cutver plugin` fails closed

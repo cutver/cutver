@@ -475,6 +475,25 @@ jobs:
             --bundle dist/SHA256SUMS.bundle \
             dist/SHA256SUMS
 
+      - name: Generate release bot token
+        id: release-token
+        if: env.CUTVER_APP_ID != '' && env.CUTVER_APP_PRIVATE_KEY != ''
+        continue-on-error: true
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.CUTVER_APP_ID }}
+          private-key: ${{ secrets.CUTVER_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+        env:
+          CUTVER_APP_ID: ${{ secrets.CUTVER_APP_ID }}
+          CUTVER_APP_PRIVATE_KEY: ${{ secrets.CUTVER_APP_PRIVATE_KEY }}
+
+      - name: Warn when the release cannot be attributed to the bot
+        if: steps.release-token.outputs.token == ''
+        run: |
+          echo "::warning::the cutver-release app token is unavailable, so this release will be published as github-actions[bot]. Check the CUTVER_APP_ID / CUTVER_APP_PRIVATE_KEY secrets and that the app is installed on ${{ github.repository }} with contents:write."
+
       - name: Create release and upload binaries
         uses: softprops/action-gh-release@v3
         with:
@@ -482,6 +501,7 @@ jobs:
           name: Release ${{ needs.version.outputs.tag }}
           body_path: RELEASE_NOTES.md
           files: dist/*
+          token: ${{ steps.release-token.outputs.token || secrets.GITHUB_TOKEN }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

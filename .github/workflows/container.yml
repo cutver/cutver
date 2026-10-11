@@ -97,6 +97,11 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          # `docker/metadata-action` adds a `latest` tag by itself on semver tag
+          # events. The lean job owns `latest`; without this the plugin-enabled
+          # image raced it and won, so the default tag pulled the plugin stack.
+          flavor: |
+            latest=false
           tags: |
             type=semver,pattern={{version}}-plugins
             type=semver,pattern={{major}}.{{minor}}-plugins

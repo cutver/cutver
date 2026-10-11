@@ -120,7 +120,7 @@ Declares one target file to update. Multiple `[[manifest]]` blocks can be specif
 | `kind` | `string` | Yes | Parser kind: `"cargo-package"`, `"json"`, `"pyproject"`, `"gradle"`, `"regex"`, or `"plugin"`. |
 | `primary` | `bool` | No | When `true`, designates this manifest as primary source of truth. |
 | `field` | `string` | For `json` | Dotted field path to version string (e.g. `"version"`). Required for `json`. |
-| `table` | `string` | For `pyproject` | TOML table holding version: `"project"` (PEP 621) or `"tool.poetry"`. |
+| `table` | `string` | No | For `pyproject`: TOML table holding the version (`"project"` for PEP 621, `"tool.poetry"` for Poetry). Auto-detected when omitted. |
 | `version_name_field` | `string` | For `gradle` | Field name updated to target SemVer string. Required for `gradle`. |
 | `version_code_field` | `string` | For `gradle` | Integer field name incremented on every bump. Required for `gradle`. |
 | `pattern` | `string` | For `regex` | Regular expression capturing the version substring. |

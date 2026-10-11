@@ -1,6 +1,6 @@
 # Cutver Technical Reference
 
-This document provides the complete technical specification for `cutver`, including configuration schema (`cutver.toml`), manifest editors, CLI commands, lifecycle hooks, preflight process handling, and safety guarantees.
+This document provides a long-form technical specification for `cutver`, including configuration schema (`cutver.toml`), manifest editors, CLI commands, lifecycle hooks, preflight process handling, and safety guarantees. The [modular reference pages](../reference/configuration.md) are the canonical version of this material.
 
 ---
 

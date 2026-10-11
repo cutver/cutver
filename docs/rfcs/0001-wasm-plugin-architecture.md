@@ -17,7 +17,7 @@ Transform Cutver into an extensible release microkernel by introducing the **Uni
 Cutver guarantees surgical, atomic release mutations across diverse package ecosystems. Decoupling language-specific formats and external integrations into a microkernel yields key architectural benefits:
 - **Ecosystem Decoupling**: Manifests (`Cargo.toml`, `package.json`, `pyproject.toml`) become built-in adapters adhering to the same contract as third-party formats (Helm `Chart.yaml`, Zig, `.csproj`).
 - **Zero Lock-in Dual Runtime**: Teams choose between sandboxed WebAssembly (safe, portable, zero-dependency) or native executables/scripts without rewriting workflows.
-- **Fail-Closed Safety**: In accordance with [Cutver Architectural Contract](../../CONTRACT.md) (Pillar I), plugin compute actions run in-memory during preflight (`on_pre_bump`); failure aborts the pipeline before a single byte touches disk. Any post-mutation failure triggers the `MutationTransaction` RAII drop-guard rollback.
+- **Fail-Closed Safety**: In accordance with [Cutver Architectural Contract](../../CONTRACT.md) (Pillar I), plugin compute actions run in-memory during preflight (`on_pre_bump`); failure aborts the pipeline before a single byte touches disk. A post-mutation failure **before the release commit** triggers the `MutationTransaction` RAII drop-guard rollback; the commit, the tag and the publish come after that point and are not rolled back.
 
 ---
 

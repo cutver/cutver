@@ -101,13 +101,18 @@ capabilities = ["changelog.v1"]
 | Key | Meaning |
 | :--- | :--- |
 | `runtime` | Always `wasm` for an installed plugin: the registry only publishes `.wasm` artifacts. |
-| `source` | Artifact file name inside the cache, `<name>-<version>.wasm`. Never an absolute path. |
-| `hash` | The registry's SHA-256, re-verified on every load. |
+| `source` | Artifact file name inside the cache, `<name>-<version>.wasm` as `add` writes it. A hand-written entry may point at a local file instead, which is read in place and never deleted. |
+| `hash` | The registry's SHA-256, re-verified on every load **when present**. `add` always writes it; an entry written by hand without it gives up the load-time check. |
 | `capabilities` | What the plugin may do. Validated against the canonical set; an unknown value fails closed. |
 | `events` | Lifecycle events this plugin handles. Empty means **all** of them. |
 | `manifest_match` | Manifest globs this plugin is offered. Empty means **none**. |
 | `permissions` | `network`, `env` and `filesystem` grants. A plugin has zero authority by default. |
 | `timeout_seconds` | Execution bound for the plugin call. |
+
+> **A `changelog.v1` plugin only runs when `[changelog] format = "plugin"`.** With the default
+> `keep-a-changelog` the built-in renderer writes the notes and the installed plugin stays idle —
+> `plugin list` still reports it installed and digest-matched. Name the plugin explicitly with
+> `[changelog] plugin = "<name>"` when more than one declares `changelog.v1`.
 
 ## Trust Model: Two Gates, One Digest
 
@@ -115,11 +120,13 @@ capabilities = ["changelog.v1"]
    *before* the artifact reaches its final cache name. A mismatch leaves no cache file and no config
    change.
 2. **Load time.** The loader re-verifies the cached file against the `hash` in `cutver.toml` on every
-   load, so a tampered cache is caught even though the digest was already checked once.
+   load, so a tampered cache is caught even though the digest was already checked once. This gate is
+   automatic when `hash` is present — which is what `add` always writes — and absent when an entry
+   declares no `hash`.
 
-No flag and no code path skips verification: there is no `--insecure` and no "continue anyway". The
-registry index itself is `https`-only on purpose, because the index is what distributes the digest —
-TLS there is trust, not just transport.
+No flag skips the install-time gate: there is no `--insecure` and no "continue anyway", and the digest
+is checked before the artifact enters the cache. The registry index itself is `https`-only on purpose,
+because the index is what distributes the digest — TLS there is trust, not just transport.
 
 ## Cache Location
 

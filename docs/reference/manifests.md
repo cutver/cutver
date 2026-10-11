@@ -4,7 +4,7 @@ Format preservation across multi-language manifest formats.
 
 Most release tools re-serialize entire files using generic object serializers. This strips comments, alters indentation, reflows multiline arrays, and rearranges dictionary keys, creating noisy pull requests.
 
-`cutver` guarantees **surgical diffs**: exactly one line changed per version update, with all comments, whitespace, and formatting preserved.
+`cutver` guarantees **surgical diffs**: for the AST and byte-span editors the diff is the version and nothing else, with comments, whitespace and formatting preserved. The Gradle editor also increments `versionCode`, and the regex editor replaces every match, so those two can touch more than one line.
 
 ---
 

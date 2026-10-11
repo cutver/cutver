@@ -96,8 +96,9 @@ cutver bump auto             # compute in memory, apply atomically
 ```
 
 Every mutating command validates in memory first and then applies atomically. Comments, key order
-and formatting survive the diff, and a failed step rolls the workspace back rather than leaving it
-half-released.
+and formatting survive the diff, and a failure before the release commit rolls the workspace back
+rather than leaving it half-mutated. The commit is the point of no return: the tag and the publish
+follow it and are reported, not undone.
 
 ## Plugins, First-Class
 
@@ -130,9 +131,10 @@ Full detail in [Installing & Managing Plugins](docs/reference/plugins.md) and th
 ## Supported Manifests
 
 Each format has its own editor, chosen for what it must preserve: comments, key order and whitespace
-survive in `Cargo.toml` and `pyproject.toml`, JSON is touched only inside the version string's byte
-span, and Gradle or any text file goes through a capture-group replacement — so the diff is the
-version and nothing else. Precompiled Cosign-signed binaries cover 8 targets — Linux glibc and
+survive in `Cargo.toml` and `pyproject.toml`, and JSON is touched only inside the version string's byte
+span. Gradle and arbitrary text files go through a capture-group replacement, which can touch more than
+the version — Gradle also increments `versionCode`, and every regex match is replaced. Precompiled
+Cosign-signed binaries cover 8 targets — Linux glibc and
 musl on x86_64 and ARM64, macOS Intel and Apple Silicon, Windows x86_64 and ARM64 — plus
 plugin-enabled variants of each, on the [releases page](https://github.com/cutver/cutver/releases).
 

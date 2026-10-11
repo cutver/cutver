@@ -22,7 +22,7 @@ Release behavior is configured in `cutver.toml`, which discovery walks up to fin
 
 [version]
 current_source = "Cargo.toml"     # Optional: explicit path to primary manifest
-strategy = "conventional"         # "conventional" or "manual"
+strategy = "conventional"         # "conventional", "manual", or "plugin"
 
 [[manifest]]
 path = "Cargo.toml"
@@ -52,7 +52,7 @@ pattern = 'release/v\d+\.\d+\.\d+'
 replacement = 'release/{{version}}'
 
 [preflight]
-default_timeout = 600             # Global timeout in seconds (default: 600)
+default_timeout = 300             # Optional; no default is applied. `cutver init` scaffolds 300
 tests = "cargo test"
 lint  = { command = "cargo clippy -- -D warnings", timeout = 180 }
 
@@ -96,8 +96,17 @@ commands = [
 
 | Table | Key | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
-| `[version]` | `strategy` | `string` | `"conventional"` | Strategy for bumps: `"conventional"` (commits) or `"manual"`. |
+| `[version]` | `strategy` | `string` | `"manual"` | Bump strategy: `"manual"`, `"conventional"` (commits), or `"plugin"`. |
+| `[version]` | `plugin` | `string` | `None` | With `strategy = "plugin"`, names the `versioning.v1` plugin; omit it when exactly one declares that capability. |
 | `[version]` | `current_source` | `string` | `None` | Path to primary manifest. If omitted, first `[[manifest]]` is used. |
+
+---
+
+### `[project]`
+
+| Key | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `name` | `string` | `None` | Optional project name. Parsed, but the release pipeline does not consume it today. |
 
 ---
 
@@ -110,10 +119,10 @@ Declares one target file to update. Multiple `[[manifest]]` blocks can be specif
 | `path` | `string` | Yes | Path to the manifest file relative to `cutver.toml`. |
 | `kind` | `string` | Yes | Parser kind: `"cargo-package"`, `"json"`, `"pyproject"`, `"gradle"`, `"regex"`, or `"plugin"`. |
 | `primary` | `bool` | No | When `true`, designates this manifest as primary source of truth. |
-| `field` | `string` | For `json` | Dotted field path to version string (e.g. `"version"`). Default: `"version"`. |
+| `field` | `string` | For `json` | Dotted field path to version string (e.g. `"version"`). Required for `json`. |
 | `table` | `string` | For `pyproject` | TOML table holding version: `"project"` (PEP 621) or `"tool.poetry"`. |
-| `version_name_field` | `string` | For `gradle` | Field name updated to target SemVer string. Default: `"versionName"`. |
-| `version_code_field` | `string` | For `gradle` | Integer field name incremented on every bump. Default: `"versionCode"`. |
+| `version_name_field` | `string` | For `gradle` | Field name updated to target SemVer string. Required for `gradle`. |
+| `version_code_field` | `string` | For `gradle` | Integer field name incremented on every bump. Required for `gradle`. |
 | `pattern` | `string` | For `regex` | Regular expression capturing the version substring. |
 | `replacement` | `string` | For `regex` | Replacement template string; `{{version}}` is substituted. |
 | `plugin` | `string` | No | For `kind = "plugin"` only: names the `manifest.v1` plugin to use. When omitted, `cutver` matches the declared path against the plugins' `manifest_match` globs. Requires a plugin-enabled build. |
@@ -129,6 +138,14 @@ Declares one target file to update. Multiple `[[manifest]]` blocks can be specif
 | `plugin` | `string` | `None` | With `format = "plugin"`, names the plugin to use. Omit it when exactly one declares `changelog.v1`. |
 | `mode` | `string` | `"conventional"` | `"conventional"` groups entries by commit type. A template is used whenever `template` or `template_file` is set, or when `mode = "template"`. |
 | `template_file` | `string` | `None` | Template file, used when set and `template` is unset; when both are set, `template` wins and this is ignored. A template is used whenever either is set, or when `mode = "template"`; with `mode = "template"` and neither set, `entry_template` is rendered. |
+| `entry_template` | `string` | `""` | Entry rendered when `mode = "template"` and neither `template` nor `template_file` is set. |
+| `template` | `string` | `None` | Inline MiniJinja template string; takes precedence over `template_file`. |
+| `full_template` | `bool` | `false` | When `true`, the template controls the release heading instead of the default prefix. |
+| `header_template` | `string` | `None` | MiniJinja template evaluated for the release heading. |
+| `include_scopes` | `bool` | `true` | Prefix changelog entries with `**scope**:`. |
+| `fallback_entry` | `string` | `"Maintenance and updates."` | Bullet rendered when no commits match a category. |
+| `ignore_release_commits` | `bool` | `true` | Exclude self-referential release commits from the changelog. |
+| `ignore_scopes` | `list<string>` | `[]` | Exclude commits whose scope matches one of these values. |
 
 All of these are accepted. Only `template` and `plugin` are absent from the full configuration template
 above — `template` is an inline template string, an alternative to `template_file`.
@@ -137,23 +154,25 @@ above — `template` is an inline template string, an alternative to `template_f
 
 | Table | Key | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
-| `[preflight]` | `default_timeout` | `integer` | `600` | Global timeout in seconds for steps without an explicit timeout. |
+| `[preflight]` | `default_timeout` | `integer` | `None` | Optional timeout in seconds applied to steps without their own; `cutver init` scaffolds `300`. |
 | `[preflight]` | `<step_name>` | `string \| table` | `None` | Command string or `{ command = "...", timeout = <sec> }`. |
 | `[git]` | `tag_prefix` | `string` | `"v"` | Tag prefix (e.g. `"v"` -> `v1.2.0`). |
 | `[git]` | `floating_major_tag` | `bool` | `false` | Automatically maintain floating major tag (e.g. `v1`). |
 | `[git]` | `commit_message` | `string` | `"chore(release): v{version}"` | Release commit message template. |
 | `[git]` | `require_clean_tree` | `bool` | `true` | Abort if uncommitted changes exist. |
 | `[git]` | `require_branch` | `string \| list` | `None` | Branch or list of branches allowed to cut releases. |
+| `[hooks]` | `pre_bump` | `string` | `None` | Parsed, but the release pipeline does not execute it today; only `post_bump` runs. |
 | `[hooks]` | `post_bump` | `string` | `None` | Shell command executed after manifest edits, before git staging. |
 | `[publish]` | `push` | `bool` | `false` | When `true`, runs `git push origin <branch> --tags`. |
 | `[publish]` | `commands` | `list<string>` | `[]` | Shell commands executed post-tag/post-push. |
+| `[publish]` | `default_timeout` | `integer` | `None` | Optional timeout in seconds applied to each publish command. |
 
 ---
 
 ### `[plugins.<name>]`
 
 Each plugin gets its own table, written by `cutver plugin add` rather than by hand. The keys
-(`runtime`, `source`, `hash`, `capabilities`, `events`, `manifest_match`, `permissions`,
+(`runtime`, `source`, `hash`, `command`, `capabilities`, `events`, `manifest_match`, `permissions`,
 `timeout_seconds`) and the two digest gates are documented in the
 [plugin reference](plugins.md).
 

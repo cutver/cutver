@@ -45,8 +45,8 @@ kind = "pyproject"                # PEP 621 (uv, Hatch, PDM, Flit, Maturin, setu
 [[manifest]]
 path = "android/app/build.gradle.kts"
 kind = "gradle"
-version_name_field = "versionName" # String field updated to new SemVer (default: "versionName")
-version_code_field = "versionCode" # Integer field incremented on each bump (default: "versionCode")
+version_name_field = "versionName" # String field updated to new SemVer (required)
+version_code_field = "versionCode" # Integer field incremented on each bump (required)
 
 [[manifest]]
 path = "version.txt"
@@ -108,7 +108,7 @@ For the AST and byte-span editors the diff is the version and nothing else; the 
 | :--- | :--- | :--- | :--- |
 | `cargo-package` | `Cargo.toml` | `toml_edit` AST | Preserves comments, ordering, formatting, and tables. |
 | `pyproject` | `pyproject.toml` | `toml_edit` AST | Native PEP 621 (`[project] version`) and Poetry (`[tool.poetry] version`). Preserves comments, whitespace, and tables. |
-| `json` | `*.json` | Custom byte-span scanner | Replaces **only** the string slice of the version value. Preserves key order, exact indentation, comments (JSONC), and newlines. |
+| `json` | `*.json` | Custom byte-span scanner | Replaces **only** the string slice of the version value. Preserves key order, exact indentation, and newlines; input must be strict JSON, so a comment-bearing JSONC file fails to parse. |
 | `gradle` | `build.gradle`, `*.gradle.kts` | Regex byte replacement | Updates `versionName` string and increments `versionCode` integer without altering Gradle DSL structure. |
 | `regex` | Any arbitrary text file | Regular expression capture | Replaces match with `replacement`, substituting `{{version}}` with the target SemVer string. |
 

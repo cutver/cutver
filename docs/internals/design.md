@@ -44,7 +44,7 @@ crates.io and GitHub on the day of creation.
 ```text
 cutver bump <patch|minor|major|auto> [--dry-run] [--skip-preflight <step>...] [-c <path>]
 cutver doctor                                  # validate cutver.toml, report drift & unmapped packages
-cutver notes                                   # output release notes for current/target release
+cutver changelog latest [--include-header] [--template <path>] [--json]   # output release notes for the current release
 cutver init [--update]                         # auto-detect manifests and generate/update cutver.toml
 ```
 
@@ -62,7 +62,7 @@ Invocation is intentionally terse: `cutver bump minor` or `cutver bump auto`.
 # cutver.toml
 
 [version]
-# Calculation strategy: "manual" (CLI argument) or "conventional" (git commit inspection)
+# Calculation strategy: "manual" (CLI argument), "conventional" (git commit inspection), or "plugin"
 strategy = "conventional"
 
 # The FIRST declared manifest is the canonical source of truth by convention,
@@ -119,11 +119,12 @@ commands = [
 
 | Kind | Format | Mechanism |
 | :--- | :--- | :--- |
-| `json` | `*.json` | format-preserving targeted edit: `serde_json` for reads, byte-span locator for writes |
-| `toml` | generic TOML | `toml_edit` — format- and comment-preserving |
-| `cargo-package` | `Cargo.toml` | `toml_edit` on `[package] version` or `[workspace.package] version` |
+| `json` | `*.json` | format-preserving targeted edit: `serde_json` for reads, byte-span locator for writes. Strict JSON only; JSONC comments fail to parse. |
+| `cargo-package` | `Cargo.toml` | `toml_edit` on `[package] version` or `[workspace.package] version`; `toml` is an alias. |
+| `pyproject` | `pyproject.toml` | `toml_edit` on PEP 621 `[project] version` or `[tool.poetry] version`; `pyproject-toml` is an alias. |
 | `gradle` | `build.gradle.kts` | targeted `versionName` (string) + `versionCode` (int) edit |
 | `regex` | anything | escape hatch: capture group replacement for exotic formats |
+| `plugin` | any `manifest.v1` file | delegates reads and writes to an installed plugin. |
 
 ## Module Layout
 

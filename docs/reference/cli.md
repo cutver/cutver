@@ -96,10 +96,10 @@ Utilities to extract and inspect release notes from `CHANGELOG.md`:
 
 ```bash
 # Print latest release notes to stdout (skipping [Unreleased])
-cutver changelog latest [-H/--include-header] [--template <PATH>]
+cutver changelog latest [-H/--include-header] [--template <PATH>] [--json]
 
 # Print release notes for an exact historical version
-cutver changelog show <VERSION> [-H/--include-header] [--template <PATH>]
+cutver changelog show <VERSION> [-H/--include-header] [--template <PATH>] [--json]
 
 # Dispatch changelog or compare view in default browser
 cutver changelog open

@@ -113,6 +113,7 @@ post_bump = "cargo check --workspace && pnpm install --lockfile-only"
 - `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, `bun.lock`, `bun.lockb`
 - `uv.lock`, `poetry.lock`, `Pipfile.lock`, `pdm.lock`
 - `gradle.lockfile`
+- `composer.lock`
 
 Any other file modified by hook scripts remains unstaged in your working tree, guaranteeing that release commits remain surgical and clean.
 

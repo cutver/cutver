@@ -108,6 +108,7 @@ capabilities = ["changelog.v1"]
 | `manifest_match` | Manifest globs this plugin is offered. Empty means **none**. |
 | `permissions` | `network`, `env` and `filesystem` grants. A plugin has zero authority by default. |
 | `timeout_seconds` | Execution bound for the plugin call. |
+| `command` | Executable for a `runtime = "process"` plugin; required and non-empty there. Unused by `wasm`. |
 
 > **A `changelog.v1` plugin only runs when `[changelog] format = "plugin"`.** With the default
 > `keep-a-changelog` the built-in renderer writes the notes and the installed plugin stays idle —

@@ -6,7 +6,7 @@ This document provides the complete technical specification for `cutver`, includ
 
 ## Configuration File (`cutver.toml`)
 
-`cutver` is configured declaratively via `cutver.toml` located at the root of your project or repository.
+`cutver` is configured declaratively via a `cutver.toml` that discovery walks up to find from the working directory.
 
 ### Discovery Algorithm
 

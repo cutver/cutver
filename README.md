@@ -110,7 +110,7 @@ cutver plugin remove github-releases # surgical removal, artifact included
 
 `add` reads the [Cutver registry](https://github.com/cutver/registry), downloads the release
 artifact, verifies its SHA-256 **before** the file enters the cache, and writes the declaration for
-you. From then on the loader re-verifies that digest on **every** load. The install gate has no
+you. From then on the loader re-verifies that digest on **every** load of a plugin `add` installed. The install gate has no
 bypass — there is no `--insecure` flag and no fallback to whatever the URL returned — and `add`
 always writes the `hash` that the load gate checks.
 

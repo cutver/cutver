@@ -8,7 +8,7 @@ Official GitHub Actions maintained by the `cutver` project provide zero-boilerpl
 
 ## Official GitHub Actions
 
-- **[`cutver/setup@v1`](https://github.com/cutver/setup)**: Installs the official, Cosign-verified `cutver` binary matching the runner platform (`ubuntu-latest`, `macos-latest`, `windows-latest`) directly into `$PATH`.
+- **[`cutver/setup@v1`](https://github.com/cutver/setup)**: Installs the official `cutver` binary matching the runner platform (`ubuntu-latest`, `macos-latest`, `windows-latest`) directly into `$PATH`; the action downloads the release archive with no checksum or signature check.
 - **[`cutver/release@v1`](https://github.com/cutver/release)**: Executes the release lifecycle, runs preflight verification, handles conventional SemVer bumps, and sets step outputs.
 
 ---
@@ -58,7 +58,7 @@ jobs:
         with:
           tag_name: ${{ steps.release.outputs.tag }}
           name: ${{ steps.release.outputs.tag }}
-          body: ${{ steps.release.outputs.notes }}
+          body: ${{ steps.release.outputs.release-notes }}
 ```
 
 ---
@@ -72,9 +72,8 @@ When `cutver/release` executes, it sets step outputs for downstream jobs:
 | `released` | `string` (`"true"` \| `"false"`) | Whether a new release was cut. |
 | `version` | `string` | Target SemVer version string (e.g. `1.2.0`). |
 | `tag` | `string` | Tag name created (e.g. `v1.2.0`). |
-| `previous_version` | `string` | Prior version before bump. |
-| `previous_tag` | `string` | Prior tag before bump. |
-| `notes` | `string` | Rendered release notes markdown. |
+| `notes-path` | `string` | Path to the generated release notes file. |
+| `release-notes` | `string` | Raw markdown of the latest changelog entry. |
 
 ---
 

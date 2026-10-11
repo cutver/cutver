@@ -24,7 +24,7 @@ it, and writes the configuration entry that makes `cutver` load it.
    ```bash
    cutver plugin list
    ```
-4. Preview the next install without writing or downloading:
+4. Preview the next install without writing or downloading the artifact (the registry entry is still resolved):
    ```bash
    cutver plugin add github-releases --dry-run
    ```
@@ -68,7 +68,7 @@ cutver plugin add <NAME> [--version <VERSION>] [--registry <BASE>] \
 | `--registry <BASE>` | Registry index base. `https` only, default `https://raw.githubusercontent.com/cutver/registry/main/plugins/`. |
 | `--event <EVENT>` | Lifecycle event the plugin handles. Repeatable. Required when the entry declares `lifecycle.v1`. |
 | `--manifest-match <GLOB>` | Manifest glob the plugin matches. Repeatable. Required when the entry declares `manifest.v1`. |
-| `--dry-run` | Resolves and prints version, URL, digest and the config diff. Downloads nothing, writes nothing. |
+| `--dry-run` | Resolves the registry entry and prints version, URL, digest and the config diff. Downloads no artifact, writes nothing. |
 | `--force` | Replaces an existing `[plugins.<name>]` declaration instead of failing closed. |
 
 `--event` and `--manifest-match` are not cosmetic. An empty `events` list matches **every** lifecycle
@@ -108,6 +108,7 @@ capabilities = ["changelog.v1"]
 | `manifest_match` | Manifest globs this plugin is offered. Empty means **none**. |
 | `permissions` | `network`, `env` and `filesystem` grants. A plugin has zero authority by default. |
 | `timeout_seconds` | Execution bound for the plugin call. |
+| `command` | Executable for a `runtime = "process"` plugin; required and non-empty there. Unused by `wasm`. |
 
 > **A `changelog.v1` plugin only runs when `[changelog] format = "plugin"`.** With the default
 > `keep-a-changelog` the built-in renderer writes the notes and the installed plugin stays idle —

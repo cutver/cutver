@@ -52,7 +52,7 @@ orchestrates; the behaviour is pluggable.
 | Capability | What a plugin takes over |
 | :--- | :--- |
 | `manifest.v1` | Read and write a manifest format the core does not know. |
-| `lifecycle.v1` | Run on `pre_bump`, `post_bump` and `post_release`. |
+| `lifecycle.v1` | Run on `on_pre_bump`, `on_post_bump` and `on_post_release`. |
 | `changelog.v1` | Render the release notes. |
 | `versioning.v1` | Decide the next version from your commits. |
 
@@ -110,7 +110,7 @@ cutver plugin remove github-releases # surgical removal, artifact included
 
 `add` reads the [Cutver registry](https://github.com/cutver/registry), downloads the release
 artifact, verifies its SHA-256 **before** the file enters the cache, and writes the declaration for
-you. From then on the loader re-verifies that digest on **every** load. The install gate has no
+you. From then on the loader re-verifies that digest on **every** load of a plugin `add` installed. The install gate has no
 bypass — there is no `--insecure` flag and no fallback to whatever the URL returned — and `add`
 always writes the `hash` that the load gate checks.
 

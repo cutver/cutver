@@ -140,4 +140,4 @@ timeout_seconds = 10
 
 ### Status
 
-Everything in §1–§6 is implemented and covered by tests, including a hermetic WebAssembly fixture that proves the `invoke` export path end to end. The remaining work is ecosystem tooling: a published plugin SDK, a registry, and the first official plugins.
+Everything in §1–§6 is implemented and covered by tests, including a hermetic WebAssembly fixture that proves the `invoke` export path end to end. A registry is live: `plugin add` resolves entries from it and the index fetch lives in `src/plugin/registry/fetch.rs`. Remaining ecosystem tooling is the first official plugins; the publication state of the `cutver-pdk` SDK was not verified for this revision.

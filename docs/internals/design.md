@@ -33,18 +33,18 @@ crates.io and GitHub on the day of creation.
    - *Deterministic*: Identical Git states yield identical SemVer bumps and manifest diffs. The
      changelog entry is stamped with the date it was cut, so that part also depends on the day.
    - *Organic*: The tool scales naturally from a single-file crate to a polyglot monorepo without friction.
-4. **Safe Git by default.** Require a clean working tree and selective
-   staging of only the files `cutver` itself modified — never `git add .`.
+4. **Safe Git by default.** Require a clean working tree and selective staging of the
+   files `cutver` itself modified, plus recognized lockfiles the `post_bump` hook regenerated — never `git add .`.
 5. **Fail-fast preflight.** Run the project's declared verification commands;
    abort before any manifest mutation when any step fails.
-6. **Dry-run first.** Every mutation-capable run can be simulated end to end.
+6. **Dry-run first.** `bump` is simulated end to end with `--dry-run`; `plugin add --dry-run` prints the plan and returns before the artifact download, so it also skips the install-time digest check. `init` and `plugin remove` have no such flag.
 
 ## CLI Surface
 
 ```text
 cutver bump <patch|minor|major|auto> [--dry-run] [--skip-preflight <step>...] [-c <path>]
 cutver doctor                                  # validate cutver.toml, report drift & unmapped packages
-cutver notes                                   # output release notes for current/target release
+cutver changelog latest [--include-header] [--template <path>] [--json]   # output release notes for the current release
 cutver init [--update]                         # auto-detect manifests and generate/update cutver.toml
 ```
 
@@ -62,13 +62,8 @@ Invocation is intentionally terse: `cutver bump minor` or `cutver bump auto`.
 # cutver.toml
 
 [version]
-# Calculation strategy: "manual" (CLI argument) or "conventional" (git commit inspection)
+# Only "plugin" is read (routes to a versioning.v1 plugin); "manual"/"conventional" are unread. The bump level comes from the CLI argument.
 strategy = "conventional"
-
-[workspace]
-# "unified" (all packages bump together) or "independent" (per-package lifecycle)
-mode = "unified"
-members = ["crates/*", "packages/*"]
 
 # The FIRST declared manifest is the canonical source of truth by convention,
 # unless a manifest explicitly specifies `primary = true`.
@@ -76,10 +71,6 @@ members = ["crates/*", "packages/*"]
 path = "package.json"
 kind = "json"
 field = "version"
-
-[[manifest]]
-glob = "crates/*/Cargo.toml"
-kind = "cargo-package"
 
 [[manifest]]
 path = "src-tauri/tauri.conf.json"
@@ -128,11 +119,12 @@ commands = [
 
 | Kind | Format | Mechanism |
 | :--- | :--- | :--- |
-| `json` | `*.json` | format-preserving targeted edit: `serde_json` for reads, byte-span locator for writes |
-| `toml` | generic TOML | `toml_edit` — format- and comment-preserving |
-| `cargo-package` | `Cargo.toml` | `toml_edit` on `[package] version` or `[workspace.package] version` |
+| `json` | `*.json` | format-preserving targeted edit: `serde_json` for reads, byte-span locator for writes. Strict JSON only; JSONC comments fail to parse. |
+| `cargo-package` | `Cargo.toml` | `toml_edit` on `[package] version` or `[workspace.package] version`; `toml` is an alias. |
+| `pyproject` | `pyproject.toml` | `toml_edit` on PEP 621 `[project] version` or `[tool.poetry] version`; `pyproject-toml` is an alias. |
 | `gradle` | `build.gradle.kts` | targeted `versionName` (string) + `versionCode` (int) edit |
 | `regex` | anything | escape hatch: capture group replacement for exotic formats |
+| `plugin` | any `manifest.v1` file | delegates reads and writes to an installed plugin. |
 
 ## Module Layout
 

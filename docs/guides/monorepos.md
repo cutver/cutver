@@ -6,31 +6,22 @@ Monorepos combine multiple ecosystems: Rust crates, Node/TypeScript apps, Tauri 
 
 ---
 
-## Workspace Modes
+## One Shared Version, Many Manifests
 
-`cutver` supports two monorepo release models configured under `[workspace]`:
+`cutver` has no independent per-package release mode. There is no `[workspace]` table, no `--package` flag, and no path-filtered commit logic; the binary reads none of them. A `[workspace]` table in `cutver.toml` is silently ignored. Independent package releases are Phase 2 work, recorded in [the design document](../internals/design.md).
 
-| Mode | Configuration | Release Behavior | Best Suited For |
-| :--- | :--- | :--- | :--- |
-| **Unified** | `mode = "unified"` | All packages share one synchronized version number. A single bump updates every declared manifest simultaneously with one shared tag. | Applications with paired frontend and backend, unified SDKs, tools with embedded UIs. |
-| **Independent** | `mode = "independent"` | Each package tracks its own lifecycle and version. Commits are filtered by path, generating package-prefixed tags (e.g. `core/v1.2.0`). | Multi-package library collections, microservices, mono-repos with independent release cycles. |
+What a monorepo release is: one shared version across every declared `[[manifest]]`. One bump writes that version into all of them and cuts one shared tag. `primary = true` (or `[version] current_source`) selects the manifest that supplies the current version; when neither is set, the first declared manifest is the source.
 
 ---
 
-## Polyglot Unified Workspace
+## Polyglot Monorepo Example
 
-Declare all target manifests under `[[manifest]]`. By convention, the first declared manifest serves as the primary source of truth, or you can flag one with `primary = true`.
+Declare every package's version file under `[[manifest]]`. The example below marks the Cargo manifest with `primary = true` to make it the source of truth.
 
 ```toml
 # cutver.toml
-[version]
-strategy = "conventional"
 
-[workspace]
-mode = "unified"
-members = ["crates/*", "packages/*"]
-
-# Primary manifest: source of truth for workspace version
+# Primary manifest: source of truth for the shared version
 [[manifest]]
 path = "Cargo.toml"
 kind = "cargo-package"
@@ -120,6 +111,7 @@ post_bump = "cargo check --workspace && pnpm install --lockfile-only"
 - `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, `bun.lock`, `bun.lockb`
 - `uv.lock`, `poetry.lock`, `Pipfile.lock`, `pdm.lock`
 - `gradle.lockfile`
+- `composer.lock`
 
 Any other file modified by hook scripts remains unstaged in your working tree, guaranteeing that release commits remain surgical and clean.
 

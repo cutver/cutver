@@ -12,7 +12,7 @@ Most release tools re-serialize entire files using generic object serializers. T
 
 | Kind | Target Format | Editor Implementation | What is Preserved |
 | :--- | :--- | :--- | :--- |
-| `cargo-package` | `Cargo.toml` | `toml_edit` AST | Comments, inline comments, table ordering, whitespace, and workspace inheritance. |
+| `cargo-package` | `Cargo.toml` | `toml_edit` AST | Comments, inline comments, table ordering, and whitespace around `[package] version`. |
 | `pyproject` | `pyproject.toml` | `toml_edit` AST | Native PEP 621 (`[project] version`) and Poetry (`[tool.poetry] version`). Preserves comments and custom tables. |
 | `json` | `*.json` | Byte-span scanner | Replaces **strictly** the string byte range containing the version. Key order, indentation, and newlines remain untouched; input must be strict JSON, so a comment-bearing JSONC file fails to parse. |
 | `gradle` | `build.gradle`, `*.gradle.kts` | Regex byte replacement | Updates `versionName` string and increments `versionCode` integer without altering Gradle DSL structure. |
@@ -32,7 +32,9 @@ kind = "cargo-package"
 primary = true
 ```
 
-Updates `[package] version = "..."` or `[workspace.package] version = "..."` preserving comments and structure via `toml_edit`. Produces a single-line diff:
+> **Gotcha**: only `[package] version` is read and written (`src/manifest/cargo_toml.rs:11,27`). A Cargo workspace that inherits its version — `[workspace.package] version` or `version.workspace = true` — fails with `FieldNotFound("package.version")`. Workspace awareness is planned, not implemented (see [the roadmap](../internals/design.md)).
+
+Updates `[package] version = "..."`, preserving comments and structure via `toml_edit`. Produces a single-line diff:
 ```diff
 -version = "0.9.0"
 +version = "0.10.0"

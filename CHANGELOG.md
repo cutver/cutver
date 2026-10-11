@@ -3,6 +3,47 @@
 All notable changes to this project are documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com).
 
+## [v0.13.0] - 2026-10-11
+### 📚 Documentation
+- **odd**: record slice 5 as delivered and close the task list ([e9afa4a](https://github.com/cutver/cutver/commit/e9afa4ad48c6d69f1b16d9f4f034229a17d35c4f)) by @Row0902
+- **plugin**: add the plugin reference and wire it into the docs ([4daa4b6](https://github.com/cutver/cutver/commit/4daa4b6f4408cedb7a4a948bb47fd947f8e546b4)) by @Row0902
+- **odd**: record slice 3b, D20-D22, and what verification caught ([4148a82](https://github.com/cutver/cutver/commit/4148a82ba04fd2d9bc8e7a65075cba645153c6d2)) by @Row0902
+- **odd**: record slice 3a, D13, and what verification rejected ([0bd3c49](https://github.com/cutver/cutver/commit/0bd3c49b79f4bd6a7e03cd7025167e9094943288)) by @Row0902
+- **odd**: record slice 2 and the design decisions its verification produced ([94bdaa8](https://github.com/cutver/cutver/commit/94bdaa82821c70a6d210c24d071468228e9beec1)) by @Row0902
+- **odd**: record the plugin install CLI plan and slice 1 evidence ([aa3f85e](https://github.com/cutver/cutver/commit/aa3f85ebde97928c1b996bed39d64bbb5ebe6afe)) by @Row0902
+- **odd**: record the runner proof and close the #174 tasks ([c9599e4](https://github.com/cutver/cutver/commit/c9599e4abb7f533079bcf1e375bfaf6af9fc17eb)) by @Row0902
+- **odd**: require a noise-aware protocol before timing the size profile ([21cdfd2](https://github.com/cutver/cutver/commit/21cdfd250242acaf207428a45cc8afb12f9bd651)) by @Row0902
+- **odd**: close the size spike with its outcome and recommendation ([c07d49b](https://github.com/cutver/cutver/commit/c07d49bb8eb49a9a34bdfcb1e636dea784635c6f)) by @Row0902
+- **odd**: record the plugin-feature size spike ([c6a04eb](https://github.com/cutver/cutver/commit/c6a04eb09f747a0f6ca31b2153064e39d3845e68)) by @Row0902
+- **odd**: record the plugins-feature CI coverage evidence ([dc86be7](https://github.com/cutver/cutver/commit/dc86be7d4b71ea7bbbb1ebf62987a680562e601e)) by @Row0902
+
+### 🐛 Bug Fixes
+- **plugin**: keep the [plugins] parent implicit on add and remove ([32e881e](https://github.com/cutver/cutver/commit/32e881e37a2148a908d21f9fd7fccebef900f51f)) by @Row0902
+- **ci**: pass -f Containerfile to the alpine build in the verification workflow ([3c20072](https://github.com/cutver/cutver/commit/3c20072b41e09a3f7df8d4ca29cb632dac0e89ef)) by @Row0902
+- **plugin**: tell the user of a lean binary how to get plugin support ([7f0f6d6](https://github.com/cutver/cutver/commit/7f0f6d67ccebceaee6cbd68916a934ed59b771e9)) by @Row0902
+- **container**: touch every workspace member's sources before the real build ([d3a6849](https://github.com/cutver/cutver/commit/d3a6849520c365f85f0cab5df15e2ca8d638b57f)) by @Row0902
+- **container**: copy the workspace member manifest into the image ([bb33b4e](https://github.com/cutver/cutver/commit/bb33b4e163760191576b88c3d596f82e2d6411af)) by @Row0902
+
+### 🚀 Features & Enhancements
+- **plugin**: add `cutver plugin add` with a verified digest gate ([988d7fa](https://github.com/cutver/cutver/commit/988d7faea08cd393edffb4cb6c4e454e2404791b)) by @Row0902
+- **plugin**: add plugin list and a surgical plugin remove ([1203692](https://github.com/cutver/cutver/commit/12036922384f7ffe299ea40766c787627a41c959)) by @Row0902
+- **plugin**: add a typed registry client behind the plugins feature ([0f96632](https://github.com/cutver/cutver/commit/0f96632be92e8f110a0fb617093d714aa601c4b3)) by @Row0902
+- **plugin**: fail closed on an unresolvable plugin cache root ([d42b625](https://github.com/cutver/cutver/commit/d42b625f28f4f180709088c161d08592d06a9eb2)) by @Row0902
+
+### 🛠️ Maintenance & Dependencies
+- **ci**: record the lean-image guard and remove the throwaway workflow ([f2ad074](https://github.com/cutver/cutver/commit/f2ad074405e9dcab65b5c636dcd788d7db77d030)) by @Row0902
+- **ci**: record the musl/Alpine run and guard the Containerfile knob's default ([0af7dc5](https://github.com/cutver/cutver/commit/0af7dc510179dbc3bbe2522c0c0305dd25dde685)) by @Row0902
+- **ci**: verify the plugins feature on the musl targets and the Alpine image ([096fa8a](https://github.com/cutver/cutver/commit/096fa8ad8ffabb2258876aacfad9574d5ba37a95)) by @Row0902
+
+### 🛠️ Maintenance & Dependencies
+- cover the plugins feature on every target OS ([18e514d](https://github.com/cutver/cutver/commit/18e514d7e173a8692c740c6748e20e12f09d8889)) by @Row0902
+
+### 👥 Contributors
+- @Row0902
+
+
+---
+**Full Changelog**: https://github.com/cutver/cutver/compare/v0.12.0...v0.13.0 • *CI Build #19*
 ## [v0.12.0] - 2026-10-09
 ### ⚠️ Breaking Changes
 - **plugin**: type the invocation operation and couple it to the capability ([763c244](https://github.com/cutver/cutver/commit/763c2444f5beb69ba1a069e48c20bc177f31f155)) by @Row0902

@@ -42,27 +42,29 @@ crates.io and GitHub on the day of creation.
    exempt (for example the test-gated `GradleEditor::new`,
    `src/manifest/gradle.rs:28-31`).
 3. **Declarative, deterministic, organic.** [Implemented] *Declarative*:
-   configuration lives in `cutver.toml` and the CLI stays terse.
-   *Deterministic*: identical Git states yield identical SemVer bumps and
-   manifest diffs; the changelog entry is stamped with the date it was cut, so
-   that part also depends on the day. *Organic*: the tool scales from a
-   single-file crate to a polyglot repository.
+   configuration lives in `cutver.toml` (`src/config/types.rs`) and the CLI
+   stays terse. *Deterministic*: identical Git states yield identical SemVer
+   bumps (`src/conventional/deduce.rs`) and manifest diffs
+   (`src/manifest/mod.rs`); the changelog entry is stamped with the date it was
+   cut, so that part also depends on the day. *Organic*: the tool scales from a
+   single-file crate to a polyglot repository through the same manifest
+   adapters.
 4. **Safe Git by default.** [Implemented] Requires a clean working tree and
    stages selectively the files `cutver` itself modified, plus recognized
    lockfiles the `post_bump` hook regenerated — not `git add .`
-   (`src/bump/exec/command.rs:33`).
+   (`src/git/ops.rs:7`, `src/bump/exec/command.rs:33`).
 5. **Fail-fast preflight.** [Implemented] Runs the project's declared
    verification commands and aborts before any manifest mutation when a step
    fails (`src/preflight.rs`).
 6. **Dry-run first.** [Implemented] `bump` is simulated end to end with
    `--dry-run`; `plugin add --dry-run` prints the plan and returns before
    `apply_add`, so it also skips the install-time digest gate
-   (`src/cli/runner/plugin/add.rs:53-55`). `init` and `plugin remove` have no
+   (`src/cli/runner/plugin/add.rs:57`). `init` and `plugin remove` have no
    dry-run flag.
 7. **Microkernel with a plugin extension surface.** [Implemented] The core
    release pipeline is small and capability-driven; optional integrations —
    manifest formats, changelog rendering, version computation, lifecycle
-   events — are extensions behind the plugin engine (`src/lib.rs:1-13`).
+   events — are extensions behind the plugin engine (`src/lib.rs:1-12`).
 
 ## Module Layout
 
@@ -71,10 +73,10 @@ src/
 ├── main.rs          # thin entry: parse args, run, exit with the returned code
 ├── lib.rs           # module roots; the library surface
 ├── atomic.rs        # same-directory atomic file replace
-├── bump/            # pipeline orchestration
+├── bump/            # pipeline orchestration, types
 │   └── exec/{pipeline,transaction,manifest,changelog,command,doctor}.rs
 ├── cli/             # clap derive args (args/), runners (runner/), styling, tree/open/link
-├── config/          # cutver.toml discovery, types, validation, preflight steps
+├── config/          # cutver.toml discovery, path, types, validation, preflight steps
 ├── conventional/    # Conventional Commits parser and bump deduction
 ├── changelog/       # context (assemble/parse), extract (parser/io), render (body/template), update
 ├── git/             # clean-tree/branch checks, commit, log, tags, remote, push
@@ -96,9 +98,9 @@ and the user-facing surface in
   `manifest.v1`, `lifecycle.v1`, `changelog.v1`, `versioning.v1`
   (`crates/cutver-pdk/src/types.rs:9-15`). Capability and operation are coupled
   at the host in one `PluginCall`, so an impossible pairing cannot be expressed
-  (`src/plugin/types.rs:111-140`).
+  (`src/plugin/types.rs:101-109`).
 - **Drivers and feature gate.** [Implemented] `PluginDriver` is one trait with
-  a WASM driver and a process driver (`src/plugin/driver.rs:1-22`). The process
+  a WASM driver and a process driver (`src/plugin/driver.rs:1-20`). The process
   driver always compiles; the WASM driver and the `install`/`manage`/`registry`
   modules are gated behind the `plugins` Cargo feature, which is off in the
   default build (`src/plugin.rs:5-13`, `Cargo.toml:40`). The `plugin`
@@ -107,7 +109,7 @@ and the user-facing surface in
 - **Registry index and entry validation.** [Implemented] The index is an HTTPS
   base of `<name>.toml` entries; parsing validates every field and fails closed
   when the declared `name` disagrees with the requested file stem
-  (`src/plugin/registry/entry.rs:65-70`, `src/plugin/registry.rs:36-49`).
+  (`src/plugin/registry/entry.rs:77-97`, `src/plugin/registry.rs:36-49`).
 - **Two digest gates.** [Implemented] *Install time*: `apply_add` verifies the
   downloaded bytes against the registry `sha256` before the artifact is renamed
   into the cache (`src/plugin/install/apply.rs:52-60`). *Load time*: the loader
@@ -131,8 +133,8 @@ cutver [-c <PATH>] plugin <add|list|remove> [...]        # plugin-enabled builds
 
 `-c` / `--config` is a global flag (`src/cli/args/commands.rs:8-11`);
 `changelog` has `latest`, `show`, and `open` subcommands
-(`src/cli/args/commands.rs:66-121`); `plugin` is hidden unless the feature is
-on (`src/cli/args/commands.rs:97-101`). Flag-level detail and exit codes live in
+(`src/cli/args/commands.rs:83-130`); `plugin` is hidden unless the feature is
+on (`src/cli/args/commands.rs:73-74`). Flag-level detail and exit codes live in
 the [CLI reference](../reference/cli.md).
 
 ## Configuration: `cutver.toml`
@@ -148,15 +150,16 @@ table cannot drift.
 ## Manifest Kinds
 
 [Implemented] `cargo-package`, `json`, `pyproject`, `gradle`, `regex`, and
-`plugin`, dispatched by `manifest::editor_for` (`src/manifest/mod.rs:55-105`).
+`plugin`, dispatched by `manifest::editor_for` (`src/manifest/mod.rs:49-109`).
 The per-kind guarantees, the surgical-diff limits, and the staged-lockfile
 allowlist are owned by the [manifest reference](../reference/manifests.md).
 
 ## Evolution Roadmap
 
-Status is the point of this table. `[Implemented]` cites the deciding
-`path:line`; `[Partial]` names what is missing; `[Planned]` names what was
-searched for and not found.
+Status is the point of this table. It covers the capabilities the roadmap named,
+not a feature inventory; the reference pages are the inventory. `[Implemented]`
+cites the deciding `path:line`; `[Partial]` names what is missing; `[Planned]`
+names what was searched for and not found.
 
 | Capability | Status | Evidence |
 | :--- | :--- | :--- |
@@ -166,15 +169,15 @@ searched for and not found.
 | Structured changelog categorization | Implemented | `src/changelog/render/body.rs:155-200` |
 | `post_bump` hook and `[publish]` hooks | Implemented | `src/bump/exec/pipeline.rs:272,329` |
 | `cutver init` | Implemented | `src/init/scaffold/runner.rs:84` |
-| `cutver doctor --check-changelog` | Implemented | `src/bump/exec/doctor.rs:39` |
-| `cutver doctor --fix` | Partial | `doctor` runs version and changelog checks; no `--fix` flag exists (`src/cli/args/commands.rs:50-53`). |
+| `cutver doctor` version and changelog checks | Implemented | `src/bump/exec/doctor.rs:15,39` |
+| `cutver doctor --fix` | Planned | No `--fix` flag exists; `doctor` runs version and changelog checks (`src/cli/args/commands.rs:50-54`). |
 | `glob` in `[[manifest]]` | Planned | No glob for manifest paths; the only glob is the plugin `manifest_match` (`src/cli/args/plugin.rs:45`). |
-| Cargo `[workspace.package]` / `version.workspace = true` | Planned | Unsupported; the editor reads and writes `package.version` only (`src/manifest/cargo_toml.rs:11,27`). |
+| Cargo `[workspace.package]` / `version.workspace = true` | Planned | Unsupported; the editor reads and writes `package.version` only (`src/manifest/cargo_toml.rs:15,28`). |
 | Independent workspace mode (`--package`, path filtering) | Planned | No such flag; no path filtering in the pipeline. |
 | Internal workspace dependency cascade | Planned | No code updates inter-manifest dependency constraints. |
 | Pre-release channels (`--channel`, `bump release`) | Planned | No `--channel` on `bump` and no `release` level (`src/cli/args/commands.rs:35-47`). |
 | GitHub Actions step outputs | External | Emitted by the `cutver/release@v1` action, not by this tree (`$GITHUB_OUTPUT` does not appear in `src/`). |
-| Pi release skill | Implemented | Shipped as `cutver-release` (planned as `release-creator`): drives `cutver bump`/`cutver release` with a mandatory dry-run simulation and health checks (`.pi/skills/cutver-release/SKILL.md`). |
+| Pi release skill | Implemented | Shipped as `cutver-release` (planned as `release-creator`): drives `cutver bump` with a mandatory dry-run simulation and health checks (`.pi/skills/cutver-release/SKILL.md`). |
 
 No `[Planned]` row appears as a configuration key or an example above; those
 sections describe only shipped behaviour.

@@ -88,11 +88,40 @@ commands = [
 
 ---
 
+## Unknown Keys
+
+`cutver.toml` is not a permissive document. Every key the loader does not
+recognise is a hard error: the configuration fails to load with an error that
+names the enclosing table and the offending key.
+
+```text
+unknown configuration key 'mode' in [workspace] table in cutver.toml
+```
+
+The accepted keys are exactly the tables and fields documented below. This is
+deliberate: while unknown keys were silently ignored, a half-built `[workspace]`
+table was indistinguishable from a working one, and the documentation drifted
+from the loader.
+
+Two key sets are open by design rather than fixed:
+
+- `[preflight]`: every key other than `default_timeout` is a user-named step.
+- `[[manifest]]`: the union of the `kind`-specific keys (`field`,
+  `version_name_field`, `version_code_field`, `pattern`, `replacement`, `table`,
+  `plugin`) is accepted for every manifest, because `kind` selects the variant.
+
+An unknown key inside a plugin table (`[plugins.<name>]`) or its `permissions`
+sub-table is rejected the same way.
+
+---
+
 ## Configuration Tables
 
 ### `[version]`
 
-`cutver` does not read a `[workspace]` table: `mode` and `members` are ignored if present. Independent per-package releases remain future work ([design](../internals/design.md)).
+`cutver` has no `[workspace]` table. Because unknown keys are now a hard error,
+declaring a `[workspace]` table fails the load instead of being ignored;
+independent per-package releases remain future work ([design](../internals/design.md)).
 
 | Table | Key | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |

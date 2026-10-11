@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use super::preflight::parse_preflight;
 use super::types::{Config, ConfigError, ManifestPath};
-use super::validation::{deduce_current_source, validate};
+use super::validation::{deduce_current_source, reject_unknown_keys, validate};
 
 pub fn load(path: impl AsRef<Path>) -> Result<Config, ConfigError> {
     let raw = path.as_ref();
@@ -15,6 +15,7 @@ pub fn load(path: impl AsRef<Path>) -> Result<Config, ConfigError> {
     };
     let text = fs::read_to_string(&path)?;
     let mut config: Config = toml::from_str(&text)?;
+    reject_unknown_keys(&text)?;
     let (preflight, default_timeout) = parse_preflight(&text)?;
     config.preflight = preflight;
     config.preflight_default_timeout = default_timeout;

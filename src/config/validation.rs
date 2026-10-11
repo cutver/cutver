@@ -1,5 +1,7 @@
 use std::collections::HashSet;
 
+use toml_edit::{InlineTable, Item, Table, Value};
+
 use super::types::{Config, ConfigError, Manifest, default_strategy};
 
 pub(crate) fn deduce_current_source(config: &mut Config) -> Result<(), ConfigError> {
@@ -46,12 +48,256 @@ pub(crate) fn validate(config: &Config) -> Result<(), ConfigError> {
     Ok(())
 }
 
+/// Accepted top-level keys of `cutver.toml`.
+const ROOT_KEYS: &[&str] = &[
+    "project",
+    "version",
+    "manifest",
+    "preflight",
+    "changelog",
+    "git",
+    "hooks",
+    "publish",
+    "plugins",
+];
+const PROJECT_KEYS: &[&str] = &["name"];
+const VERSION_KEYS: &[&str] = &["current_source", "source", "strategy", "plugin"];
+/// Union of every `ManifestKind` variant's keys. The flattened enum owns these,
+/// so the schema pass cannot know which kind a given table declares without
+/// duplicating serde's tag dispatch; the union keeps every valid key accepted.
+const MANIFEST_KEYS: &[&str] = &[
+    "path",
+    "primary",
+    "kind",
+    "field",
+    "version_name_field",
+    "version_code_field",
+    "pattern",
+    "replacement",
+    "table",
+    "plugin",
+];
+const CHANGELOG_KEYS: &[&str] = &[
+    "path",
+    "format",
+    "mode",
+    "entry_template",
+    "template",
+    "template_file",
+    "full_template",
+    "header_template",
+    "include_scopes",
+    "fallback_entry",
+    "ignore_release_commits",
+    "ignore_scopes",
+    "plugin",
+];
+const GIT_KEYS: &[&str] = &[
+    "tag_prefix",
+    "commit_message",
+    "require_clean_tree",
+    "require_branch",
+    "floating_major_tag",
+];
+const HOOKS_KEYS: &[&str] = &["pre_bump", "post_bump"];
+const PUBLISH_KEYS: &[&str] = &["push", "commands", "default_timeout"];
+const PLUGIN_KEYS: &[&str] = &[
+    "runtime",
+    "source",
+    "hash",
+    "command",
+    "capabilities",
+    "events",
+    "manifest_match",
+    "permissions",
+    "timeout_seconds",
+];
+const PERMISSIONS_KEYS: &[&str] = &["network", "env", "filesystem"];
+
+/// Rejects any key the loader does not know, naming the enclosing table and the
+/// offending key. `[preflight]` keys are arbitrary user-named steps, so that
+/// table is intentionally exempt.
+///
+/// Call this only after serde has accepted the document, so that malformed
+/// values keep reporting their existing `ConfigError::Parse` errors.
+pub(crate) fn reject_unknown_keys(text: &str) -> Result<(), ConfigError> {
+    let doc = text.parse::<toml_edit::DocumentMut>()?;
+    let root = doc.as_table();
+    for (key, value) in root.iter() {
+        if !ROOT_KEYS.contains(&key) {
+            return Err(first_unknown(value, key));
+        }
+        match key {
+            "project" => check_section(value, PROJECT_KEYS, "project")?,
+            "version" => check_section(value, VERSION_KEYS, "version")?,
+            "changelog" => check_section(value, CHANGELOG_KEYS, "changelog")?,
+            "git" => check_section(value, GIT_KEYS, "git")?,
+            "hooks" => check_section(value, HOOKS_KEYS, "hooks")?,
+            "publish" => check_section(value, PUBLISH_KEYS, "publish")?,
+            "manifest" => check_manifests(value)?,
+            "plugins" => check_plugins(value)?,
+            // `[preflight]` accepts arbitrary step names (see module docs).
+            "preflight" => {}
+            _ => unreachable!("ROOT_KEYS guards this dispatch"),
+        }
+    }
+    Ok(())
+}
+
+fn check_section(item: &Item, allowed: &[&str], path: &str) -> Result<(), ConfigError> {
+    match item {
+        Item::Table(t) => check_table_unknown(t, allowed, path),
+        Item::Value(Value::InlineTable(t)) => check_inline_unknown(t, allowed, path),
+        _ => Ok(()),
+    }
+}
+
+fn check_table_unknown(table: &Table, allowed: &[&str], path: &str) -> Result<(), ConfigError> {
+    for (key, _) in table.iter() {
+        if !allowed.contains(&key) {
+            return Err(ConfigError::UnknownKey {
+                table: path.to_string(),
+                key: key.to_string(),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn check_inline_unknown(table: &InlineTable, allowed: &[&str], path: &str) -> Result<(), ConfigError> {
+    for (key, _) in table.iter() {
+        if !allowed.contains(&key) {
+            return Err(ConfigError::UnknownKey {
+                table: path.to_string(),
+                key: key.to_string(),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn check_manifests(item: &Item) -> Result<(), ConfigError> {
+    match item {
+        Item::ArrayOfTables(manifests) => {
+            for manifest in manifests.iter() {
+                check_table_unknown(manifest, MANIFEST_KEYS, "manifest")?;
+            }
+        }
+        Item::Value(Value::Array(manifests)) => {
+            for value in manifests.iter() {
+                if let Value::InlineTable(t) = value {
+                    check_inline_unknown(t, MANIFEST_KEYS, "manifest")?;
+                }
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn check_plugins(item: &Item) -> Result<(), ConfigError> {
+    match item {
+        Item::Table(plugins) => {
+            for (name, plugin) in plugins.iter() {
+                check_plugin_item(plugin, &format!("plugins.{name}"))?;
+            }
+        }
+        Item::Value(Value::InlineTable(plugins)) => {
+            for (name, plugin) in plugins.iter() {
+                let path = format!("plugins.{name}");
+                if let Value::InlineTable(t) = plugin {
+                    check_inline_unknown(t, PLUGIN_KEYS, &path)?;
+                    if let Some(Value::InlineTable(perms)) = t.get("permissions") {
+                        check_inline_unknown(perms, PERMISSIONS_KEYS, &format!("{path}.permissions"))?;
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn check_plugin_item(item: &Item, path: &str) -> Result<(), ConfigError> {
+    match item {
+        Item::Table(plugin) => {
+            check_table_unknown(plugin, PLUGIN_KEYS, path)?;
+            if let Some(perms) = plugin.get("permissions") {
+                check_section(perms, PERMISSIONS_KEYS, &format!("{path}.permissions"))?;
+            }
+        }
+        Item::Value(Value::InlineTable(plugin)) => {
+            check_inline_unknown(plugin, PLUGIN_KEYS, path)?;
+            if let Some(Value::InlineTable(perms)) = plugin.get("permissions") {
+                check_inline_unknown(perms, PERMISSIONS_KEYS, &format!("{path}.permissions"))?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+/// Builds the error for an unknown top-level key. For an unknown table the
+/// first key inside it is named, so the message identifies both the table and a
+/// concrete offending key.
+fn first_unknown(item: &Item, key: &str) -> ConfigError {
+    first_unknown_key(item, key)
+        .map(|(table, key)| ConfigError::UnknownKey { table, key })
+        .unwrap_or_else(|| ConfigError::UnknownRootKey { key: key.to_string() })
+}
+
+fn first_unknown_key(item: &Item, path: &str) -> Option<(String, String)> {
+    match item {
+        Item::Table(t) => first_from_table(t, path),
+        Item::Value(Value::InlineTable(t)) => first_from_inline(t, path),
+        Item::ArrayOfTables(entries) => entries.iter().next().and_then(|t| first_from_table(t, path)),
+        _ => None,
+    }
+}
+
+fn first_from_table(table: &Table, path: &str) -> Option<(String, String)> {
+    let (key, value) = table.iter().next()?;
+    first_from_item(value, key, path)
+}
+
+fn first_from_inline(table: &InlineTable, path: &str) -> Option<(String, String)> {
+    let (key, value) = table.iter().next()?;
+    let child = format!("{path}.{key}");
+    match value {
+        Value::InlineTable(inner) => first_from_inline(inner, &child).or(Some((child, String::new()))),
+        _ => Some((path.to_string(), key.to_string())),
+    }
+}
+
+fn first_from_item(item: &Item, key: &str, path: &str) -> Option<(String, String)> {
+    match item {
+        Item::Table(inner) => {
+            let child = format!("{path}.{key}");
+            first_from_table(inner, &child).or(Some((child, String::new())))
+        }
+        Item::ArrayOfTables(entries) => {
+            let child = format!("{path}.{key}");
+            entries
+                .iter()
+                .next()
+                .and_then(|t| first_from_table(t, &child))
+                .or(Some((child, String::new())))
+        }
+        Item::Value(Value::InlineTable(inner)) => {
+            let child = format!("{path}.{key}");
+            first_from_inline(inner, &child).or(Some((child, String::new())))
+        }
+        _ => Some((path.to_string(), key.to_string())),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn load_str(s: &str) -> Result<Config, ConfigError> {
         let mut c: Config = toml::from_str(s).map_err(ConfigError::Parse)?;
+        super::reject_unknown_keys(s)?;
         let (p, d) = super::super::preflight::parse_preflight(s)?;
         c.preflight = p;
         c.preflight_default_timeout = d;

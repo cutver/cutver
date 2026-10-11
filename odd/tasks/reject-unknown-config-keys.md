@@ -41,7 +41,7 @@ produces a better message (it can name the table and the key) than a serde error
 - [ ] 2. Prove the serde constraint in the same test file — a `[preflight]` table with arbitrary step names must keep parsing, and `[[manifest]]` kind keys must keep parsing — so the chosen mechanism cannot regress them.
 - [ ] 3. Design and implement the validation pass over the parsed document: a known-schema check that reports the first offending table and key. Keep `[preflight]`'s arbitrary user keys and every `ManifestKind` key in the accepted set.
 - [ ] 4. Sweep the blast radius: the repo's own `cutver.toml`, `cutver init` scaffold output (`src/init/scaffold/config_gen.rs`), `.github/templates/**`, test fixtures under `tests/` and `src/**/tests`, and the configuration examples in `docs/`. Any unknown key found there is a discovery, not a test to delete.
-- [ ] 5. Update `docs/reference/configuration.md` (the loader now rejects what it does not know) and remove the `[hooks] pre_bump` "parsed but not executed" wording problem if the validation pass makes that state impossible — decide with evidence: either implement `pre_bump` or reject it, and say which.
+- [ ] 5. Update `docs/reference/configuration.md` so the reference states the loader now rejects what it does not know. Do not touch `[hooks] pre_bump`: it is a *known* field that is inert, which is #194, not this feature.
 - [ ] 6. Verify with the full suite and clippy; open the pull request.
 
 ## Non-goals

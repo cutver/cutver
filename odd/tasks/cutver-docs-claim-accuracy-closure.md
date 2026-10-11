@@ -29,10 +29,10 @@ cross-checked against reality, and re-sweeps every absolute claim to confirm clo
 
 ## Tasks
 
-- [ ] 1. Fix F1–F5 in the five documented locations, then sweep each claim across the repository for repeats.
+- [x] 1. Fix F1–F5 in the five documented locations, then sweep each claim across the repository for repeats.
 - [ ] 2. Cross-check the never-verified areas against the code and the real artifacts: the out-of-repo artifacts (`cutver/setup`, `cutver/release`, the `ghcr.io/cutver/cutver` images) in `docs/integrations/{github-actions,containers}.md`, and the template-variable claims in `docs/templates/release-notes.md`.
 - [ ] 3. Re-run the full absolute-claim sweep over `README.md` and `docs/**` and confirm closure (expect zero, do not stretch to agree with the expectation).
-- [ ] 4. Land the new `cutver-docs-voice` skill as a work unit.
+- [x] 4. Land the new `cutver-docs-voice` skill as a work unit.
 - [ ] 5. Verify budgets, link resolution and hype wording; record the residual.
 - [ ] 6. Open the pull request.
 
@@ -40,7 +40,12 @@ cross-checked against reality, and re-sweeps every absolute claim to confirm clo
 
 | Task | Commit | Note |
 | --- | --- | --- |
-| — | — | — |
+| 4 | `e5d6179` | `feat(skills): add the docs-voice claim-sweep skill` |
+| — | `f9dd3d2` | `docs(odd): open the documentation claim-accuracy closure feature` |
+| 1 (F1) | `9c5b8c0` | `docs(bump): drop the mix.lock staging claim the code does not honour` — `manifests.md:102`, `references.md:301` |
+| 1 (F2–F5) | `89c6546` | `docs: scope the dry-run, staging and format-preservation claims to the code` — `plugins.md:27,71`, `design.md:36-40`, `references.md:105` |
+
+Repeat sweep by the writer found one extra instance **outside** the allowed surfaces: the clap help text at `src/cli/args/plugin.rs:48` repeats F2 (*"Resolve and print the plan without downloading or writing anything"*). The `cutver-docs-voice` skill excludes CLI help text from its activation contract, so it is recorded as a follow-up rather than fixed in this docs-only change.
 
 ## Residual
 

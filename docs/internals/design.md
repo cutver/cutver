@@ -2,9 +2,16 @@
 
 > Outcome first: `cutver` is a standalone Rust CLI that replaces per-project
 > release scripts with one declarative, cross-language release tool driven by
-> `cutver.toml`. This document captures the
-> agreed design and the evolution roadmap; implementation follows task plans
-> in `odd/tasks/`.
+> `cutver.toml`. This document describes the implemented design and the
+> evolution roadmap; task plans live in `odd/tasks/`.
+>
+> **Status convention.** A capability is marked `[Implemented]` when this tree
+> contains the code and the sentence cites its `path:line`; `[Partial]` when
+> some of it ships; `[Planned]` when it is design intent only. A `[Planned]`
+> item is never written as a key table, a configuration example, or
+> present-tense capability language. `[External]` marks a capability delivered
+> outside this repository. Unmarked prose describes structure or history, not a
+> capability.
 
 ## Decision & Origin
 
@@ -13,158 +20,161 @@ release script (`scripts/release.ts`) that hardcoded project paths, used
 `execSync` with unchecked casts, synced only 3 of 5 version manifests, and
 staged with a dangerous `git add .`. Rather than fixing it in place, the
 decision was made to extract the concept — multi-manifest version lockstep +
-preflight verification + changelog + tag — into a generic, reusable tool.
+preflight verification + changelog + tag — into a generic, reusable tool. This
+section is history, not a capability claim.
 
 **Name**: `cutver` ("cut a release" + "semver"). Verified available on both
 crates.io and GitHub on the day of creation.
 
 ## Core Principles
 
-1. **Zero project knowledge in the release pipeline.** Manifests are adapters and everything the
-   pipeline needs lives in the repository's `cutver.toml`. Two deliberate exceptions carry ecosystem
-   knowledge in the binary: `init`'s discovery knows the common manifests (`Cargo.toml`,
-   `package.json`, `pyproject.toml`, Gradle), and staging knows the standard lockfile names
-   (`KNOWN_LOCKFILES` in `src/bump/exec/command.rs`).
-2. **Type-driven, panic-free Rust.** Edition 2024+, `thiserror` for error
-   hierarchy, the `semver` crate for version math, no `.unwrap()`/`.expect()`
-   in production paths, verified against `rust-craft` standards.
-3. **Declarative, deterministic, organic.**
-   - *Declarative*: Configuration lives in `cutver.toml`; the CLI remains terse.
-   - *Deterministic*: Identical Git states yield identical SemVer bumps and manifest diffs. The
-     changelog entry is stamped with the date it was cut, so that part also depends on the day.
-   - *Organic*: The tool scales naturally from a single-file crate to a polyglot monorepo without friction.
-4. **Safe Git by default.** Require a clean working tree and selective staging of the
-   files `cutver` itself modified, plus recognized lockfiles the `post_bump` hook regenerated — never `git add .`.
-5. **Fail-fast preflight.** Run the project's declared verification commands;
-   abort before any manifest mutation when any step fails.
-6. **Dry-run first.** `bump` is simulated end to end with `--dry-run`; `plugin add --dry-run` prints the plan and returns before the artifact download, so it also skips the install-time digest check. `init` and `plugin remove` have no such flag.
-
-## CLI Surface
-
-```text
-cutver bump <patch|minor|major|auto> [--dry-run] [--skip-preflight <step>...] [-c <path>]
-cutver doctor                                  # validate cutver.toml, report drift & unmapped packages
-cutver changelog latest [--include-header] [--template <path>] [--json]   # output release notes for the current release
-cutver init [--update]                         # auto-detect manifests and generate/update cutver.toml
-```
-
-Invocation is intentionally terse: `cutver bump minor` or `cutver bump auto`.
-
-## Configuration: `cutver.toml`
-
-### Discovery Precedence
-1. `cutver.toml` in current directory or walking up ancestor directories (canonical).
-2. Explicit override with `-c <path>`.
-
-### Full Declarative Specification
-
-```toml
-# cutver.toml
-
-[version]
-# Only "plugin" is read (routes to a versioning.v1 plugin); "manual"/"conventional" are unread. The bump level comes from the CLI argument.
-strategy = "conventional"
-
-# The FIRST declared manifest is the canonical source of truth by convention,
-# unless a manifest explicitly specifies `primary = true`.
-[[manifest]]
-path = "package.json"
-kind = "json"
-field = "version"
-
-[[manifest]]
-path = "src-tauri/tauri.conf.json"
-kind = "json"
-field = "version"
-
-[[manifest]]
-path = "android/app/build.gradle.kts"
-kind = "gradle"
-version_name_field = "versionName"
-version_code_field = "versionCode"   # integer, incremented on every bump
-
-[preflight]
-default_timeout = 600
-tests      = "bun run test --watch=false"
-build      = "bun run build"
-rust_check = "cargo check --workspace"
-heavy_step = { command = "cargo test --release", timeout = 900 }
-
-[changelog]
-path = "CHANGELOG.md"
-format = "keep-a-changelog"
-mode = "conventional"                # groups commits into Features, Fixes, Breaking
-include_scopes = true
-fallback_entry = "Maintenance and updates."
-
-[git]
-tag_prefix = "v"
-commit_message = "chore(release): v{version}"
-require_clean_tree = true
-require_branch = "main"              # string or array of allowed branches
-
-[hooks]
-# Runs AFTER manifest edits and BEFORE git commit (perfect for lockfile sync)
-post_bump = "cargo check --workspace"
-
-[publish]
-push = true                          # git push origin <branch> --tags
-commands = [
-    "cargo publish",
-    "gh release create v{version} --notes-file CHANGELOG.md"
-]
-```
-
-### Manifest kinds
-
-| Kind | Format | Mechanism |
-| :--- | :--- | :--- |
-| `json` | `*.json` | format-preserving targeted edit: `serde_json` for reads, byte-span locator for writes. Strict JSON only; JSONC comments fail to parse. |
-| `cargo-package` | `Cargo.toml` | `toml_edit` on `[package] version` or `[workspace.package] version`; `toml` is an alias. |
-| `pyproject` | `pyproject.toml` | `toml_edit` on PEP 621 `[project] version` or `[tool.poetry] version`; `pyproject-toml` is an alias. |
-| `gradle` | `build.gradle.kts` | targeted `versionName` (string) + `versionCode` (int) edit |
-| `regex` | anything | escape hatch: capture group replacement for exotic formats |
-| `plugin` | any `manifest.v1` file | delegates reads and writes to an installed plugin. |
+1. **Zero project knowledge in the release pipeline.** [Implemented] Manifests
+   are adapters and everything the pipeline needs lives in the repository's
+   `cutver.toml`. Two deliberate exceptions carry ecosystem knowledge in the
+   binary: `init`'s discovery knows the common manifests (`Cargo.toml`,
+   `package.json`, `pyproject.toml` in `src/init/discovery.rs:137-161`), and
+   staging knows the standard lockfile names (`KNOWN_LOCKFILES` in
+   `src/bump/exec/command.rs:18`).
+2. **Type-driven, panic-free Rust.** [Implemented] Edition 2024+, `thiserror`
+   for the error hierarchy, the `semver` crate for version math. The
+   "no `.unwrap()`/`.expect()` in production paths" rule is scoped to
+   production paths: `#[cfg(test)]` modules and test-only constructors are
+   exempt (for example the test-gated `GradleEditor::new`,
+   `src/manifest/gradle.rs:28-31`).
+3. **Declarative, deterministic, organic.** [Implemented] *Declarative*:
+   configuration lives in `cutver.toml` and the CLI stays terse.
+   *Deterministic*: identical Git states yield identical SemVer bumps and
+   manifest diffs; the changelog entry is stamped with the date it was cut, so
+   that part also depends on the day. *Organic*: the tool scales from a
+   single-file crate to a polyglot repository.
+4. **Safe Git by default.** [Implemented] Requires a clean working tree and
+   stages selectively the files `cutver` itself modified, plus recognized
+   lockfiles the `post_bump` hook regenerated — not `git add .`
+   (`src/bump/exec/command.rs:33`).
+5. **Fail-fast preflight.** [Implemented] Runs the project's declared
+   verification commands and aborts before any manifest mutation when a step
+   fails (`src/preflight.rs`).
+6. **Dry-run first.** [Implemented] `bump` is simulated end to end with
+   `--dry-run`; `plugin add --dry-run` prints the plan and returns before
+   `apply_add`, so it also skips the install-time digest gate
+   (`src/cli/runner/plugin/add.rs:53-55`). `init` and `plugin remove` have no
+   dry-run flag.
+7. **Microkernel with a plugin extension surface.** [Implemented] The core
+   release pipeline is small and capability-driven; optional integrations —
+   manifest formats, changelog rendering, version computation, lifecycle
+   events — are extensions behind the plugin engine (`src/lib.rs:1-13`).
 
 ## Module Layout
 
 ```text
 src/
-├── main.rs          # thin entry: parse args, load config, orchestrate, report ExitCode
-├── cli.rs           # clap derive definitions (Parser, Subcommand, ValueEnum, Styles)
-├── config.rs        # cutver.toml load + validation, primary manifest deduction, defaults
-├── semver_bump.rs   # patch/minor/major/auto over crate `semver`
-├── conventional.rs  # conventional commit parser & semver bump deduction
-├── manifest/
-│   ├── mod.rs       # `ManifestEditor` trait + kind dispatch
-│   ├── json.rs
-│   ├── cargo_toml.rs
-│   ├── gradle.rs
-│   └── regex.rs
+├── main.rs          # thin entry: parse args, run, exit with the returned code
+├── lib.rs           # module roots; the library surface
+├── atomic.rs        # same-directory atomic file replace
+├── bump/            # pipeline orchestration
+│   └── exec/{pipeline,transaction,manifest,changelog,command,doctor}.rs
+├── cli/             # clap derive args (args/), runners (runner/), styling, tree/open/link
+├── config/          # cutver.toml discovery, types, validation, preflight steps
+├── conventional/    # Conventional Commits parser and bump deduction
+├── changelog/       # context (assemble/parse), extract (parser/io), render (body/template), update
+├── git/             # clean-tree/branch checks, commit, log, tags, remote, push
+├── init/            # discovery + scaffold (config_gen/runner/templates)
+├── manifest/        # ManifestEditor trait + json, json_scan, cargo_toml, pyproject, gradle, regex, plugin
+├── plugin/          # cache, dto, manager, driver/{wasm,process}, registry, install, manage, error
 ├── preflight.rs     # fail-fast command runner with timeouts
-├── changelog.rs     # keep-a-changelog prepender & conventional changelog builder
-├── hooks.rs         # post_bump and publish hook runner
-└── git.rs           # clean-tree check, commit, annotated tag, push
+└── semver_bump.rs   # patch/minor/major over the `semver` crate
 ```
+
+## Plugin Engine
+
+A design-level summary. The wire contract lives in
+[RFC 0001: Cutver Microkernel & Unified Plugin Engine](../rfcs/0001-wasm-plugin-architecture.md)
+and the user-facing surface in
+[Installing and Managing Plugins](../reference/plugins.md).
+
+- **Capabilities.** [Implemented] Four closed capability domains:
+  `manifest.v1`, `lifecycle.v1`, `changelog.v1`, `versioning.v1`
+  (`crates/cutver-pdk/src/types.rs:9-15`). Capability and operation are coupled
+  at the host in one `PluginCall`, so an impossible pairing cannot be expressed
+  (`src/plugin/types.rs:111-140`).
+- **Drivers and feature gate.** [Implemented] `PluginDriver` is one trait with
+  a WASM driver and a process driver (`src/plugin/driver.rs:1-22`). The process
+  driver always compiles; the WASM driver and the `install`/`manage`/`registry`
+  modules are gated behind the `plugins` Cargo feature, which is off in the
+  default build (`src/plugin.rs:5-13`, `Cargo.toml:40`). The `plugin`
+  subcommand is declared in every build but hidden without the feature and
+  fails closed with an actionable message (`src/cli/runner/plugin.rs:1-6`).
+- **Registry index and entry validation.** [Implemented] The index is an HTTPS
+  base of `<name>.toml` entries; parsing validates every field and fails closed
+  when the declared `name` disagrees with the requested file stem
+  (`src/plugin/registry/entry.rs:65-70`, `src/plugin/registry.rs:36-49`).
+- **Two digest gates.** [Implemented] *Install time*: `apply_add` verifies the
+  downloaded bytes against the registry `sha256` before the artifact is renamed
+  into the cache (`src/plugin/install/apply.rs:52-60`). *Load time*: the loader
+  re-verifies the cached file against the `hash` in `cutver.toml`
+  (`src/plugin/driver/wasm.rs:171-183`). Each gate is skipped under exactly two
+  conditions: the install-time gate is skipped whenever `apply_add` is not
+  reached, which includes `plugin add --dry-run`; the load-time gate is skipped
+  when the entry has no `hash` (`verify_sha256` returns `Ok(())` for `None`,
+  `src/plugin/driver/wasm.rs:93-96`).
+
+## CLI Surface
+
+```text
+cutver [-c <PATH>] bump <patch|minor|major|auto> [--first-release] [--dry-run] [--skip-preflight <step>...]
+cutver [-c <PATH>] doctor [--check-changelog]
+cutver [-c <PATH>] changelog <latest|show|open> [...]
+cutver [-c <PATH>] open [<target>] [--print-url] [--browser <cmd>]
+cutver [-c <PATH>] init [--update] [--force] [--path <dir>] [--no-template]
+cutver [-c <PATH>] plugin <add|list|remove> [...]        # plugin-enabled builds only
+```
+
+`-c` / `--config` is a global flag (`src/cli/args/commands.rs:8-11`);
+`changelog` has `latest`, `show`, and `open` subcommands
+(`src/cli/args/commands.rs:66-121`); `plugin` is hidden unless the feature is
+on (`src/cli/args/commands.rs:97-101`). Flag-level detail and exit codes live in
+the [CLI reference](../reference/cli.md).
+
+## Configuration: `cutver.toml`
+
+[Implemented] `cutver.toml` is discovered by walking up from the current
+directory, stopping at a repository boundary, or supplied with `-c <path>`;
+paths inside it resolve relative to its own directory (`src/config/discovery.rs`).
+The keys are owned by the [configuration reference](../reference/configuration.md):
+`[version]`, `[[manifest]]`, `[preflight]`, `[changelog]`, `[git]`, `[hooks]`,
+`[publish]`, `[plugins.<name>]`. This document does not restate them, so a key
+table cannot drift.
+
+## Manifest Kinds
+
+[Implemented] `cargo-package`, `json`, `pyproject`, `gradle`, `regex`, and
+`plugin`, dispatched by `manifest::editor_for` (`src/manifest/mod.rs:55-105`).
+The per-kind guarantees, the surgical-diff limits, and the staged-lockfile
+allowlist are owned by the [manifest reference](../reference/manifests.md).
 
 ## Evolution Roadmap
 
-### Phase 1: Declarative Foundation & Conventional Intelligence
-- Canonical `cutver.toml` support.
-- Primary manifest convention (first manifest is source of truth, `primary = true` override, backward-compatible `current_source`).
-- Conventional Commits parsing (`cutver bump auto`).
-- Structured changelog categorization (`feat`, `fix`, `perf`, `BREAKING CHANGE`).
-- `post_bump` hook (lockfile synchronization) and `[publish]` hooks.
+Status is the point of this table. `[Implemented]` cites the deciding
+`path:line`; `[Partial]` names what is missing; `[Planned]` names what was
+searched for and not found.
 
-### Phase 2: Workspaces and Monorepos
-- Support for `glob` in `[[manifest]]`.
-- Native awareness of Cargo `[workspace.package]` and `version.workspace = true`.
-- Independent workspace mode (`--package <name>`, commit path filtering).
-- Internal workspace dependency cascade updates.
+| Capability | Status | Evidence |
+| :--- | :--- | :--- |
+| Canonical `cutver.toml` | Implemented | `src/config/discovery.rs` |
+| Primary manifest (`primary = true`, `current_source`) | Implemented | `src/config/types.rs:71-77` |
+| Conventional Commits and `bump auto` | Implemented | `src/conventional/deduce.rs:51` |
+| Structured changelog categorization | Implemented | `src/changelog/render/body.rs:155-200` |
+| `post_bump` hook and `[publish]` hooks | Implemented | `src/bump/exec/pipeline.rs:272,329` |
+| `cutver init` | Implemented | `src/init/scaffold/runner.rs:84` |
+| `cutver doctor --check-changelog` | Implemented | `src/bump/exec/doctor.rs:39` |
+| `cutver doctor --fix` | Partial | `doctor` runs version and changelog checks; no `--fix` flag exists (`src/cli/args/commands.rs:50-53`). |
+| `glob` in `[[manifest]]` | Planned | No glob for manifest paths; the only glob is the plugin `manifest_match` (`src/cli/args/plugin.rs:45`). |
+| Cargo `[workspace.package]` / `version.workspace = true` | Planned | Unsupported; the editor reads and writes `package.version` only (`src/manifest/cargo_toml.rs:11,27`). |
+| Independent workspace mode (`--package`, path filtering) | Planned | No such flag; no path filtering in the pipeline. |
+| Internal workspace dependency cascade | Planned | No code updates inter-manifest dependency constraints. |
+| Pre-release channels (`--channel`, `bump release`) | Planned | No `--channel` on `bump` and no `release` level (`src/cli/args/commands.rs:35-47`). |
+| GitHub Actions step outputs | External | Emitted by the `cutver/release@v1` action, not by this tree (`$GITHUB_OUTPUT` does not appear in `src/`). |
+| Pi release skill | Implemented | Shipped as `cutver-release` (planned as `release-creator`): drives `cutver bump`/`cutver release` with a mandatory dry-run simulation and health checks (`.pi/skills/cutver-release/SKILL.md`). |
 
-### Phase 3: Developer Experience & CI/CD Integration
-- `cutver init` (auto-discovery of manifests and interactive/automatic `cutver.toml` generation).
-- `cutver doctor --fix` (detect new packages and update `cutver.toml`).
-- Pre-release channels (`--channel alpha|beta|rc`) and graduation (`cutver bump release`).
-- Direct GitHub Actions integration (`$GITHUB_OUTPUT`).
-- `release-creator` Pi skill built on top of the native `cutver` engine.
+No `[Planned]` row appears as a configuration key or an example above; those
+sections describe only shipped behaviour.

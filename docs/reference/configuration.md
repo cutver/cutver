@@ -74,7 +74,7 @@ tag_prefix = "v"
 floating_major_tag = true         # Create and push floating major tags (e.g. v1)
 commit_message = "chore(release): v{version}"
 require_clean_tree = true         # Require zero uncommitted changes
-require_branch = "main"           # Branch restriction: string or array of strings
+require_branch = "main"           # Optional; the single branch allowed to cut releases
 
 [hooks]
 post_bump = "cargo check --workspace" # Executed after manifest updates, before staging
@@ -160,7 +160,7 @@ above — `template` is an inline template string, an alternative to `template_f
 | `[git]` | `floating_major_tag` | `bool` | `false` | Automatically maintain floating major tag (e.g. `v1`). |
 | `[git]` | `commit_message` | `string` | `"chore(release): v{version}"` | Release commit message template. |
 | `[git]` | `require_clean_tree` | `bool` | `true` | Abort if uncommitted changes exist. |
-| `[git]` | `require_branch` | `string \| list` | `None` | Branch or list of branches allowed to cut releases. |
+| `[git]` | `require_branch` | `string` | `None` | Single branch name allowed to cut releases. The type is `Option<String>` (`src/config/types.rs:257`); there is no list form. |
 | `[hooks]` | `pre_bump` | `string` | `None` | Parsed, but the release pipeline does not execute it today; only `post_bump` runs. |
 | `[hooks]` | `post_bump` | `string` | `None` | Shell command executed after manifest edits, before git staging. |
 | `[publish]` | `push` | `bool` | `false` | When `true`, runs `git push origin <branch> --tags`. |

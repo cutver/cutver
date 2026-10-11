@@ -22,7 +22,7 @@ Release behavior is configured in `cutver.toml`, which discovery walks up to fin
 
 [version]
 current_source = "Cargo.toml"     # Optional: explicit path to primary manifest
-strategy = "conventional"         # "conventional", "manual", or "plugin"
+strategy = "manual"               # only "plugin" is read; "manual"/"conventional" are unread
 
 [[manifest]]
 path = "Cargo.toml"
@@ -96,7 +96,7 @@ commands = [
 
 | Table | Key | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
-| `[version]` | `strategy` | `string` | `"manual"` | Bump strategy: `"manual"`, `"conventional"` (commits), or `"plugin"`. |
+| `[version]` | `strategy` | `string` | `"manual"` | `"plugin"` routes version computation to a `versioning.v1` plugin; `"manual"` and `"conventional"` are accepted but no release code reads them, so the bump level comes from the CLI argument. |
 | `[version]` | `plugin` | `string` | `None` | With `strategy = "plugin"`, names the `versioning.v1` plugin; omit it when exactly one declares that capability. |
 | `[version]` | `current_source` | `string` | `None` | Path to primary manifest. If omitted, first `[[manifest]]` is used. |
 

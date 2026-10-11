@@ -111,6 +111,7 @@ For the AST and byte-span editors the diff is the version and nothing else; the 
 | `json` | `*.json` | Custom byte-span scanner | Replaces **only** the string slice of the version value. Preserves key order, exact indentation, and newlines; input must be strict JSON, so a comment-bearing JSONC file fails to parse. |
 | `gradle` | `build.gradle`, `*.gradle.kts` | Regex byte replacement | Updates `versionName` string and increments `versionCode` integer without altering Gradle DSL structure. |
 | `regex` | Any arbitrary text file | Regular expression capture | Replaces match with `replacement`, substituting `{{version}}` with the target SemVer string. |
+| `plugin` | Any `manifest.v1` target file | Installed `manifest.v1` plugin | Delegates reads and writes to the plugin; requires a plugin-enabled build. |
 
 ### Manifest Deductions and Conventions
 

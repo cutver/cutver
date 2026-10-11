@@ -62,7 +62,7 @@ Invocation is intentionally terse: `cutver bump minor` or `cutver bump auto`.
 # cutver.toml
 
 [version]
-# Calculation strategy: "manual" (CLI argument), "conventional" (git commit inspection), or "plugin"
+# Only "plugin" is read (routes to a versioning.v1 plugin); "manual"/"conventional" are unread. The bump level comes from the CLI argument.
 strategy = "conventional"
 
 # The FIRST declared manifest is the canonical source of truth by convention,

@@ -20,8 +20,6 @@ Declare every package's version file under `[[manifest]]`. The example below mar
 
 ```toml
 # cutver.toml
-[version]
-strategy = "conventional"
 
 # Primary manifest: source of truth for the shared version
 [[manifest]]

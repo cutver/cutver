@@ -36,6 +36,21 @@ cross-checked against reality, and re-sweeps every absolute claim to confirm clo
 - [ ] 5. Verify budgets, link resolution and hype wording; record the residual.
 - [ ] 6. Open the pull request.
 
+## Round 4 findings
+
+Round 4 ran the table-vs-struct method as the primary instrument and found the class the keyword rounds could not:
+
+- **Documented defaults the code never applies.** `[version] strategy` was documented with default `"conventional"`; `default_strategy()` returns `"manual"` (`types.rs:123-125`). The `json` `field` and the `gradle` `version_name_field`/`version_code_field` were given "Default: ..." text while the serde fields carry no `#[serde(default)]` — they are required. `[preflight] default_timeout` advertised `600`; `parse_preflight` starts at `None` and applies no default (`config/preflight.rs:6,27`).
+- **An incomplete value union.** `strategy` accepts a third value, `"plugin"` (`pipeline.rs:148`), with a `[version] plugin` key that no document mentioned.
+- **The JSONC claim.** `manifests.md` and `references.md` promised `*.jsonc` support with comments preserved; both readers pre-validate with `serde_json::from_str`, which rejects comments.
+- **`cutver notes`** does not exist and **`toml` is an alias**, not a generic kind; the design kind table omitted `pyproject` and `plugin` too.
+- **Inert keys discovered while fixing.** `[hooks] pre_bump` is parsed and never executed (only `hooks.post_bump` is read, `pipeline.rs:279`); `[project] name` is parsed and unused. Both are now documented as such.
+- **Completeness.** Eight `[changelog]` keys, `[hooks] pre_bump`, `[publish] default_timeout`, the `[project]` table, the plugin `command` key, `--json` for `changelog latest/show`, and `composer.lock` were added.
+
+## Method
+
+Four rounds used two methods with disjoint blind spots. The keyword sweep (`never|always|every|only|...`) cannot see a **wrong vocabulary** (the `pre_bump` vs `on_pre_bump` event names contain no absolute) and cannot see an **omission or an inert key** (a documented table the loader never reads). The complementary method — cross-check every documented table row, flag, tag, output and default against the struct or artifact that defines it — found the round-3 and round-4 classes. Round 5 makes the regression check of each newly written sentence the primary job.
+
 ## Round 3 findings
 
 The closure sweep's keyword method found the wrong-vocabulary and omission classes that three earlier rounds missed:
@@ -71,6 +86,8 @@ The real `cutver/release@v1` outputs are exactly `released`, `version`, `tag`, `
 | 2 + 3 | `1b9a6e3` | `docs: correct the integration guides and the remaining overstatements` — 6 files, 12 false claims |
 | 3 | `a82bd0e` | `docs: scope the last two repeats of already-fixed claims` — `README.md:113`, `references.md:9` |
 | 3 | `dd39702` | `docs: document the real workspace behaviour and the plugin manifest kind` — 6 files, `[workspace]` removed, `plugin` kind documented, `-plugins` suffix corrected |
+| — | `84c311d` | `docs(odd): record the round 3 findings and the method change` |
+| 4 | `7c6d215` | `docs: correct the documented defaults and fill the reference gaps` — 7 files, 9 false claims plus the completeness gaps |
 
 ## Method
 

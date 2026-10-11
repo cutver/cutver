@@ -20,15 +20,18 @@ crates.io and GitHub on the day of creation.
 
 ## Core Principles
 
-1. **Zero project knowledge in the binary.** The binary never hardcodes
-   any framework, language, or toolchain. All project knowledge lives in the
-   repository's `cutver.toml`.
+1. **Zero project knowledge in the release pipeline.** Manifests are adapters and everything the
+   pipeline needs lives in the repository's `cutver.toml`. Two deliberate exceptions carry ecosystem
+   knowledge in the binary: `init`'s discovery knows the common manifests (`Cargo.toml`,
+   `package.json`, `pyproject.toml`, Gradle), and staging knows the standard lockfile names
+   (`KNOWN_LOCKFILES` in `src/bump/exec/command.rs`).
 2. **Type-driven, panic-free Rust.** Edition 2024+, `thiserror` for error
    hierarchy, the `semver` crate for version math, no `.unwrap()`/`.expect()`
    in production paths, verified against `rust-craft` standards.
 3. **Declarative, deterministic, organic.**
    - *Declarative*: Configuration lives in `cutver.toml`; the CLI remains terse.
-   - *Deterministic*: Identical Git states yield identical SemVer bumps, changelogs, and diffs.
+   - *Deterministic*: Identical Git states yield identical SemVer bumps and manifest diffs. The
+     changelog entry is stamped with the date it was cut, so that part also depends on the day.
    - *Organic*: The tool scales naturally from a single-file crate to a polyglot monorepo without friction.
 4. **Safe Git by default.** Require a clean working tree and selective
    staging of only the files `cutver` itself modified — never `git add .`.

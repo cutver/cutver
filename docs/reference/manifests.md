@@ -99,7 +99,6 @@ post_bump = "cargo check --workspace && pnpm install --lockfile-only"
 - **Python**: `uv.lock`, `poetry.lock`, `Pipfile.lock`, `pdm.lock`
 - **Android/Java**: `gradle.lockfile`
 - **PHP**: `composer.lock`
-- **Elixir**: `mix.lock`
 
 Other files touched by scripts remain unstaged in your working directory.
 

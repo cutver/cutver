@@ -298,7 +298,6 @@ To prevent accidental staging of unrelated files, `cutver` strictly filters file
 - `gradle.lockfile`
 - `poetry.lock`, `Pipfile.lock`, `uv.lock`, `pdm.lock`
 - `composer.lock`
-- `mix.lock`
 
 Untracked files and arbitrary unstaged source modifications are ignored and left untouched in your working directory.
 

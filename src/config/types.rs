@@ -34,6 +34,12 @@ pub enum ConfigError {
     MultiplePrimaryManifests,
     #[error("conflicting primary manifest: [version] specifies '{0}' but '{1}' is marked as primary")]
     ConflictingPrimaryManifest(String, String),
+    #[error("unknown configuration key '{key}' in [{table}] table in cutver.toml")]
+    UnknownKey { table: String, key: String },
+    #[error("unknown table [{table}] in cutver.toml")]
+    UnknownTable { table: String },
+    #[error("unknown top-level key '{key}' in cutver.toml")]
+    UnknownRootKey { key: String },
 }
 
 #[derive(Debug, Deserialize)]
@@ -293,6 +299,7 @@ mod tests {
 
     fn load_str(s: &str) -> Result<Config, ConfigError> {
         let mut c: Config = toml::from_str(s).map_err(ConfigError::Parse)?;
+        super::super::validation::reject_unknown_keys(s)?;
         let (p, d) = super::super::preflight::parse_preflight(s)?;
         c.preflight = p;
         c.preflight_default_timeout = d;

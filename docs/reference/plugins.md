@@ -102,12 +102,17 @@ capabilities = ["changelog.v1"]
 | :--- | :--- |
 | `runtime` | Always `wasm` for an installed plugin: the registry only publishes `.wasm` artifacts. |
 | `source` | Artifact file name inside the cache, `<name>-<version>.wasm`. Never an absolute path. |
-| `hash` | The registry's SHA-256, re-verified on every load. |
+| `hash` | The registry's SHA-256, re-verified on every load **when present**. `add` always writes it; an entry written by hand without it gives up the load-time check. |
 | `capabilities` | What the plugin may do. Validated against the canonical set; an unknown value fails closed. |
 | `events` | Lifecycle events this plugin handles. Empty means **all** of them. |
 | `manifest_match` | Manifest globs this plugin is offered. Empty means **none**. |
 | `permissions` | `network`, `env` and `filesystem` grants. A plugin has zero authority by default. |
 | `timeout_seconds` | Execution bound for the plugin call. |
+
+> **A `changelog.v1` plugin only runs when `[changelog] format = "plugin"`.** With the default
+> `keep-a-changelog` the built-in renderer writes the notes and the installed plugin stays idle —
+> `plugin list` still reports it installed and digest-matched. Name the plugin explicitly with
+> `[changelog] plugin = "<name>"` when more than one declares `changelog.v1`.
 
 ## Trust Model: Two Gates, One Digest
 

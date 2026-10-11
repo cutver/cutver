@@ -123,6 +123,20 @@ Declares one target file to update. Multiple `[[manifest]]` blocks can be specif
 
 ---
 
+### `[changelog]`
+
+| Key | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `path` | `string` | `None` | Changelog file to update. Without it, no changelog is rendered. |
+| `format` | `string` | `"keep-a-changelog"` | `"keep-a-changelog"` renders with the built-in renderer; `"plugin"` dispatches a `changelog.v1` plugin instead. |
+| `plugin` | `string` | `None` | With `format = "plugin"`, names the plugin to use. Omit it when exactly one declares `changelog.v1`. |
+| `mode` | `string` | `"conventional"` | `"conventional"` groups entries by commit type; `"template"` renders `template_file`. |
+| `template_file` | `string` | `None` | Template used when `mode = "template"`. |
+
+The remaining keys (`entry_template`, `template`, `full_template`, `header_template`, `include_scopes`,
+`fallback_entry`, `ignore_release_commits`, `ignore_scopes`) appear in the full configuration template
+above.
+
 ### `[preflight]`, `[git]`, `[hooks]`, & `[publish]`
 
 | Table | Key | Type | Default | Description |

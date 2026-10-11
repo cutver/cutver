@@ -52,7 +52,7 @@ orchestrates; the behaviour is pluggable.
 | Capability | What a plugin takes over |
 | :--- | :--- |
 | `manifest.v1` | Read and write a manifest format the core does not know. |
-| `lifecycle.v1` | Run on `pre_bump`, `post_bump` and `post_release`. |
+| `lifecycle.v1` | Run on `on_pre_bump`, `on_post_bump` and `on_post_release`. |
 | `changelog.v1` | Render the release notes. |
 | `versioning.v1` | Decide the next version from your commits. |
 

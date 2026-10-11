@@ -2,7 +2,7 @@
 
 The canonical declarative configuration reference for `cutver`.
 
-Every release behavior in `cutver` is configured in `cutver.toml` at the root of your project or repository.
+Release behavior is configured in `cutver.toml`, which discovery walks up to find rather than requiring at the repository root (§1); CLI flags (`--dry-run`, `--skip-preflight`) and the `CUTVER_PLUGIN_CACHE_DIR` environment variable change specific behaviours too.
 
 ---
 
@@ -131,7 +131,7 @@ Declares one target file to update. Multiple `[[manifest]]` blocks can be specif
 | `format` | `string` | `"keep-a-changelog"` | `"keep-a-changelog"` renders with the built-in renderer; `"plugin"` dispatches a `changelog.v1` plugin instead. |
 | `plugin` | `string` | `None` | With `format = "plugin"`, names the plugin to use. Omit it when exactly one declares `changelog.v1`. |
 | `mode` | `string` | `"conventional"` | `"conventional"` groups entries by commit type. A template is used whenever `template` or `template_file` is set, or when `mode = "template"`. |
-| `template_file` | `string` | `None` | Template file, used whenever it is set regardless of `mode`. With `mode = "template"` and no template set, `entry_template` is rendered instead. |
+| `template_file` | `string` | `None` | Template file, used when set and `template` is unset; when both are set, `template` wins and this is ignored. A template is used whenever either is set, or when `mode = "template"`; with `mode = "template"` and neither set, `entry_template` is rendered. |
 
 All of these are accepted. Only `template` and `plugin` are absent from the full configuration template
 above — `template` is an inline template string, an alternative to `template_file`.

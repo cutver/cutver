@@ -37,7 +37,7 @@ crates.io and GitHub on the day of creation.
    files `cutver` itself modified, plus recognized lockfiles the `post_bump` hook regenerated — never `git add .`.
 5. **Fail-fast preflight.** Run the project's declared verification commands;
    abort before any manifest mutation when any step fails.
-6. **Dry-run first.** `bump` and `plugin add` can be simulated end to end with `--dry-run`; `init` and `plugin remove` have no such flag.
+6. **Dry-run first.** `bump` is simulated end to end with `--dry-run`; `plugin add --dry-run` prints the plan and returns before the artifact download, so it also skips the install-time digest check. `init` and `plugin remove` have no such flag.
 
 ## CLI Surface
 

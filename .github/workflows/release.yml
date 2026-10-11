@@ -592,6 +592,84 @@ jobs:
             echo "Successfully updated Formula/cutver.rb to ${TAG} in Row0902/homebrew-tap."
           fi
 
+      - name: Update Homebrew tap plugin formula
+        if: steps.bot-token.outputs.token != '' || env.HOMEBREW_TAP_TOKEN != ''
+        env:
+          DIST_TOKEN: ${{ steps.bot-token.outputs.token || secrets.HOMEBREW_TAP_TOKEN }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          TAG="${{ needs.version.outputs.tag }}"
+          VERSION="${TAG#v}"
+
+          # Extract the plugin-enabled SHA-256 hashes generated in dist/SHA256SUMS
+          SHA_PLUGIN_MACOS_ARM=$(grep "cutver-plugins-${VERSION}-macos-arm64.tar.gz" dist/SHA256SUMS | awk '{print $1}')
+          SHA_PLUGIN_MACOS_INTEL=$(grep "cutver-plugins-${VERSION}-macos-x86_64.tar.gz" dist/SHA256SUMS | awk '{print $1}')
+          SHA_PLUGIN_LINUX_INTEL=$(grep "cutver-plugins-${VERSION}-linux-musl-x86_64.tar.gz" dist/SHA256SUMS | awk '{print $1}')
+          SHA_PLUGIN_LINUX_ARM=$(grep "cutver-plugins-${VERSION}-linux-musl-arm64.tar.gz" dist/SHA256SUMS | awk '{print $1}')
+
+          if [ -z "$SHA_PLUGIN_MACOS_ARM" ] || [ -z "$SHA_PLUGIN_MACOS_INTEL" ] || [ -z "$SHA_PLUGIN_LINUX_INTEL" ] || [ -z "$SHA_PLUGIN_LINUX_ARM" ]; then
+            echo "::error::Failed to resolve all required SHA-256 sums for the Homebrew plugin formula"
+            exit 1
+          fi
+
+          git clone "https://x-access-token:${DIST_TOKEN}@github.com/Row0902/homebrew-tap.git" tap-plugins
+          cd tap-plugins
+
+          cat <<EOF > Formula/cutver-plugins.rb
+          class CutverPlugins < Formula
+            desc "Cut a release. Bump SemVer. Every project, every language (plugin-enabled build)"
+            homepage "https://github.com/cutver/cutver"
+            license "MIT"
+
+            conflicts_with "cutver", because: "both install the cutver binary"
+
+            on_macos do
+              on_arm do
+                url "https://github.com/cutver/cutver/releases/download/${TAG}/cutver-plugins-${VERSION}-macos-arm64.tar.gz"
+                sha256 "${SHA_PLUGIN_MACOS_ARM}"
+              end
+              on_intel do
+                url "https://github.com/cutver/cutver/releases/download/${TAG}/cutver-plugins-${VERSION}-macos-x86_64.tar.gz"
+                sha256 "${SHA_PLUGIN_MACOS_INTEL}"
+              end
+            end
+
+            on_linux do
+              on_intel do
+                url "https://github.com/cutver/cutver/releases/download/${TAG}/cutver-plugins-${VERSION}-linux-musl-x86_64.tar.gz"
+                sha256 "${SHA_PLUGIN_LINUX_INTEL}"
+              end
+              on_arm do
+                url "https://github.com/cutver/cutver/releases/download/${TAG}/cutver-plugins-${VERSION}-linux-musl-arm64.tar.gz"
+                sha256 "${SHA_PLUGIN_LINUX_ARM}"
+              end
+            end
+
+            def install
+              bin.install "cutver"
+            end
+
+            test do
+              assert_match "cutver #{version}", shell_output("#{bin}/cutver --version")
+              assert_match "plugin", shell_output("#{bin}/cutver plugin --help")
+            end
+          end
+          EOF
+
+          sed -i 's/^          //' Formula/cutver-plugins.rb
+
+          git config user.name "cutver-release[bot]"
+          git config user.email "${{ secrets.CUTVER_APP_ID }}+cutver-release[bot]@users.noreply.github.com"
+          git add Formula/cutver-plugins.rb
+
+          if git diff --staged --quiet; then
+            echo "Homebrew tap plugin formula is already up to date with ${TAG}."
+          else
+            git commit -m "feat(cutver-plugins): add plugin-enabled cutver ${TAG}"
+            git push origin main
+            echo "Successfully updated Formula/cutver-plugins.rb to ${TAG} in Row0902/homebrew-tap."
+          fi
+
       - name: Update Scoop bucket manifest
         if: steps.bot-token.outputs.token != '' || env.HOMEBREW_TAP_TOKEN != ''
         env:
@@ -658,6 +736,86 @@ jobs:
             git commit -m "cutver: Update to version ${VERSION}"
             git push origin master
             echo "Successfully updated bucket/cutver.json to ${VERSION} in Row0902/scoop-bucket."
+          fi
+
+      - name: Generate Scoop bucket plugin manifest
+        if: steps.bot-token.outputs.token != '' || env.HOMEBREW_TAP_TOKEN != ''
+        env:
+          DIST_TOKEN: ${{ steps.bot-token.outputs.token || secrets.HOMEBREW_TAP_TOKEN }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          TAG="${{ needs.version.outputs.tag }}"
+          VERSION="${TAG#v}"
+
+          # Extract the plugin-enabled Windows SHA-256 hashes generated in dist/SHA256SUMS
+          SHA_PLUGIN_WIN_X64=$(grep "cutver-plugins-${VERSION}-windows-x86_64.zip" dist/SHA256SUMS | awk '{print $1}')
+          SHA_PLUGIN_WIN_ARM=$(grep "cutver-plugins-${VERSION}-windows-arm64.zip" dist/SHA256SUMS | awk '{print $1}')
+
+          if [ -z "$SHA_PLUGIN_WIN_X64" ] || [ -z "$SHA_PLUGIN_WIN_ARM" ]; then
+            echo "::error::Failed to resolve all required Windows SHA-256 sums for the Scoop plugin manifest"
+            exit 1
+          fi
+
+          git clone "https://x-access-token:${DIST_TOKEN}@github.com/Row0902/scoop-bucket.git" scoop-plugins
+          cd scoop-plugins
+
+          python3 -c "
+          import json
+
+          data = {
+              'version': '${VERSION}',
+              'description': 'Cut a release. Bump SemVer. Every project, every language. (Plugin-enabled build)',
+              'homepage': 'https://github.com/cutver/cutver',
+              'license': 'MIT',
+              'notes': 'Plugin-enabled build. Install either this or cutver, not both. If both were installed, run: scoop reset cutver-plugins',
+              'architecture': {
+                  '64bit': {
+                      'url': 'https://github.com/cutver/cutver/releases/download/${TAG}/cutver-plugins-${VERSION}-windows-x86_64.zip',
+                      'hash': '${SHA_PLUGIN_WIN_X64}',
+                      'extract_dir': 'cutver-plugins-${VERSION}-windows-x86_64'
+                  },
+                  'arm64': {
+                      'url': 'https://github.com/cutver/cutver/releases/download/${TAG}/cutver-plugins-${VERSION}-windows-arm64.zip',
+                      'hash': '${SHA_PLUGIN_WIN_ARM}',
+                      'extract_dir': 'cutver-plugins-${VERSION}-windows-arm64'
+                  }
+              },
+              'bin': 'cutver.exe',
+              'checkver': {
+                  'github': 'https://github.com/cutver/cutver'
+              },
+              'autoupdate': {
+                  'architecture': {
+                      '64bit': {
+                          'url': 'https://github.com/cutver/cutver/releases/download/v\$version/cutver-plugins-\$version-windows-x86_64.zip',
+                          'extract_dir': 'cutver-plugins-\$version-windows-x86_64'
+                      },
+                      'arm64': {
+                          'url': 'https://github.com/cutver/cutver/releases/download/v\$version/cutver-plugins-\$version-windows-arm64.zip',
+                          'extract_dir': 'cutver-plugins-\$version-windows-arm64'
+                      }
+                  },
+                  'hash': {
+                      'url': 'https://github.com/cutver/cutver/releases/download/v\$version/SHA256SUMS'
+                  }
+              }
+          }
+
+          with open('bucket/cutver-plugins.json', 'w') as f:
+              json.dump(data, f, indent=4)
+              f.write('\n')
+          "
+
+          git config user.name "cutver-release[bot]"
+          git config user.email "${{ secrets.CUTVER_APP_ID }}+cutver-release[bot]@users.noreply.github.com"
+          git add bucket/cutver-plugins.json
+
+          if git diff --staged --quiet; then
+            echo "Scoop bucket plugin manifest is already up to date with ${TAG}."
+          else
+            git commit -m "cutver-plugins: add plugin-enabled cutver ${VERSION}"
+            git push origin master
+            echo "Successfully updated bucket/cutver-plugins.json to ${VERSION} in Row0902/scoop-bucket."
           fi
 
       - name: Smoke test fresh Cutver installation

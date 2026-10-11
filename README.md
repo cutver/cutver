@@ -56,12 +56,21 @@
 
 ## Quick Install
 
-```bash
-# Homebrew (macOS & Linux)
-brew install Row0902/tap/cutver
+> **Two builds — pick one.** Homebrew carries two formulae (`cutver`, `cutver-plugins`) and Scoop two
+> manifests; the plugin variant is published from the next release on, so older versions need
+> `cargo install cutver --features plugins`. Both install a binary named `cutver`; the plugin-enabled
+> build adds the WebAssembly plugin runtime (`cutver plugin add/remove/list`) at ~5 MB compressed,
+> against ~1.25 MB lean.
 
-# Scoop (Windows)
-scoop bucket add row https://github.com/Row0902/scoop-bucket && scoop install cutver
+```bash
+# Homebrew (macOS & Linux) — pick one
+brew install Row0902/tap/cutver            # lean (~1.25 MB)
+brew install Row0902/tap/cutver-plugins    # plugin runtime (~5 MB)
+
+# Scoop (Windows) — pick one
+scoop bucket add row https://github.com/Row0902/scoop-bucket
+scoop install cutver            # lean (~1.25 MB)
+scoop install cutver-plugins    # plugin runtime (~5 MB)
 
 # Cargo
 cargo install cutver

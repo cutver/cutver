@@ -17,101 +17,48 @@ Release behavior is configured in `cutver.toml`, which discovery walks up to fin
 
 ## Full Configuration Template
 
+`cutver init` generates a real `cutver.toml`. The skeleton below shows the shape
+and nesting only; the configuration tables further down are canonical, so the
+skeleton cannot drift from them.
+
 ```toml
-# cutver.toml
-
+# cutver.toml — shape only
 [version]
-current_source = "Cargo.toml"     # Optional: explicit path to primary manifest
-strategy = "manual"               # only "plugin" is read; "manual"/"conventional" are unread
-
+strategy = "manual"
 [[manifest]]
 path = "Cargo.toml"
 kind = "cargo-package"
-primary = true                    # Source of truth for current version
-
-[[manifest]]
-path = "package.json"
-kind = "json"
-field = "version"                 # Dotted JSON key path
-
-[[manifest]]
-path = "pyproject.toml"
-kind = "pyproject"
-table = "project"                 # "project" (PEP 621) or "tool.poetry"
-
-[[manifest]]
-path = "android/app/build.gradle.kts"
-kind = "gradle"
-version_name_field = "versionName"
-version_code_field = "versionCode"
-
-[[manifest]]
-path = "version.txt"
-kind = "regex"
-pattern = 'release/v\d+\.\d+\.\d+'
-replacement = 'release/{{version}}'
-
-[preflight]
-default_timeout = 300             # Optional; no default is applied. `cutver init` scaffolds 300
-tests = "cargo test"
-lint  = { command = "cargo clippy -- -D warnings", timeout = 180 }
-
 [changelog]
 path = "CHANGELOG.md"
-format = "keep-a-changelog"
-mode = "conventional"             # "conventional" or "template"
-entry_template = "Maintenance and updates."
-template_file = ".github/templates/cutver/RELEASE.md"
-full_template = false
-header_template = "## [{{ tag }}] - {{ date }}"
-include_scopes = true
-fallback_entry = "Maintenance and updates."
-ignore_release_commits = true     # Exclude self-referential release commits
-ignore_scopes = ["internal"]      # Exclude specific commit scopes
-
+[preflight]
+tests = "cargo test"
 [git]
 tag_prefix = "v"
-floating_major_tag = true         # Create and push floating major tags (e.g. v1)
-commit_message = "chore(release): v{version}"
-require_clean_tree = true         # Require zero uncommitted changes
-require_branch = "main"           # Optional; the single branch allowed to cut releases
-
 [hooks]
-post_bump = "cargo check --workspace" # Executed after manifest updates, before staging
-
+post_bump = "cargo check"
 [publish]
-push = true                       # Push commit and tags upstream
-commands = [
-  "cargo publish"
-]
+push = true
 ```
 
 ---
 
 ## Unknown Keys
 
-`cutver.toml` is not a permissive document. Every key the loader does not
-recognise is a hard error: the configuration fails to load with an error that
-names the enclosing table and the offending key.
+`cutver.toml` is not a permissive document: every unrecognised key is a hard
+error naming the enclosing table and the offending key. This is deliberate —
+silently ignored unknown keys once let a half-built `[workspace]` table look
+valid while the documentation drifted from the loader.
 
 ```text
 unknown configuration key 'mode' in [workspace] table in cutver.toml
 ```
 
-The accepted keys are exactly the tables and fields documented below. This is
-deliberate: while unknown keys were silently ignored, a half-built `[workspace]`
-table was indistinguishable from a working one, and the documentation drifted
-from the loader.
-
-Two key sets are open by design rather than fixed:
-
-- `[preflight]`: every key other than `default_timeout` is a user-named step.
-- `[[manifest]]`: the union of the `kind`-specific keys (`field`,
-  `version_name_field`, `version_code_field`, `pattern`, `replacement`, `table`,
-  `plugin`) is accepted for every manifest, because `kind` selects the variant.
-
-An unknown key inside a plugin table (`[plugins.<name>]`) or its `permissions`
-sub-table is rejected the same way.
+Two key sets are open by design: `[preflight]`, where every key other than
+`default_timeout` is a user-named step; and `[[manifest]]`, which accepts the
+union of every `kind`'s keys, so a key annotated for one `kind` below (such as
+`pattern`) is accepted on any manifest because `kind` selects the variant. An
+unknown key inside `[plugins.<name>]` or its `permissions` sub-table is rejected
+the same way.
 
 ---
 
@@ -175,9 +122,6 @@ Declares one target file to update. Multiple `[[manifest]]` blocks can be specif
 | `fallback_entry` | `string` | `"Maintenance and updates."` | Bullet rendered when no commits match a category. |
 | `ignore_release_commits` | `bool` | `true` | Exclude self-referential release commits from the changelog. |
 | `ignore_scopes` | `list<string>` | `[]` | Exclude commits whose scope matches one of these values. |
-
-All of these are accepted. Only `template` and `plugin` are absent from the full configuration template
-above — `template` is an inline template string, an alternative to `template_file`.
 
 ### `[preflight]`, `[git]`, `[hooks]`, & `[publish]`
 

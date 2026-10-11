@@ -36,6 +36,15 @@ cross-checked against reality, and re-sweeps every absolute claim to confirm clo
 - [ ] 5. Verify budgets, link resolution and hype wording; record the residual.
 - [ ] 6. Open the pull request.
 
+## Round 3 findings
+
+The closure sweep's keyword method found the wrong-vocabulary and omission classes that three earlier rounds missed:
+
+- **`[workspace]` does not exist.** `Config` (`src/config/types.rs:41-63`) has no `workspace` field and there is no `deny_unknown_fields`, so the table is silently ignored. `docs/guides/monorepos.md:11-21` nonetheless documented two release models with an *Independent* row promising path-filtered commits and package-prefixed tags; `configuration.md` documented `mode`/`members` as real keys with defaults; `design.md`'s "Full Declarative Specification" listed them plus a `[[manifest]] glob` key that `Manifest` (`types.rs:158-166`) never deserializes. User decision: document the reality. Intent stays recorded at `design.md:170` as Phase 2.
+- **The `plugin` manifest kind existed undocumented.** `ManifestKind::Plugin` (`types.rs:149-152`) is fully implemented (`src/manifest/mod.rs:71-105`) and no document named it; `manifests.md` listed 5 of 6 kinds.
+- **`-plugins` suffix claim (introduced by `1b9a6e3`).** The registry publishes `0.13.0-plugins`, `0.13-plugins` and the floating `plugins`; there is no `0-plugins` and no `latest-plugins`.
+- **Found while reviewing, still open:** `configuration.md:112,114-115` attach "Default: ..." to the `json` `field` and the `gradle` `version_name_field`/`version_code_field`, but the serde enum fields have no `#[serde(default)]` — omitting them is a parse error. Round 4 targets this class explicitly.
+
 ## Round 2 findings (after the two verification passes)
 
 ### Integration docs — written against a newer action manifest than `@v1` serves
@@ -61,6 +70,11 @@ The real `cutver/release@v1` outputs are exactly `released`, `version`, `tag`, `
 | — | `5287074` | `docs(odd): record the claim fixes and the cli help follow-up` |
 | 2 + 3 | `1b9a6e3` | `docs: correct the integration guides and the remaining overstatements` — 6 files, 12 false claims |
 | 3 | `a82bd0e` | `docs: scope the last two repeats of already-fixed claims` — `README.md:113`, `references.md:9` |
+| 3 | `dd39702` | `docs: document the real workspace behaviour and the plugin manifest kind` — 6 files, `[workspace]` removed, `plugin` kind documented, `-plugins` suffix corrected |
+
+## Method
+
+Three rounds used one method (grep the absolutes, check each against code) and left blindness: it cannot see a **wrong vocabulary** (the `pre_bump` vs `on_pre_bump` event names contain no absolute) and it cannot see an **omission or a negative** (a documented config table the loader never reads). Round 3 added the complementary method: cross-check each documented table item by item against the struct or artifact that defines it. Round 4 makes that the primary method.
 
 Repeat sweep by the writer found one extra instance **outside** the allowed surfaces: the clap help text at `src/cli/args/plugin.rs:48` repeats F2 (*"Resolve and print the plan without downloading or writing anything"*). The `cutver-docs-voice` skill excludes CLI help text from its activation contract, so it is recorded as a follow-up rather than fixed in this docs-only change.
 

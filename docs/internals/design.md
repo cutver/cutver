@@ -5,13 +5,13 @@
 > `cutver.toml`. This document describes the implemented design and the
 > evolution roadmap; task plans live in `odd/tasks/`.
 >
-> **Status convention.** A capability is marked `[Implemented]` when this tree
-> contains the code and the sentence cites its `path:line`; `[Partial]` when
-> some of it ships; `[Planned]` when it is design intent only. A `[Planned]`
-> item is never written as a key table, a configuration example, or
-> present-tense capability language. `[External]` marks a capability delivered
-> outside this repository. Unmarked prose describes structure or history, not a
-> capability.
+> **Status convention.** `[Implemented]` means this tree contains the code and
+> the sentence cites its `path:line`; `[Partial]` means some of it ships;
+> `[Planned]` means design intent only; `[Deferred]` means decided against for
+> now, with a recorded reason and a reopen condition. A `[Planned]` item is never
+> written as a key table, a configuration example, or present-tense capability
+> language. `[External]` marks a capability delivered outside this repository.
+> Unmarked prose describes structure or history, not a capability.
 
 ## Decision & Origin
 
@@ -173,7 +173,7 @@ names what was searched for and not found.
 | `cutver doctor --fix` | Planned | No `--fix` flag exists; `doctor` runs version and changelog checks (`src/cli/args/commands.rs:50-54`). |
 | `glob` in `[[manifest]]` | Planned | No glob for manifest paths; the only glob is the plugin `manifest_match` (`src/cli/args/plugin.rs:45`). |
 | Cargo `[workspace.package]` / `version.workspace = true` | Planned | Unsupported; the editor reads and writes `package.version` only (`src/manifest/cargo_toml.rs:15,28`). |
-| Independent workspace mode (`--package`, path filtering) | Planned | No such flag; no path filtering in the pipeline. |
+| Independent workspace mode (`--package`, path filtering) | Deferred | No such flag; no path filtering in the pipeline. Decided against for now, with reasons and a reopen condition in the [workspace releases decision record](../rfcs/0002-workspace-releases.md). |
 | Internal workspace dependency cascade | Planned | No code updates inter-manifest dependency constraints. |
 | Pre-release channels (`--channel`, `bump release`) | Planned | No `--channel` on `bump` and no `release` level (`src/cli/args/commands.rs:35-47`). |
 | GitHub Actions step outputs | External | Emitted by the `cutver/release@v1` action, not by this tree (`$GITHUB_OUTPUT` does not appear in `src/`). |

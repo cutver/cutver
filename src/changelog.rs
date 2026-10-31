@@ -5,6 +5,7 @@ use thiserror::Error;
 mod context;
 mod extract;
 mod render;
+mod sections;
 mod update;
 
 pub use context::{
@@ -17,6 +18,7 @@ pub use render::{
     create_environment, interpolate_string, render_body, render_body_with_context, render_body_with_plugin,
     render_template,
 };
+pub use sections::{PackageSection, render_body_with_packages, supports_package_sections};
 pub use update::{compute_update, format_date, update, update_with_options};
 
 pub type ChangelogError = Error;

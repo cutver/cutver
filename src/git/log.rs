@@ -48,7 +48,12 @@ pub struct PackageCommitSelection {
 /// invocation whose pathspecs include the package directory and `:(exclude)` every declared path
 /// nested under it, so a commit under `crates/a/sub` never leaks into the section of a package
 /// declared at `crates/a` (feature doc L7). Commits touching files of two sibling packages appear
-/// once in each, and a commit touching no declared path is returned in [`Self::unowned`].
+/// once in each.
+///
+/// The unowned remainder is derived **in-process** as the plain range minus every commit hash any
+/// declared package claimed, so it means exactly "returned by no declared package" (S7). A
+/// commit touching a declared path and an unowned path is therefore rendered once, under its
+/// package, never again under the unowned section.
 ///
 /// Declared paths are turned into repo-relative pathspecs from their own value; absolute declared
 /// paths are rebased onto the repository root, never onto the current working directory.
@@ -92,19 +97,21 @@ pub fn commits_by_package(
         });
     }
 
-    // The unowned remainder is the range filtered to everything no declared package owns. A
-    // declaration at the repository root owns every path, so the remainder is empty there.
+    // The unowned remainder is the plain range minus every hash a declared package already
+    // claimed: "unowned" means "returned by no declared package", so a commit changing a
+    // package file beside an unowned one is not repeated here. A declaration at the repository
+    // root owns every path, so the remainder is empty there.
     if !dirs.iter().any(|dir| dir.is_empty()) {
-        let mut args = range_args(from_tag, to_ref);
-        // Same history-simplification guard as the per-package query above: a merge touching an
-        // unowned path must not be pruned either.
-        args.push("--full-history".to_string());
-        args.push("--".to_string());
-        args.push(".".to_string());
-        for dir in &dirs {
-            args.push(format!(":(exclude){}", dir.join("/")));
-        }
-        selection.unowned = run_log(repo, &args, from_tag)?;
+        let owned: std::collections::HashSet<&str> = selection
+            .packages
+            .iter()
+            .flat_map(|p| p.commits.iter().map(|c| c.hash.as_str()))
+            .collect();
+        let range = run_log(repo, &range_args(from_tag, to_ref), from_tag)?;
+        selection.unowned = range
+            .into_iter()
+            .filter(|c| !owned.contains(c.hash.as_str()))
+            .collect();
     }
 
     Ok(selection)

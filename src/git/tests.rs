@@ -940,6 +940,51 @@ fn commits_by_package_keeps_a_merge_commit_that_touches_a_declared_path() {
     assert_eq!(merged, 1);
 }
 
+/// Repository with one declared package `crates/a` and a single commit in range that changes a
+/// file under that package **and** a file outside every declared path.
+fn mixed_commit_repo() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    super::init_test_repo(dir.path());
+    commit_files(
+        dir.path(),
+        &[
+            ("crates/a/Cargo.toml", "[package]\nname = \"a\"\n"),
+            ("crates/a/src/lib.rs", "1"),
+        ],
+        "base",
+    );
+    git_at(dir.path(), &["tag", "v1.0.0"]);
+    commit_files(
+        dir.path(),
+        &[("crates/a/src/lib.rs", "2"), ("docs/guide.md", "readme")],
+        "mixed",
+    );
+    dir
+}
+
+#[test]
+fn commits_by_package_places_a_mixed_commit_only_in_its_package() {
+    let dir = mixed_commit_repo();
+    let paths = [crate::config::ManifestPath::parse("crates/a/Cargo.toml").unwrap()];
+    let pairs = package_pairs(&["a"], &paths);
+
+    let selection = super::log::commits_by_package(dir.path(), Some("v1.0.0"), "HEAD", &pairs).unwrap();
+
+    // The package owns at least one of the commit's files, so the commit is placed there (S4).
+    assert_eq!(messages(&selection.packages[0].commits), vec!["mixed"]);
+    // "Unowned" means "returned by no declared package", so the commit must not appear twice.
+    assert!(selection.unowned.is_empty(), "unowned = {:?}", messages(&selection.unowned));
+    // Exactly once across the whole selection, under the package section only.
+    let total = selection
+        .packages
+        .iter()
+        .flat_map(|p| p.commits.iter())
+        .chain(selection.unowned.iter())
+        .filter(|c| c.message == "mixed")
+        .count();
+    assert_eq!(total, 1);
+}
+
 #[test]
 fn raw_commits_between_keeps_its_unfiltered_contract() {
     let dir = package_repo();

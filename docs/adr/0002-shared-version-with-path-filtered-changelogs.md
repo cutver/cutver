@@ -4,7 +4,7 @@
 **Date**: 2026-10-11
 **Owner**: repository maintainer
 **Review date**: 2027-10-11 (proposal; not yet committed by the maintainer)
-**Implementation**: not-started
+**Implementation**: complete
 **Supersedes**: none
 
 ## Context
@@ -25,9 +25,13 @@ Prior art sets the honesty frame: the dependency cascade is **not** unsolved in 
 
 We will adopt option (c): one shared version with path-filtered per-package changelog sections, plus the schema-only package identity it requires. We will reject option (a) for now under the reopen condition below, drop option (b), and name option (d) as today's honest answer for anyone who needs independent releases.
 
-### Implementation status (separate axis: not-started)
+### Implementation status (separate axis: complete)
 
-The `package` key does not exist in the configuration schema: the closed `MANIFEST_KEYS` allowlist is `path`, `primary`, `kind`, `field`, … (`src/config/validation.rs:68-74`), and `grep '"package"' src/config` returns nothing. No path filtering exists in the changelog's commit range: `src/git/log.rs:11-20` pushes only `log`, the range and `--format`, with no `-- <path>` pathspec.
+The accepted scope is delivered. `package` is an optional key on `[[manifest]]` (`src/config/types.rs`), accepted by every manifest kind through the closed `MANIFEST_KEYS` allowlist (`src/config/validation.rs`), validated as a slug, and rejected on duplicates naming the value. Commit selection per declared path is `git::commits_by_package` (`src/git/log.rs`), which resolves nested declarations with `:(exclude)` pathspecs so a package never receives its children's commits; grouping and rendering are `changelog::sections` (`src/changelog/sections.rs`).
+
+A configuration that declares no `package` never reaches per-package selection and renders byte-identically to before, pinned by `tests/e2e_changelog_packages.rs`.
+
+Deliberately outside the accepted scope: `package` is not exposed to custom templates or the plugin wire context, there is no `--package` flag, and `mode = "template"` and `format = "plugin"` keep receiving the flat commit list. Independent release cadence remains undelivered, as the Decision states.
 
 ## Alternatives
 

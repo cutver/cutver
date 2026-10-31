@@ -1,0 +1,27 @@
+{
+  "title": "Per-package changelog sections",
+  "brief": "Concrete rendering of ADR-0002 option (c) for workspace releases: one shared version, one tag, and path-filtered changelog sections per package. Baseline for the WU1-WU3 implementation slices.",
+  "artboards": [
+    {
+      "file": "01-package-sections.html",
+      "title": "Package sections, as rendered",
+      "tradeoff": "The target output read as a document: package heading above categories, declaration order, unowned commits under Other changes. Best for judging the shape a reader will actually see.",
+      "width": 1000,
+      "height": 1120
+    },
+    {
+      "file": "02-edge-cases.html",
+      "title": "Edge cases the rule must survive",
+      "tradeoff": "Same output with a rules rail: root package, nested paths, a commit in two packages, unowned commits, empty packages. Denser than a pure specimen, but it is where the design gets falsified.",
+      "width": 1180,
+      "height": 900
+    },
+    {
+      "file": "03-before-after.html",
+      "title": "Before, after, and the switch",
+      "tradeoff": "Side-by-side contrast plus the cutver.toml key that enables it. Strongest for a reviewer deciding whether the change is worth its schema cost; hides the edge-case rules.",
+      "width": 1180,
+      "height": 1000
+    }
+  ]
+}

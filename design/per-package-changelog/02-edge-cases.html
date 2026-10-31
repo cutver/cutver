@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Package sections — edge cases</title>
+<style>
+  :root{
+    color-scheme: light;
+    --ink:#1c1f23; --ink-soft:#4a5158; --ink-faint:#6b737b;
+    --line:#dfe3e7; --line-soft:#eceff2;
+    --paper:#fff; --page:#f6f7f8;
+    --accent:#0b5d8a; --accent-soft:#eaf3f8;
+    --warn:#8a4b00; --warn-soft:#fdf3e6; --warn-line:#f0dcc0;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0; background:var(--page); color:var(--ink); font-family:var(--sans); font-size:15px; line-height:1.6; -webkit-font-smoothing:antialiased}
+  .frame{max-width:1180px; margin:0 auto; padding:32px 24px 64px}
+  .chrome{display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; padding-bottom:14px; margin-bottom:22px; border-bottom:1px solid var(--line)}
+  .chrome h1{font-size:15px; margin:0; font-weight:650}
+  .chrome p{margin:0; color:var(--ink-faint); font-size:13px}
+  .tag{font-family:var(--mono); font-size:11px; letter-spacing:.06em; text-transform:uppercase; background:var(--accent-soft); color:var(--accent); border:1px solid #cfe2ee; border-radius:999px; padding:3px 10px}
+  .grid{display:grid; grid-template-columns:minmax(0,1fr) 340px; gap:28px; align-items:start}
+  .sheet{background:var(--paper); border:1px solid var(--line); border-radius:10px; padding:34px 36px 40px; box-shadow:0 1px 2px rgba(28,31,35,.04), 0 8px 24px -16px rgba(28,31,35,.18)}
+  .doc h3.pkg{font-size:17px; margin:26px 0 6px; font-weight:650; padding-bottom:5px; border-bottom:1px solid var(--line-soft)}
+  .doc h3.pkg:first-of-type{margin-top:26px}
+  .doc h3.pkg code{font-family:var(--mono); font-size:15px}
+  .doc h3.version{font-size:23px; margin:0 0 20px; font-weight:650; letter-spacing:-.01em}
+  .doc h3.version code{font-family:var(--mono); font-size:23px; background:none; padding:0}
+  h4.cat{font-size:11.5px; text-transform:uppercase; letter-spacing:.08em; color:var(--ink-soft); margin:14px 0 6px; font-weight:650}
+  ul.entries{margin:0; padding-left:20px}
+  ul.entries li{margin:0 0 6px}
+  ul.entries li::marker{color:#b9c0c7}
+  code{font-family:var(--mono); font-size:.88em; background:#f2f4f6; border-radius:4px; padding:1px 5px}
+  .scope{color:var(--accent); font-weight:600}
+  .mark{
+    display:inline-flex; align-items:center; justify-content:center;
+    width:19px; height:19px; border-radius:50%; background:var(--accent); color:#fff;
+    font-family:var(--mono); font-size:11px; font-weight:700; vertical-align:2px; margin-right:7px;
+    flex:none;
+  }
+  .mark.w{background:var(--warn)}
+  .owner{font-family:var(--mono); font-size:11px; color:var(--ink-faint); margin-left:6px}
+  .rail{display:grid; gap:14px}
+  .card{background:var(--paper); border:1px solid var(--line); border-radius:9px; padding:14px 16px 15px}
+  .card.warn{background:var(--warn-soft); border-color:var(--warn-line)}
+  .card h2{font-size:13px; margin:0 0 6px; font-weight:650; display:flex; align-items:flex-start; gap:8px}
+  .card p{margin:0; font-size:13px; color:var(--ink-soft)}
+  .card.warn p{color:#6b4108}
+  .card code{font-size:12px}
+  .lede{margin:0 0 4px; font-size:13px; color:var(--ink-faint)}
+  :focus-visible{outline:2px solid var(--accent); outline-offset:2px; border-radius:3px}
+  @media (prefers-reduced-motion: reduce){ *{animation:none !important; transition:none !important} }
+  @media (max-width: 900px){ .grid{grid-template-columns:1fr} }
+</style>
+</head>
+<body>
+<main class="frame">
+  <header class="chrome">
+    <span class="tag">Board 02</span>
+    <h1>Edge cases the rule has to survive</h1>
+    <p>Nested paths, a root package, a commit that belongs to two packages, an empty package</p>
+  </header>
+
+  <div class="grid">
+    <article class="sheet" aria-label="Rendered changelog showing edge cases">
+      <div class="doc">
+        <h3 class="version"><code>## [0.14.0] — 2026-10-31</code></h3>
+
+        <h3 class="pkg"><code>### cutver</code><span class="owner">path = "."</span></h3>
+        <h4 class="cat">Changed</h4>
+        <ul class="entries">
+          <li><span class="mark">1</span>refactor(<span class="scope">bump</span>): read the staging set once per pipeline run</li>
+          <li><span class="mark">2</span>feat(<span class="scope">plugin</span>): content-address the artifact cache<span class="owner">also in cutver-pdk</span></li>
+        </ul>
+
+        <h3 class="pkg"><code>### cutver-pdk</code><span class="owner">path = "crates/cutver-pdk"</span></h3>
+        <h4 class="cat">Added</h4>
+        <ul class="entries">
+          <li><span class="mark">3</span>feat(<span class="scope">types</span>): add <code>manifest_match</code> to <code>PluginManifest</code></li>
+          <li><span class="mark">2</span>feat(<span class="scope">plugin</span>): content-address the artifact cache<span class="owner">also in cutver</span></li>
+        </ul>
+
+        <h3 class="pkg"><code>### Other changes</code></h3>
+        <ul class="entries">
+          <li><span class="mark w">4</span>ci: split the plugins feature test job</li>
+        </ul>
+
+        <p class="lede" style="margin-top:26px">
+          <span class="mark w">5</span>
+          <code>cutver-registry</code> is declared in <code>cutver.toml</code> but has no commit in
+          <code>v0.13.0..HEAD</code>, so it renders no heading at all.
+        </p>
+      </div>
+    </article>
+
+    <aside class="rail" aria-label="Rules behind each marker">
+      <div class="card">
+        <h2><span class="mark">1</span>Root package owns the remainder</h2>
+        <p>A manifest with <code>path = "."</code> would otherwise swallow every commit. Resolution is
+        <strong>longest declared path wins</strong>, so a file under <code>crates/cutver-pdk/</code>
+        goes to that package, not to the root.</p>
+      </div>
+
+      <div class="card">
+        <h2><span class="mark">2</span>Two packages, two entries</h2>
+        <p>A commit touching files owned by different packages appears <strong>once in each</strong>
+        — it is real history for both. It never repeats inside a single package.</p>
+      </div>
+
+      <div class="card">
+        <h2><span class="mark">3</span>Deepest path, per file</h2>
+        <p>Assignment is per <em>file</em>, then the commit is placed by the packages those files
+        belong to. Nesting therefore resolves without a tie-break table.</p>
+      </div>
+
+      <div class="card">
+        <h2><span class="mark w">4</span>Unowned commits stay visible</h2>
+        <p>Anything touching no declared manifest path — CI files, workspace docs, the lockfile —
+        lands under <code>Other changes</code>. It is never dropped silently.</p>
+      </div>
+
+      <div class="card warn">
+        <h2><span class="mark w">5</span>No empty sections</h2>
+        <p>A package with zero commits gets <strong>no heading</strong>. The absence is the signal;
+        an empty section would read like a rendering bug.</p>
+      </div>
+    </aside>
+  </div>
+</main>
+</body>
+</html>

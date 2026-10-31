@@ -1,0 +1,28 @@
+name: PR labels
+
+on:
+  pull_request:
+    types: [opened, reopened, labeled, unlabeled, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  type-label:
+    name: Exactly one type label
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require exactly one type:* label
+        env:
+          LABELS: ${{ toJSON(github.event.pull_request.labels) }}
+        run: |
+          set -eu
+          count=$(printf '%s' "$LABELS" | jq '[.[] | select(.name | startswith("type:"))] | length')
+          if [ "$count" -eq 1 ]; then
+            printf 'One type label present.\n'
+            exit 0
+          fi
+          printf 'This pull request must carry exactly one type:* label; found %s.\n' "$count" >&2
+          printf 'Available: type:feat, type:fix, type:docs, type:refactor, type:perf, type:test, type:build, type:ci, type:chore, type:style, type:revert.\n' >&2
+          exit 1

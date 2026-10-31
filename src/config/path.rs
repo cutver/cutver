@@ -51,6 +51,62 @@ impl ManifestPath {
     pub fn as_path(&self) -> &Path {
         Path::new(&self.0)
     }
+
+    /// Rebases a declared manifest path onto `repo`, returning the forward-slash repo-relative
+    /// spelling. Only absolute paths are rebased: a relative declared path is already repo-relative
+    /// and is returned as written, without a `..` escape check. An absolute path that genuinely
+    /// escapes the repository yields `None`.
+    ///
+    /// Both sides are compared in one shared normalization form (see [`absolute_form`]): the real
+    /// path of the longest existing ancestor plus the not-yet-created trailing components, with
+    /// the Windows verbatim prefix stripped and `/` separators. Canonicalizing only the repository
+    /// was the bug: a declared path whose manifest does not exist yet kept its raw spelling, so a
+    /// symlinked temp root (macOS `/var` -> `/private/var`) or an extended-length `\\?\` prefix
+    /// made an inside path look like an escape. Comparing whole components also keeps
+    /// `/repo/crates/a` from matching the sibling `/repo/crates/ab`.
+    pub(crate) fn rebase_onto_repo(repo: &Path, declared: &Path) -> Option<String> {
+        if !declared.is_absolute() {
+            return Some(declared.to_string_lossy().replace('\\', "/"));
+        }
+        let base: Vec<String> = path_components(&absolute_form(repo));
+        let absolute: Vec<String> = path_components(&absolute_form(declared));
+        let rest = absolute.strip_prefix(base.as_slice())?;
+        Some(rest.join("/"))
+    }
+}
+
+/// Canonical comparison form of an absolute path: the real path of its longest existing ancestor
+/// followed by the components that do not exist yet, with the Windows verbatim prefix stripped and
+/// `/` separators. Resolving the existing prefix is what makes a symlinked spelling and a real
+/// spelling compare equal, while the verbatim strip keeps the `\\?\` form `fs::canonicalize`
+/// returns from being a different shape than the declared path.
+fn absolute_form(path: &Path) -> String {
+    let mut missing: Vec<String> = Vec::new();
+    let mut candidate = path;
+    let existing = loop {
+        if let Ok(existing) = std::fs::canonicalize(candidate) {
+            break existing;
+        }
+        let Some(name) = candidate.file_name() else {
+            break candidate.to_path_buf();
+        };
+        missing.push(name.to_string_lossy().to_string());
+        let Some(parent) = candidate.parent() else {
+            break candidate.to_path_buf();
+        };
+        candidate = parent;
+    };
+    let mut form = strip_verbatim_prefix(existing).to_string_lossy().replace('\\', "/");
+    for part in missing.iter().rev() {
+        form.push('/');
+        form.push_str(part);
+    }
+    form
+}
+
+/// Splits a `/` form into whole components, ignoring empty ones so a root is an empty prefix.
+fn path_components(form: &str) -> Vec<String> {
+    form.split('/').filter(|c| !c.is_empty()).map(str::to_string).collect()
 }
 
 impl Deref for ManifestPath {
@@ -170,6 +226,108 @@ impl<'de> Deserialize<'de> for ManifestPath {
     }
 }
 
+/// Domain newtype representing a validated package identity slug.
+///
+/// Invariants enforced at construction (*Parse, Don't Validate*):
+/// 1. Cannot be empty or whitespace-only.
+/// 2. Contains no whitespace and no path separators (`/` or `\`).
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct PackageName(String);
+
+impl PackageName {
+    /// Parses and validates a package name slug.
+    pub fn parse(s: impl AsRef<str>) -> Result<Self, ConfigError> {
+        let raw = s.as_ref();
+        if raw.trim().is_empty() {
+            return Err(ConfigError::EmptyPackageName);
+        }
+        if raw.chars().any(|c| c.is_whitespace() || c == '/' || c == '\\') {
+            return Err(ConfigError::InvalidPackageName(raw.to_string()));
+        }
+        Ok(Self(raw.to_string()))
+    }
+
+    /// Borrows the package name as a string slice.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Deref for PackageName {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl AsRef<str> for PackageName {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Borrow<str> for PackageName {
+    fn borrow(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for PackageName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl TryFrom<&str> for PackageName {
+    type Error = ConfigError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Self::parse(value)
+    }
+}
+
+impl TryFrom<String> for PackageName {
+    type Error = ConfigError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::parse(value)
+    }
+}
+
+impl FromStr for PackageName {
+    type Err = ConfigError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::parse(s)
+    }
+}
+
+impl From<PackageName> for String {
+    fn from(p: PackageName) -> Self {
+        p.0
+    }
+}
+
+impl Serialize for PackageName {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.0)
+    }
+}
+
+impl<'de> Deserialize<'de> for PackageName {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Self::parse(s).map_err(serde::de::Error::custom)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -252,6 +410,42 @@ mod tests {
         assert_eq!(deserialized, original);
 
         let err: Result<ManifestPath, _> = serde_json::from_str(r#""""#);
+        assert!(err.is_err());
+    }
+
+    #[test]
+    fn package_name_accepts_slug() {
+        let p = PackageName::parse("cutver-pdk").unwrap();
+        assert_eq!(p.as_str(), "cutver-pdk");
+        assert_eq!(format!("{p}"), "cutver-pdk");
+        assert_eq!(&*p, "cutver-pdk");
+
+        let from_str: PackageName = "cutver.core".parse().unwrap();
+        assert_eq!(from_str.as_str(), "cutver.core");
+    }
+
+    #[test]
+    fn package_name_rejects_empty_whitespace_and_separators() {
+        assert!(matches!(PackageName::parse(""), Err(ConfigError::EmptyPackageName)));
+        assert!(matches!(PackageName::parse("   "), Err(ConfigError::EmptyPackageName)));
+        for invalid in ["two words", " leading", "trailing ", "a/b", r"a\b"] {
+            assert!(
+                matches!(PackageName::parse(invalid), Err(ConfigError::InvalidPackageName(_))),
+                "{invalid:?} should be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn package_name_serde_roundtrip() {
+        let original = PackageName::parse("cutver-registry").unwrap();
+        let serialized = serde_json::to_string(&original).unwrap();
+        assert_eq!(serialized, r#""cutver-registry""#);
+
+        let deserialized: PackageName = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(deserialized, original);
+
+        let err: Result<PackageName, _> = serde_json::from_str(r#""two words""#);
         assert!(err.is_err());
     }
 

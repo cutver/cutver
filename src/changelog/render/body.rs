@@ -141,55 +141,69 @@ pub fn render_body_with_context(
 }
 
 pub(crate) fn render_conventional(config: &Changelog, commits: &[ConventionalCommit]) -> String {
+    render_categorised(config, commits, 3)
+}
+
+/// Renders one changelog item line, shared by the flat and the per-package renderers.
+pub(crate) fn render_item(commit: &ConventionalCommit, include_scopes: bool) -> String {
+    match (&commit.scope, include_scopes) {
+        (Some(scope), true) => format!("- **{}**: {}", scope, commit.description.trim()),
+        _ => format!("- {}", commit.description.trim()),
+    }
+}
+
+/// Render the conventional category buckets at the given markdown heading level.
+///
+/// Level 3 is the flat, no-package output; package sections nest the same buckets one level
+/// deeper beneath `### <package>` (S3).
+pub(crate) fn render_categorised(config: &Changelog, commits: &[ConventionalCommit], level: usize) -> String {
     let filtered_commits =
         crate::changelog::context::filter_commits(commits, config.ignore_release_commits, &config.ignore_scopes);
     let commits = &filtered_commits;
+    let heading = "#".repeat(level);
 
     struct Category {
-        header: &'static str,
+        title: &'static str,
         items: Vec<String>,
     }
 
     let mut categories = [
         Category {
-            header: "### ⚠️ Breaking Changes",
+            title: "⚠️ Breaking Changes",
             items: Vec::new(),
         },
         Category {
-            header: "### Features",
+            title: "Features",
             items: Vec::new(),
         },
         Category {
-            header: "### Bug Fixes",
+            title: "Bug Fixes",
             items: Vec::new(),
         },
         Category {
-            header: "### Performance Improvements",
+            title: "Performance Improvements",
             items: Vec::new(),
         },
         Category {
-            header: "### Refactoring",
+            title: "Refactoring",
             items: Vec::new(),
         },
         Category {
-            header: "### Documentation",
+            title: "Documentation",
             items: Vec::new(),
         },
         Category {
-            header: "### Maintenance",
+            title: "Maintenance",
             items: Vec::new(),
         },
         Category {
-            header: "### Other Changes",
+            title: "Other Changes",
             items: Vec::new(),
         },
     ];
 
     for c in commits {
-        let item = match (&c.scope, config.include_scopes) {
-            (Some(scope), true) => format!("- **{}**: {}", scope, c.description.trim()),
-            _ => format!("- {}", c.description.trim()),
-        };
+        let item = render_item(c, config.include_scopes);
 
         if c.is_breaking {
             categories[0].items.push(item);
@@ -209,7 +223,7 @@ pub(crate) fn render_conventional(config: &Changelog, commits: &[ConventionalCom
     let sections: Vec<String> = categories
         .into_iter()
         .filter(|cat| !cat.items.is_empty())
-        .map(|cat| format!("{}\n{}", cat.header, cat.items.join("\n")))
+        .map(|cat| format!("{heading} {}\n{}", cat.title, cat.items.join("\n")))
         .collect();
 
     if sections.is_empty() {

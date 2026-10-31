@@ -195,6 +195,7 @@ mod tests {
             },
             manifest: vec![Manifest {
                 path: ManifestPath::parse("Cargo.toml").unwrap(),
+                package: None,
                 primary: true,
                 kind: ManifestKind::CargoPackage,
             }],

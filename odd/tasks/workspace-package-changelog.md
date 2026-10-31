@@ -30,10 +30,10 @@ S11. Documentation states the behavior: `docs/reference/configuration.md` docume
 
 | ID | Spec | Task | Route | Commit |
 |---|---|---|---|---|
-| T1 | S2, S9, S10 | Add the optional `package` identity to the manifest schema, the closed key allowlist, duplicate validation and the reference docs | writer | pending |
-| T2 | S4, S8 | Add path-filtered commit selection to the git layer: per-package ranges, unowned remainder, nested-path resolution | writer | pending |
-| T3 | S3, S5, S6, S7, S11 | Group commits into package sections in the default changelog renderer and document the rendered shape, with the backward-compatibility invariant pinned | writer | pending |
-| T4 | S1, S8 | Update ADR-0002's implementation status now that the accepted scope is delivered | inline | pending |
+| T1 | S2, S9, S10 | Add the optional `package` identity to the manifest schema, the closed key allowlist, duplicate validation and the reference docs | writer | `97b8102` |
+| T2 | S4, S8 | Add path-filtered commit selection to the git layer: per-package ranges, unowned remainder, nested-path resolution | writer | `92e702f` |
+| T3 | S3, S5, S6, S7, S11 | Group commits into package sections in the default changelog renderer and document the rendered shape, with the backward-compatibility invariant pinned | writer | `feaf057` |
+| T4 | S1, S8 | Update ADR-0002's implementation status and the neighbouring roadmap row now that the accepted scope is delivered | inline | pending |
 
 ## Log
 
@@ -50,3 +50,9 @@ L5. T1's schema addition forced test-only `package: None` additions to existing 
 L6. T1 delivered in commit `97b8102` (feature doc and design baseline in `e514511`) on branch `feat/package-changelog-sections`. Evidence: RED `cargo test --test unknown_config_keys` failed with `UnknownKey { table: "manifest", key: "package" }` before the allowlist change; GREEN 16/16 on that target, 51/51 on `--lib config`, and the full `cargo test` suite with 0 failures.
 
 L7. Conflict found between two approved decisions, resolved in favour of S4: for nested declared paths a plain `git log -- <path>` per package cannot implement S4, because `-- crates/a` also matches commits under `crates/a/sub`, so a nested package's commits would leak into its ancestor's section. S8 stands (still one invocation per package) and gains an exclusion: each package's invocation passes `:(exclude)` pathspecs for every declared path nested under it. Slice boundary recorded: the harness measured 790 authored lines across `e514511` and `97b8102`, past the ~400-line target, because the three HTML artboards are illustrative and do not require code review; T2 and T3 remain separate commits.
+
+L8. T2 delivered in `92e702f`. `commits_by_package` was added beside the existing functions, which keep their signatures and output through extracted helpers pinned by a preserve test. RED was a compile failure on the missing function; GREEN 37/37 on `--lib git`. Worker-flagged residual: merge commits touching declared paths may be pruned by git's default history simplification, uncovered by the fixtures.
+
+L9. T3 delivered in `feaf057`. The gate is structural: with no `package` declared, `commits_by_package` is never called and the rendered file is byte-identical, pinned by `tests/e2e_changelog_packages.rs`. Deliberately unchanged: `mode = "template"` and `format = "plugin"` keep receiving flat commits. RED showed today's flat `### Features` output with no package sections; GREEN 3/3 e2e, 100/100 `--lib changelog`, and 7/12/3 on the three preserve suites.
+
+L10. T4 sweeps the neighbouring claims the delivery falsified, in the same spirit as the claim-accuracy closure: `docs/adr/0002` moves to `Implementation: complete` with its status paragraph rewritten, and the `docs/internals/design.md` roadmap row stops asserting "no path filtering in the pipeline" while keeping the independent mode `Deferred`. `docs/rfcs/0002` is left untouched on purpose: it is the historical proposal and already declares ADR-0002 authoritative.

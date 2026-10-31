@@ -51,6 +51,60 @@ impl ManifestPath {
     pub fn as_path(&self) -> &Path {
         Path::new(&self.0)
     }
+
+    /// Rebases a declared manifest path onto `repo`, returning the forward-slash repo-relative
+    /// spelling, or `None` when the path genuinely escapes the repository.
+    ///
+    /// Both sides are compared in one shared normalization form (see [`absolute_form`]): the real
+    /// path of the longest existing ancestor plus the not-yet-created trailing components, with
+    /// the Windows verbatim prefix stripped and `/` separators. Canonicalizing only the repository
+    /// was the bug: a declared path whose manifest does not exist yet kept its raw spelling, so a
+    /// symlinked temp root (macOS `/var` -> `/private/var`) or an extended-length `\\?\` prefix
+    /// made an inside path look like an escape. Comparing whole components also keeps
+    /// `/repo/crates/a` from matching the sibling `/repo/crates/ab`.
+    pub(crate) fn rebase_onto_repo(repo: &Path, declared: &Path) -> Option<String> {
+        if !declared.is_absolute() {
+            return Some(declared.to_string_lossy().replace('\\', "/"));
+        }
+        let base: Vec<String> = path_components(&absolute_form(repo));
+        let absolute: Vec<String> = path_components(&absolute_form(declared));
+        let rest = absolute.strip_prefix(base.as_slice())?;
+        Some(rest.join("/"))
+    }
+}
+
+/// Canonical comparison form of an absolute path: the real path of its longest existing ancestor
+/// followed by the components that do not exist yet, with the Windows verbatim prefix stripped and
+/// `/` separators. Resolving the existing prefix is what makes a symlinked spelling and a real
+/// spelling compare equal, while the verbatim strip keeps the `\\?\` form `fs::canonicalize`
+/// returns from being a different shape than the declared path.
+fn absolute_form(path: &Path) -> String {
+    let mut missing: Vec<String> = Vec::new();
+    let mut candidate = path;
+    let existing = loop {
+        if let Ok(existing) = std::fs::canonicalize(candidate) {
+            break existing;
+        }
+        let Some(name) = candidate.file_name() else {
+            break candidate.to_path_buf();
+        };
+        missing.push(name.to_string_lossy().to_string());
+        let Some(parent) = candidate.parent() else {
+            break candidate.to_path_buf();
+        };
+        candidate = parent;
+    };
+    let mut form = strip_verbatim_prefix(existing).to_string_lossy().replace('\\', "/");
+    for part in missing.iter().rev() {
+        form.push('/');
+        form.push_str(part);
+    }
+    form
+}
+
+/// Splits a `/` form into whole components, ignoring empty ones so a root is an empty prefix.
+fn path_components(form: &str) -> Vec<String> {
+    form.split('/').filter(|c| !c.is_empty()).map(str::to_string).collect()
 }
 
 impl Deref for ManifestPath {
@@ -371,10 +425,7 @@ mod tests {
     #[test]
     fn package_name_rejects_empty_whitespace_and_separators() {
         assert!(matches!(PackageName::parse(""), Err(ConfigError::EmptyPackageName)));
-        assert!(matches!(
-            PackageName::parse("   "),
-            Err(ConfigError::EmptyPackageName)
-        ));
+        assert!(matches!(PackageName::parse("   "), Err(ConfigError::EmptyPackageName)));
         for invalid in ["two words", " leading", "trailing ", "a/b", r"a\b"] {
             assert!(
                 matches!(PackageName::parse(invalid), Err(ConfigError::InvalidPackageName(_))),

@@ -801,10 +801,7 @@ fn declared_paths() -> Vec<crate::config::ManifestPath> {
     .collect()
 }
 
-fn package_pairs<'a>(
-    names: &[&'a str],
-    paths: &'a [crate::config::ManifestPath],
-) -> Vec<(&'a str, &'a Path)> {
+fn package_pairs<'a>(names: &[&'a str], paths: &'a [crate::config::ManifestPath]) -> Vec<(&'a str, &'a Path)> {
     names.iter().copied().zip(paths.iter().map(|p| p.as_path())).collect()
 }
 
@@ -861,21 +858,63 @@ fn commits_by_package_accepts_absolute_declared_paths() {
     let relative = declared_paths();
     let absolute: Vec<crate::config::ManifestPath> = relative
         .iter()
-        .map(|p| {
-            crate::config::ManifestPath::parse(dir.path().join(p.as_str()).to_string_lossy()).unwrap()
-        })
+        .map(|p| crate::config::ManifestPath::parse(dir.path().join(p.as_str()).to_string_lossy()).unwrap())
         .collect();
 
-    let from_relative =
-        super::log::commits_by_package(dir.path(), Some("v1.0.0"), "HEAD", &package_pairs(&["a", "sub", "b", "c"], &relative))
-            .unwrap();
-    let from_absolute =
-        super::log::commits_by_package(dir.path(), Some("v1.0.0"), "HEAD", &package_pairs(&["a", "sub", "b", "c"], &absolute))
-            .unwrap();
+    let from_relative = super::log::commits_by_package(
+        dir.path(),
+        Some("v1.0.0"),
+        "HEAD",
+        &package_pairs(&["a", "sub", "b", "c"], &relative),
+    )
+    .unwrap();
+    let from_absolute = super::log::commits_by_package(
+        dir.path(),
+        Some("v1.0.0"),
+        "HEAD",
+        &package_pairs(&["a", "sub", "b", "c"], &absolute),
+    )
+    .unwrap();
 
     // Pathspecs are repo-relative either way: an absolute declared path yields the same sections.
     assert_eq!(from_relative, from_absolute);
     assert_eq!(messages(&from_absolute.packages[0].commits), vec!["span", "a2"]);
+}
+
+/// Regression: the repository root was canonicalized while the declared path fell back to its raw
+/// spelling whenever canonicalization failed (a declared-but-missing manifest under a symlinked
+/// temp root, exactly macOS `/var` -> `/private/var`), so the prefix comparison wrongly reported
+/// the declared path as outside the repository.
+#[test]
+#[cfg_attr(not(unix), ignore)]
+fn commits_by_package_accepts_declared_paths_through_a_symlink() {
+    let real = package_repo();
+    let links = tempfile::tempdir().unwrap();
+    let linked = links.path().join("repo");
+    std::os::unix::fs::symlink(real.path(), &linked).unwrap();
+
+    let relative = declared_paths();
+    let through_link: Vec<crate::config::ManifestPath> = relative
+        .iter()
+        .map(|p| crate::config::ManifestPath::parse(linked.join(p.as_str()).to_string_lossy()).unwrap())
+        .collect();
+
+    let names = ["a", "sub", "b", "c"];
+    let real_selection =
+        super::log::commits_by_package(real.path(), Some("v1.0.0"), "HEAD", &package_pairs(&names, &relative)).unwrap();
+    // The declared paths are spelled through the symlink, including `crates/c` whose manifest does
+    // not exist in the checkout, while the repository is passed in its real spelling.
+    let linked_selection = super::log::commits_by_package(
+        real.path(),
+        Some("v1.0.0"),
+        "HEAD",
+        &package_pairs(&names, &through_link),
+    )
+    .unwrap();
+
+    assert_eq!(linked_selection, real_selection);
+    assert_eq!(messages(&linked_selection.packages[0].commits), vec!["span", "a2"]);
+    assert_eq!(messages(&linked_selection.unowned), vec!["unowned"]);
 }
 
 #[test]
@@ -931,7 +970,10 @@ fn commits_by_package_keeps_a_merge_commit_that_touches_a_declared_path() {
 
     // The merge carried the package change into the mainline, so it appears in that package once,
     // ahead of the branch commit it merged (R3-001).
-    assert_eq!(messages(&selection.packages[0].commits), vec!["merge feature", "feature work"]);
+    assert_eq!(
+        messages(&selection.packages[0].commits),
+        vec!["merge feature", "feature work"]
+    );
     let merged = selection.packages[0]
         .commits
         .iter()
@@ -973,7 +1015,11 @@ fn commits_by_package_places_a_mixed_commit_only_in_its_package() {
     // The package owns at least one of the commit's files, so the commit is placed there (S4).
     assert_eq!(messages(&selection.packages[0].commits), vec!["mixed"]);
     // "Unowned" means "returned by no declared package", so the commit must not appear twice.
-    assert!(selection.unowned.is_empty(), "unowned = {:?}", messages(&selection.unowned));
+    assert!(
+        selection.unowned.is_empty(),
+        "unowned = {:?}",
+        messages(&selection.unowned)
+    );
     // Exactly once across the whole selection, under the package section only.
     let total = selection
         .packages

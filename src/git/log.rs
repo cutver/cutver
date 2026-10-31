@@ -2,7 +2,7 @@ use super::command::run_git;
 use super::types::{Error, RawCommit};
 use std::collections::HashSet;
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 
 pub fn raw_commits_since(repo: impl AsRef<Path>, tag: Option<&str>) -> Result<Vec<RawCommit>, Error> {
@@ -238,24 +238,18 @@ fn package_dir(repo: &Path, declared: &Path) -> Result<AnchoredPathspec, Error> 
 }
 
 /// Rebases a declared manifest path onto the repository root. Relative declared paths are already
-/// repo-relative; absolute ones are stripped of the (canonicalized) repository prefix so the
-/// resulting pathspec never depends on the process working directory.
+/// repo-relative; absolute ones are normalized against the canonicalized repository prefix (see
+/// [`ManifestPath::rebase_onto_repo`](crate::config::ManifestPath)), so the resulting pathspec never
+/// depends on the process working directory, on a symlinked spelling of the repository, or on the
+/// Windows verbatim prefix. A path that genuinely escapes the repository is rejected.
 fn repo_relative(repo: &Path, declared: &Path) -> Result<String, Error> {
-    let raw = declared.to_string_lossy().replace('\\', "/");
-    if !Path::new(&raw).is_absolute() {
-        return Ok(raw);
-    }
-    let base = std::fs::canonicalize(repo).unwrap_or_else(|_| repo.to_path_buf());
-    let base = base.to_string_lossy().replace('\\', "/");
-    let base = base.trim_end_matches('/');
-    let absolute = std::fs::canonicalize(declared).unwrap_or_else(|_| PathBuf::from(&raw));
-    let absolute = absolute.to_string_lossy().replace('\\', "/");
-    match absolute.strip_prefix(base).and_then(|rest| rest.strip_prefix('/')) {
-        Some(rest) => Ok(rest.to_string()),
-        None => Err(Error::Guard {
-            detail: format!("declared manifest path '{absolute}' is outside repository '{base}'"),
-        }),
-    }
+    crate::config::ManifestPath::rebase_onto_repo(repo, declared).ok_or_else(|| Error::Guard {
+        detail: format!(
+            "declared manifest path '{}' is outside repository '{}'",
+            declared.display(),
+            repo.display()
+        ),
+    })
 }
 
 pub fn commits_since(repo: impl AsRef<Path>, tag: Option<&str>) -> Result<Vec<String>, Error> {

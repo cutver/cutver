@@ -188,7 +188,10 @@ package = "pkg-plugin"
         "pkg-pyproject",
         "pkg-plugin",
     ] {
-        assert!(debug.contains(package), "manifest debug did not retain package {package}: {debug}");
+        assert!(
+            debug.contains(package),
+            "manifest debug did not retain package {package}: {debug}"
+        );
     }
 
     let cfg = load(
@@ -201,8 +204,14 @@ manifest = [
     )
     .unwrap();
     let debug = format!("{:?}", cfg.manifest);
-    assert!(debug.contains("inline-cargo"), "inline manifest did not retain package: {debug}");
-    assert!(debug.contains("inline-json"), "inline manifest did not retain package: {debug}");
+    assert!(
+        debug.contains("inline-cargo"),
+        "inline manifest did not retain package: {debug}"
+    );
+    assert!(
+        debug.contains("inline-json"),
+        "inline manifest did not retain package: {debug}"
+    );
 }
 
 #[test]
@@ -223,16 +232,17 @@ package = "shared"
     )
     .unwrap_err();
     let msg = err.to_string();
-    assert!(msg.contains("duplicate package name"), "error did not report a duplicate package: {msg}");
+    assert!(
+        msg.contains("duplicate package name"),
+        "error did not report a duplicate package: {msg}"
+    );
     assert!(msg.contains("shared"), "error did not name the packaged value: {msg}");
 }
 
 #[test]
 fn invalid_package_names_are_rejected() {
     for package in ["", "   ", "two words", "a/b", "a\\b"] {
-        let toml = format!(
-            "[[manifest]]\npath = \"Cargo.toml\"\nkind = \"cargo-package\"\npackage = '{package}'\n"
-        );
+        let toml = format!("[[manifest]]\npath = \"Cargo.toml\"\nkind = \"cargo-package\"\npackage = '{package}'\n");
         assert!(load(&toml).is_err(), "invalid package value {package:?} was accepted");
     }
 }

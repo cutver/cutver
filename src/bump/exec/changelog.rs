@@ -270,7 +270,9 @@ mod tests {
                     path: crate::config::ManifestPath::parse("package.json").unwrap(),
                     package: None,
                     primary: false,
-                    kind: crate::config::ManifestKind::Json { field: "version".into() },
+                    kind: crate::config::ManifestKind::Json {
+                        field: "version".into(),
+                    },
                 },
             ],
             ..Default::default()

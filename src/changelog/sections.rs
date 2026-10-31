@@ -38,11 +38,7 @@ pub fn render_body_with_packages(
     let mut rendered: Vec<String> = Vec::new();
 
     for package in packages {
-        let commits = filter_commits(
-            package.commits,
-            config.ignore_release_commits,
-            &config.ignore_scopes,
-        );
+        let commits = filter_commits(package.commits, config.ignore_release_commits, &config.ignore_scopes);
         if commits.is_empty() {
             continue;
         }
@@ -98,10 +94,7 @@ mod tests {
     fn unowned_commits_render_under_other_changes_without_category_headings() {
         let unowned = [commit("ci: tune pipeline"), commit("chore(deps): bump serde")];
         let body = render_body_with_packages(&Changelog::default(), &[], &unowned);
-        assert_eq!(
-            body,
-            "### Other changes\n- tune pipeline\n- **deps**: bump serde"
-        );
+        assert_eq!(body, "### Other changes\n- tune pipeline\n- **deps**: bump serde");
         assert!(!body.contains("####"));
     }
 

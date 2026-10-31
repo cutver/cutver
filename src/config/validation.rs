@@ -34,10 +34,16 @@ pub(crate) fn deduce_current_source(config: &mut Config) -> Result<(), ConfigErr
 }
 
 pub(crate) fn validate(config: &Config) -> Result<(), ConfigError> {
-    let mut seen = HashSet::new();
+    let mut seen_paths = HashSet::new();
+    let mut seen_packages = HashSet::new();
     for m in &config.manifest {
-        if !seen.insert(&m.path) {
+        if !seen_paths.insert(&m.path) {
             return Err(ConfigError::DuplicateManifestPath(m.path.to_string()));
+        }
+        if let Some(package) = &m.package
+            && !seen_packages.insert(package)
+        {
+            return Err(ConfigError::DuplicatePackage(package.to_string()));
         }
     }
     if !config.manifest.iter().any(|m| m.path == config.version.current_source) {
@@ -67,6 +73,7 @@ const VERSION_KEYS: &[&str] = &["current_source", "source", "strategy", "plugin"
 /// duplicating serde's tag dispatch; the union keeps every valid key accepted.
 const MANIFEST_KEYS: &[&str] = &[
     "path",
+    "package",
     "primary",
     "kind",
     "field",

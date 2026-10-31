@@ -4,7 +4,7 @@ use std::io;
 use std::path::PathBuf;
 use thiserror::Error;
 
-pub use super::path::ManifestPath;
+pub use super::path::{ManifestPath, PackageName};
 
 #[derive(Debug, Error)]
 pub enum ConfigError {
@@ -18,6 +18,12 @@ pub enum ConfigError {
     EmptyManifestPath,
     #[error("duplicate manifest path: {0}")]
     DuplicateManifestPath(String),
+    #[error("package name must not be empty")]
+    EmptyPackageName,
+    #[error("invalid package name '{0}': must be a slug without whitespace or path separators")]
+    InvalidPackageName(String),
+    #[error("duplicate package name '{0}': package names must be unique across manifests")]
+    DuplicatePackage(String),
     #[error("current_source '{0}' is not declared as a manifest path")]
     CurrentSourceNotFound(String),
     #[error("preflight step '{0}' must be a string or inline table")]
@@ -161,6 +167,8 @@ pub enum ManifestKind {
 #[derive(Debug, Clone, Deserialize)]
 pub struct Manifest {
     pub path: ManifestPath,
+    #[serde(default)]
+    pub package: Option<PackageName>,
     #[serde(default)]
     pub primary: bool,
     #[serde(flatten)]
@@ -488,11 +496,13 @@ kind = "cargo-package"
 
         cfg.manifest.push(Manifest {
             path: ManifestPath::parse("Cargo.toml").unwrap(),
+            package: None,
             primary: false,
             kind: ManifestKind::CargoPackage,
         });
         cfg.manifest.push(Manifest {
             path: ManifestPath::parse("package.json").unwrap(),
+            package: None,
             primary: false,
             kind: ManifestKind::Json {
                 field: "version".into(),

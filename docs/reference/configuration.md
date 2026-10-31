@@ -93,6 +93,7 @@ Declares one target file to update. Multiple `[[manifest]]` blocks can be specif
 | Key | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
 | `path` | `string` | Yes | Path to the manifest file relative to `cutver.toml`. |
+| `package` | `string` | No | Optional package identity used to group changelog sections. Must be unique across manifests and may not contain whitespace or path separators. |
 | `kind` | `string` | Yes | Parser kind: `"cargo-package"`, `"json"`, `"pyproject"`, `"gradle"`, `"regex"`, or `"plugin"`. |
 | `primary` | `bool` | No | When `true`, designates this manifest as primary source of truth. |
 | `field` | `string` | For `json` | Dotted field path to version string (e.g. `"version"`). Required for `json`. |

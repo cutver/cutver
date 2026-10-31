@@ -137,6 +137,107 @@ kind = "plugin"
 }
 
 #[test]
+fn package_key_parses_for_every_manifest_kind_and_inline_array() {
+    let cfg = load(
+        r#"
+[[manifest]]
+path = "Cargo.toml"
+kind = "cargo-package"
+package = "pkg-cargo"
+
+[[manifest]]
+path = "package.json"
+kind = "json"
+field = "version"
+package = "pkg-json"
+
+[[manifest]]
+path = "app/build.gradle.kts"
+kind = "gradle"
+version_name_field = "versionName"
+version_code_field = "versionCode"
+package = "pkg-gradle"
+
+[[manifest]]
+path = "version.txt"
+kind = "regex"
+pattern = 'v\d+'
+replacement = 'v{{version}}'
+package = "pkg-regex"
+
+[[manifest]]
+path = "pyproject.toml"
+kind = "pyproject"
+table = "tool.poetry"
+package = "pkg-pyproject"
+
+[[manifest]]
+path = "plugin-manifest.txt"
+kind = "plugin"
+plugin = "custom-adapter"
+package = "pkg-plugin"
+"#,
+    )
+    .unwrap();
+    let debug = format!("{:?}", cfg.manifest);
+    for package in [
+        "pkg-cargo",
+        "pkg-json",
+        "pkg-gradle",
+        "pkg-regex",
+        "pkg-pyproject",
+        "pkg-plugin",
+    ] {
+        assert!(debug.contains(package), "manifest debug did not retain package {package}: {debug}");
+    }
+
+    let cfg = load(
+        r#"
+manifest = [
+  { path = "Cargo.toml", kind = "cargo-package", package = "inline-cargo" },
+  { path = "package.json", kind = "json", field = "version", package = "inline-json" },
+]
+"#,
+    )
+    .unwrap();
+    let debug = format!("{:?}", cfg.manifest);
+    assert!(debug.contains("inline-cargo"), "inline manifest did not retain package: {debug}");
+    assert!(debug.contains("inline-json"), "inline manifest did not retain package: {debug}");
+}
+
+#[test]
+fn duplicate_package_names_are_rejected_naming_the_value() {
+    let err = load(
+        r#"
+[[manifest]]
+path = "Cargo.toml"
+kind = "cargo-package"
+package = "shared"
+
+[[manifest]]
+path = "package.json"
+kind = "json"
+field = "version"
+package = "shared"
+"#,
+    )
+    .unwrap_err();
+    let msg = err.to_string();
+    assert!(msg.contains("duplicate package name"), "error did not report a duplicate package: {msg}");
+    assert!(msg.contains("shared"), "error did not name the packaged value: {msg}");
+}
+
+#[test]
+fn invalid_package_names_are_rejected() {
+    for package in ["", "   ", "two words", "a/b", "a\\b"] {
+        let toml = format!(
+            "[[manifest]]\npath = \"Cargo.toml\"\nkind = \"cargo-package\"\npackage = '{package}'\n"
+        );
+        assert!(load(&toml).is_err(), "invalid package value {package:?} was accepted");
+    }
+}
+
+#[test]
 fn plugin_tables_and_permissions_keep_parsing() {
     load(
         r#"

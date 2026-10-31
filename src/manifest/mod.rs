@@ -119,6 +119,7 @@ mod tests {
     fn editor_for_pyproject() {
         let entry = Manifest {
             path: ManifestPath::parse("pyproject.toml").unwrap(),
+            package: None,
             primary: true,
             kind: ManifestKind::Pyproject { table: None },
         };
@@ -132,6 +133,7 @@ mod tests {
     fn editor_for_pyproject_with_table() {
         let entry = Manifest {
             path: ManifestPath::parse("pyproject.toml").unwrap(),
+            package: None,
             primary: true,
             kind: ManifestKind::Pyproject {
                 table: Some("tool.poetry".into()),

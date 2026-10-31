@@ -724,3 +724,193 @@ fn test_commit_sha_domain_newtype() {
     };
     assert!(raw_invalid.commit_sha().is_err());
 }
+
+// --- Path-filtered per-package commit selection (S4, S8; feature doc L7) -----------------
+
+fn git_at(dir: &Path, args: &[&str]) {
+    assert!(
+        Command::new("git")
+            .current_dir(dir)
+            .args(args)
+            .status()
+            .unwrap()
+            .success(),
+        "git command failed: {args:?}"
+    );
+}
+
+fn commit_files(dir: &Path, files: &[(&str, &str)], message: &str) {
+    for (path, content) in files {
+        let full = dir.join(path);
+        fs::create_dir_all(full.parent().unwrap()).unwrap();
+        fs::write(full, content).unwrap();
+    }
+    git_at(dir, &["add", "-A"]);
+    git_at(dir, &["commit", "-m", message, "-q"]);
+}
+
+/// Repository with declared packages `crates/a`, `crates/a/sub` (nested) and `crates/b`,
+/// plus `crates/c` declared but never touched. Tag `v1.0.0` marks the start of the range.
+fn package_repo() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    super::init_test_repo(dir.path());
+    commit_files(
+        dir.path(),
+        &[
+            ("crates/a/Cargo.toml", "[package]\nname = \"a\"\n"),
+            ("crates/a/src/lib.rs", "1"),
+        ],
+        "a1",
+    );
+    git_at(dir.path(), &["tag", "v1.0.0"]);
+    commit_files(dir.path(), &[("crates/a/src/lib.rs", "2")], "a2");
+    commit_files(
+        dir.path(),
+        &[
+            ("crates/a/sub/Cargo.toml", "[package]\nname = \"sub\"\n"),
+            ("crates/a/sub/src/lib.rs", "1"),
+        ],
+        "nested",
+    );
+    commit_files(
+        dir.path(),
+        &[
+            ("crates/b/Cargo.toml", "[package]\nname = \"b\"\n"),
+            ("crates/b/src/lib.rs", "1"),
+        ],
+        "b1",
+    );
+    commit_files(
+        dir.path(),
+        &[("crates/a/src/lib.rs", "3"), ("crates/b/src/lib.rs", "2")],
+        "span",
+    );
+    commit_files(dir.path(), &[("docs/guide.md", "readme")], "unowned");
+    dir
+}
+
+fn declared_paths() -> Vec<crate::config::ManifestPath> {
+    [
+        "crates/a/Cargo.toml",
+        "crates/a/sub/Cargo.toml",
+        "crates/b/Cargo.toml",
+        "crates/c/Cargo.toml",
+    ]
+    .iter()
+    .map(|p| crate::config::ManifestPath::parse(p).unwrap())
+    .collect()
+}
+
+fn package_pairs<'a>(
+    names: &[&'a str],
+    paths: &'a [crate::config::ManifestPath],
+) -> Vec<(&'a str, &'a Path)> {
+    names.iter().copied().zip(paths.iter().map(|p| p.as_path())).collect()
+}
+
+fn messages(commits: &[RawCommit]) -> Vec<String> {
+    commits.iter().map(|c| c.message.clone()).collect()
+}
+
+#[test]
+fn commits_by_package_splits_nested_and_sibling_commits() {
+    let dir = package_repo();
+    let paths = declared_paths();
+    let pairs = package_pairs(&["a", "sub", "b", "c"], &paths);
+
+    let selection = super::log::commits_by_package(dir.path(), Some("v1.0.0"), "HEAD", &pairs).unwrap();
+
+    // One entry per declared package, in declaration order (S5), including the empty one.
+    let names: Vec<&str> = selection.packages.iter().map(|p| p.package.as_str()).collect();
+    assert_eq!(names, vec!["a", "sub", "b", "c"]);
+
+    // Newest-first tag range; the nested commit never leaks into its ancestor (S4/L7).
+    assert_eq!(messages(&selection.packages[0].commits), vec!["span", "a2"]);
+    assert_eq!(messages(&selection.packages[1].commits), vec!["nested"]);
+    // A sibling-spanning commit lands once in each owning package, never twice in one.
+    assert_eq!(messages(&selection.packages[2].commits), vec!["span", "b1"]);
+    // A declared package with no commits is an empty slice, not an absent entry.
+    assert!(selection.packages[3].commits.is_empty());
+    // Nothing is dropped: the commit touching no declared path is the unowned remainder (S7).
+    assert_eq!(messages(&selection.unowned), vec!["unowned"]);
+}
+
+#[test]
+fn commits_by_package_preserves_tag_range_semantics() {
+    let dir = package_repo();
+    let paths = declared_paths();
+    let pairs = package_pairs(&["a", "sub", "b", "c"], &paths);
+
+    // With no from-tag the whole history is walked, so the pre-tag commit is included.
+    let all = super::log::commits_by_package(dir.path(), None, "HEAD", &pairs).unwrap();
+    assert_eq!(messages(&all.packages[0].commits), vec!["span", "a2", "a1"]);
+
+    // A from-tag excludes history reachable from it, exactly like `raw_commits_between`.
+    let ranged = super::log::commits_by_package(dir.path(), Some("v1.0.0"), "HEAD", &pairs).unwrap();
+    assert_eq!(messages(&ranged.packages[0].commits), vec!["span", "a2"]);
+
+    // An explicit to-ref is honoured the same way.
+    let at_tag = super::log::commits_by_package(dir.path(), None, "v1.0.0", &pairs).unwrap();
+    assert_eq!(messages(&at_tag.packages[0].commits), vec!["a1"]);
+    assert!(at_tag.unowned.is_empty());
+}
+
+#[test]
+fn commits_by_package_accepts_absolute_declared_paths() {
+    let dir = package_repo();
+    let relative = declared_paths();
+    let absolute: Vec<crate::config::ManifestPath> = relative
+        .iter()
+        .map(|p| {
+            crate::config::ManifestPath::parse(dir.path().join(p.as_str()).to_string_lossy()).unwrap()
+        })
+        .collect();
+
+    let from_relative =
+        super::log::commits_by_package(dir.path(), Some("v1.0.0"), "HEAD", &package_pairs(&["a", "sub", "b", "c"], &relative))
+            .unwrap();
+    let from_absolute =
+        super::log::commits_by_package(dir.path(), Some("v1.0.0"), "HEAD", &package_pairs(&["a", "sub", "b", "c"], &absolute))
+            .unwrap();
+
+    // Pathspecs are repo-relative either way: an absolute declared path yields the same sections.
+    assert_eq!(from_relative, from_absolute);
+    assert_eq!(messages(&from_absolute.packages[0].commits), vec!["span", "a2"]);
+}
+
+#[test]
+fn commits_by_package_root_declaration_owns_the_remainder() {
+    let dir = package_repo();
+    let root = crate::config::ManifestPath::parse("Cargo.toml").unwrap();
+    let paths = declared_paths();
+    let mut pairs = vec![("root", root.as_path())];
+    pairs.extend(package_pairs(&["a", "sub", "b", "c"], &paths));
+
+    let selection = super::log::commits_by_package(dir.path(), Some("v1.0.0"), "HEAD", &pairs).unwrap();
+
+    // The root package owns everything except the nested declared subtrees (longest path wins).
+    assert_eq!(messages(&selection.packages[0].commits), vec!["unowned"]);
+    assert_eq!(messages(&selection.packages[1].commits), vec!["span", "a2"]);
+    assert_eq!(messages(&selection.packages[2].commits), vec!["nested"]);
+    assert_eq!(messages(&selection.packages[3].commits), vec!["span", "b1"]);
+    // A root declaration leaves no unowned remainder (S7).
+    assert!(selection.unowned.is_empty());
+}
+
+#[test]
+fn raw_commits_between_keeps_its_unfiltered_contract() {
+    let dir = package_repo();
+
+    // PRESERVE: the shared range/parse helpers keep `raw_commits_between` path-unfiltered, so every
+    // commit in the range appears regardless of which declared directory it lives under.
+    let raw = super::log::raw_commits_between(dir.path(), Some("v1.0.0"), "HEAD").unwrap();
+    assert_eq!(messages(&raw), vec!["unowned", "span", "b1", "nested", "a2"]);
+    assert_eq!(
+        super::log::commits_between(dir.path(), Some("v1.0.0"), "HEAD").unwrap(),
+        vec!["unowned", "span", "b1", "nested", "a2"]
+    );
+
+    // PRESERVE: an explicit to-ref with no from-tag still walks only that ref's reachable history.
+    let at_tag = super::log::raw_commits_between(dir.path(), None, "v1.0.0").unwrap();
+    assert_eq!(messages(&at_tag), vec!["a1"]);
+}

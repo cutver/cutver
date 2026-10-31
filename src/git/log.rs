@@ -1,7 +1,7 @@
 use super::command::run_git;
 use super::types::{Error, RawCommit};
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 pub fn raw_commits_since(repo: impl AsRef<Path>, tag: Option<&str>) -> Result<Vec<RawCommit>, Error> {
@@ -13,6 +13,98 @@ pub fn raw_commits_between(
     from_tag: Option<&str>,
     to_ref: &str,
 ) -> Result<Vec<RawCommit>, Error> {
+    let args = range_args(from_tag, to_ref);
+    run_log(repo.as_ref(), &args, from_tag)
+}
+
+/// One declared package's slice of a commit range.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PackageCommits {
+    /// The declared package identity, echoed back so callers never re-associate by index.
+    pub package: String,
+    /// Commits owned by this package, in `git log` order (newest first).
+    pub commits: Vec<RawCommit>,
+}
+
+/// Path-filtered commit selection for a whole workspace.
+///
+/// Chosen over a `HashMap<String, Vec<RawCommit>>` because the renderer must preserve
+/// **declaration order** (S5) and must see a declared package with zero commits as an empty
+/// section rather than a missing key (S6): an ordered `Vec` with one entry per declared package
+/// expresses both, while the name is carried in [`PackageCommits`] so ordering and identity never
+/// depend on a positional side channel.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PackageCommitSelection {
+    /// One entry per declared package, in declaration order.
+    pub packages: Vec<PackageCommits>,
+    /// Commits that touch no declared manifest path; never dropped (S7).
+    pub unowned: Vec<RawCommit>,
+}
+
+/// Selects commits by declared package path (S4, S8).
+///
+/// Ownership is resolved per changed file: a file belongs to the package whose declared manifest
+/// path is the longest prefix of it. Each package is queried with a single `git log <range> --`
+/// invocation whose pathspecs include the package directory and `:(exclude)` every declared path
+/// nested under it, so a commit under `crates/a/sub` never leaks into the section of a package
+/// declared at `crates/a` (feature doc L7). Commits touching files of two sibling packages appear
+/// once in each, and a commit touching no declared path is returned in [`Self::unowned`].
+///
+/// Declared paths are turned into repo-relative pathspecs from their own value; absolute declared
+/// paths are rebased onto the repository root, never onto the current working directory.
+///
+/// Range and failure semantics are those of [`raw_commits_between`]: a missing range with no
+/// `from_tag` yields an empty selection instead of an error.
+pub fn commits_by_package(
+    repo: impl AsRef<Path>,
+    from_tag: Option<&str>,
+    to_ref: &str,
+    packages: &[(&str, &Path)],
+) -> Result<PackageCommitSelection, Error> {
+    let repo = repo.as_ref();
+    let dirs: Vec<Vec<String>> = packages
+        .iter()
+        .map(|(_, declared)| package_dir_components(repo, declared))
+        .collect::<Result<_, _>>()?;
+
+    let mut selection = PackageCommitSelection {
+        packages: Vec::with_capacity(packages.len()),
+        unowned: Vec::new(),
+    };
+
+    for (idx, (name, _)) in packages.iter().enumerate() {
+        let mut args = range_args(from_tag, to_ref);
+        args.push("--".to_string());
+        args.push(dir_pathspec(&dirs[idx]));
+        for (other_idx, other) in dirs.iter().enumerate() {
+            if other_idx != idx && is_strictly_nested(&dirs[idx], other) {
+                args.push(format!(":(exclude){}", other.join("/")));
+            }
+        }
+        let commits = run_log(repo, &args, from_tag)?;
+        selection.packages.push(PackageCommits {
+            package: (*name).to_string(),
+            commits,
+        });
+    }
+
+    // The unowned remainder is the range filtered to everything no declared package owns. A
+    // declaration at the repository root owns every path, so the remainder is empty there.
+    if !dirs.iter().any(|dir| dir.is_empty()) {
+        let mut args = range_args(from_tag, to_ref);
+        args.push("--".to_string());
+        args.push(".".to_string());
+        for dir in &dirs {
+            args.push(format!(":(exclude){}", dir.join("/")));
+        }
+        selection.unowned = run_log(repo, &args, from_tag)?;
+    }
+
+    Ok(selection)
+}
+
+/// Shared `git log` range prefix: the range selector followed by the raw commit format.
+fn range_args(from_tag: Option<&str>, to_ref: &str) -> Vec<String> {
     let mut args = vec!["log".to_string(), "--use-mailmap".to_string()];
     if let Some(t) = from_tag {
         args.push(format!("{t}..{to_ref}"));
@@ -20,8 +112,14 @@ pub fn raw_commits_between(
         args.push(to_ref.to_string());
     }
     args.push("--format=%H%x1f%h%x1f%aN%x1f%aE%x1f%B%x00".to_string());
+    args
+}
+
+/// Runs one `git log` invocation and parses it, preserving the legacy policy that a failure with
+/// no `from_tag` is an empty result rather than an error.
+fn run_log(repo: &Path, args: &[String], from_tag: Option<&str>) -> Result<Vec<RawCommit>, Error> {
     let str_args: Vec<&str> = args.iter().map(String::as_str).collect();
-    let output = run_git(&repo, &str_args)?;
+    let output = run_git(repo, &str_args)?;
     if !output.status.success() {
         if from_tag.is_none() {
             return Ok(Vec::new());
@@ -34,7 +132,10 @@ pub fn raw_commits_between(
     let text = String::from_utf8(output.stdout).map_err(|e| Error::Output {
         source: io::Error::new(io::ErrorKind::InvalidData, e),
     })?;
+    Ok(parse_raw_commits(&text))
+}
 
+fn parse_raw_commits(text: &str) -> Vec<RawCommit> {
     let mut commits = Vec::new();
     for entry in text.split('\0') {
         let entry = entry.trim();
@@ -52,7 +153,67 @@ pub fn raw_commits_between(
             });
         }
     }
-    Ok(commits)
+    commits
+}
+
+/// The repository-relative directory that owns a declared manifest path, as path components.
+///
+/// Empty components mean the repository root (a manifest declared at the root of the workspace).
+fn package_dir_components(repo: &Path, declared: &Path) -> Result<Vec<String>, Error> {
+    let relative = repo_relative(repo, declared)?;
+    if relative.split('/').any(|c| c == "..") {
+        return Err(Error::Guard {
+            detail: format!(
+                "declared manifest path '{}' escapes the repository",
+                declared.display()
+            ),
+        });
+    }
+    let dir = match relative.rsplit_once('/') {
+        Some((dir, _)) => dir,
+        None => "",
+    };
+    Ok(dir
+        .split('/')
+        .filter(|c| !c.is_empty() && *c != ".")
+        .map(str::to_string)
+        .collect())
+}
+
+/// Rebases a declared manifest path onto the repository root. Relative declared paths are already
+/// repo-relative; absolute ones are stripped of the (canonicalized) repository prefix so the
+/// resulting pathspec never depends on the process working directory.
+fn repo_relative(repo: &Path, declared: &Path) -> Result<String, Error> {
+    let raw = declared.to_string_lossy().replace('\\', "/");
+    if !Path::new(&raw).is_absolute() {
+        return Ok(raw);
+    }
+    let base = std::fs::canonicalize(repo).unwrap_or_else(|_| repo.to_path_buf());
+    let base = base.to_string_lossy().replace('\\', "/");
+    let base = base.trim_end_matches('/');
+    let absolute = std::fs::canonicalize(declared).unwrap_or_else(|_| PathBuf::from(&raw));
+    let absolute = absolute.to_string_lossy().replace('\\', "/");
+    match absolute.strip_prefix(base).and_then(|rest| rest.strip_prefix('/')) {
+        Some(rest) => Ok(rest.to_string()),
+        None => Err(Error::Guard {
+            detail: format!("declared manifest path '{absolute}' is outside repository '{base}'"),
+        }),
+    }
+}
+
+/// `git` pathspec for a package directory; the empty component list is the repository root.
+fn dir_pathspec(dir: &[String]) -> String {
+    if dir.is_empty() {
+        ".".to_string()
+    } else {
+        dir.join("/")
+    }
+}
+
+/// True when `candidate` is a strict descendant of `ancestor`, comparing whole path components so
+/// `crates/ab` is never treated as nested under `crates/a`.
+fn is_strictly_nested(ancestor: &[String], candidate: &[String]) -> bool {
+    candidate.len() > ancestor.len() && candidate[..ancestor.len()] == *ancestor
 }
 
 pub fn commits_since(repo: impl AsRef<Path>, tag: Option<&str>) -> Result<Vec<String>, Error> {

@@ -897,6 +897,49 @@ fn commits_by_package_root_declaration_owns_the_remainder() {
     assert!(selection.unowned.is_empty());
 }
 
+/// Repository whose mainline advances on an unowned path while a feature branch touches the
+/// declared package path: the merge therefore differs from its first parent only for the package,
+/// which is exactly the shape git's default history simplification prunes from a path-limited log.
+fn merge_repo() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    super::init_test_repo(dir.path());
+    commit_files(
+        dir.path(),
+        &[
+            ("crates/a/Cargo.toml", "[package]\nname = \"a\"\n"),
+            ("crates/a/src/lib.rs", "1"),
+        ],
+        "base",
+    );
+    git_at(dir.path(), &["tag", "v1.0.0"]);
+    let mainline = current_branch(dir.path()).unwrap();
+    commit_files(dir.path(), &[("docs/guide.md", "readme")], "unowned");
+    git_at(dir.path(), &["checkout", "-q", "-b", "feature", "v1.0.0"]);
+    commit_files(dir.path(), &[("crates/a/src/lib.rs", "2")], "feature work");
+    git_at(dir.path(), &["checkout", "-q", &mainline]);
+    git_at(dir.path(), &["merge", "--no-ff", "-m", "merge feature", "feature"]);
+    dir
+}
+
+#[test]
+fn commits_by_package_keeps_a_merge_commit_that_touches_a_declared_path() {
+    let dir = merge_repo();
+    let paths = [crate::config::ManifestPath::parse("crates/a/Cargo.toml").unwrap()];
+    let pairs = package_pairs(&["a"], &paths);
+
+    let selection = super::log::commits_by_package(dir.path(), Some("v1.0.0"), "HEAD", &pairs).unwrap();
+
+    // The merge carried the package change into the mainline, so it appears in that package once,
+    // ahead of the branch commit it merged (R3-001).
+    assert_eq!(messages(&selection.packages[0].commits), vec!["merge feature", "feature work"]);
+    let merged = selection.packages[0]
+        .commits
+        .iter()
+        .filter(|c| c.message == "merge feature")
+        .count();
+    assert_eq!(merged, 1);
+}
+
 #[test]
 fn raw_commits_between_keeps_its_unfiltered_contract() {
     let dir = package_repo();

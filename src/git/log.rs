@@ -74,6 +74,10 @@ pub fn commits_by_package(
 
     for (idx, (name, _)) in packages.iter().enumerate() {
         let mut args = range_args(from_tag, to_ref);
+        // A path-limited `git log` simplifies history by default and drops merges that are
+        // TREESAME to one parent, so `--full-history` is required to keep a merge that brought a
+        // package change into the mainline.
+        args.push("--full-history".to_string());
         args.push("--".to_string());
         args.push(dir_pathspec(&dirs[idx]));
         for (other_idx, other) in dirs.iter().enumerate() {
@@ -92,6 +96,9 @@ pub fn commits_by_package(
     // declaration at the repository root owns every path, so the remainder is empty there.
     if !dirs.iter().any(|dir| dir.is_empty()) {
         let mut args = range_args(from_tag, to_ref);
+        // Same history-simplification guard as the per-package query above: a merge touching an
+        // unowned path must not be pruned either.
+        args.push("--full-history".to_string());
         args.push("--".to_string());
         args.push(".".to_string());
         for dir in &dirs {

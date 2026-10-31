@@ -53,7 +53,9 @@ impl ManifestPath {
     }
 
     /// Rebases a declared manifest path onto `repo`, returning the forward-slash repo-relative
-    /// spelling, or `None` when the path genuinely escapes the repository.
+    /// spelling. Only absolute paths are rebased: a relative declared path is already repo-relative
+    /// and is returned as written, without a `..` escape check. An absolute path that genuinely
+    /// escapes the repository yields `None`.
     ///
     /// Both sides are compared in one shared normalization form (see [`absolute_form`]): the real
     /// path of the longest existing ancestor plus the not-yet-created trailing components, with

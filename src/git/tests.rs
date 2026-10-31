@@ -886,7 +886,7 @@ fn commits_by_package_accepts_absolute_declared_paths() {
 /// temp root, exactly macOS `/var` -> `/private/var`), so the prefix comparison wrongly reported
 /// the declared path as outside the repository.
 #[test]
-#[cfg_attr(not(unix), ignore)]
+#[cfg(unix)]
 fn commits_by_package_accepts_declared_paths_through_a_symlink() {
     let real = package_repo();
     let links = tempfile::tempdir().unwrap();

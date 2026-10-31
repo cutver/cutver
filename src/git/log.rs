@@ -243,12 +243,15 @@ fn package_dir(repo: &Path, declared: &Path) -> Result<AnchoredPathspec, Error> 
 /// depends on the process working directory, on a symlinked spelling of the repository, or on the
 /// Windows verbatim prefix. A path that genuinely escapes the repository is rejected.
 fn repo_relative(repo: &Path, declared: &Path) -> Result<String, Error> {
-    crate::config::ManifestPath::rebase_onto_repo(repo, declared).ok_or_else(|| Error::Guard {
-        detail: format!(
-            "declared manifest path '{}' is outside repository '{}'",
-            declared.display(),
-            repo.display()
-        ),
+    crate::config::ManifestPath::rebase_onto_repo(repo, declared).ok_or_else(|| {
+        let canonical = |path: &Path| std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+        Error::Guard {
+            detail: format!(
+                "declared manifest path '{}' is outside repository '{}'",
+                canonical(declared).display(),
+                canonical(repo).display()
+            ),
+        }
     })
 }
 

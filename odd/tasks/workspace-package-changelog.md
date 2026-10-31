@@ -26,6 +26,16 @@ S10. `package` must be accepted for **every** manifest kind: the closed `MANIFES
 
 S11. Documentation states the behavior: `docs/reference/configuration.md` documents the key, `docs/guides/monorepos.md` documents the rendered shape.
 
+S12. A declared package directory reaches git as a **literal** pathspec: glob and magic characters in a directory name never act as patterns, so a package neither loses its own commits nor receives a sibling's.
+
+S13. The unowned remainder is **always** derived, including when a root-level package is declared, so a release-range commit with no changed paths still renders under `### Other changes`. No commit in the range is ever dropped.
+
+S14. Grouping changes **only** the grouping: the caller-supplied `ReleaseContext` still reaches the renderer when package sections are active, so context-derived content such as first-time contributors is unaffected.
+
+S15. A failing per-package log query is a surfaced error, never a silent empty section and never a fall-through into the unowned remainder (Contract Pillar III.4).
+
+S16. Both slices below stay inside Contract Pillar IV.4: each review candidate is at most 400 effective lines, and code, tests and documentation travel in the same commit.
+
 ## Tasks
 
 | ID | Spec | Task | Route | Commit |
@@ -33,7 +43,9 @@ S11. Documentation states the behavior: `docs/reference/configuration.md` docume
 | T1 | S2, S9, S10 | Add the optional `package` identity to the manifest schema, the closed key allowlist, duplicate validation and the reference docs | writer | `97b8102` |
 | T2 | S4, S8 | Add path-filtered commit selection to the git layer: per-package ranges, unowned remainder, nested-path resolution | writer | `92e702f` |
 | T3 | S3, S5, S6, S7, S11 | Group commits into package sections in the default changelog renderer and document the rendered shape, with the backward-compatibility invariant pinned | writer | `feaf057` |
-| T4 | S1, S8 | Update ADR-0002's implementation status and the neighbouring roadmap row now that the accepted scope is delivered | inline | pending |
+| T4 | S1, S8 | Update ADR-0002's implementation status and the neighbouring roadmap row now that the accepted scope is delivered | inline | `6bf7076` |
+| T5 | S12, S13, S15 | Anchor declared directories as literal pathspecs, always derive the unowned remainder, and surface per-package query failures | writer | pending |
+| T6 | S14 | Propagate `ReleaseContext` through the grouped changelog render | writer | pending |
 
 ## Log
 
@@ -59,4 +71,12 @@ L10. T4 sweeps the neighbouring claims the delivery falsified, in the same spiri
 
 L11. Native-review finding R3-001 corrected under the bounded correction (110-line plan): the path-limited `git log` invocations in `commits_by_package` now pass `--full-history` (both the per-package query and the unowned remainder), so history simplification no longer prunes a merge commit that touches a declared path; pinned by `commits_by_package_keeps_a_merge_commit_that_touches_a_declared_path`.
 
-L12. Native-review finding R3-002 corrected: the unowned remainder used to be a positive `.` pathspec with one `:(exclude)` entry per declared package directory, so a commit changing a package file beside an unowned file matched both queries and rendered twice (under its package and under `### Other changes`). The remainder is now derived in-process as the plain range minus every commit hash already returned by a declared package, which makes "unowned" mean exactly "returned by no declared package" (S7). The per-package invocations keep `--full-history` (R3-001) and the plain range needs no pathspec. RED: `commits_by_package_places_a_mixed_commit_only_in_its_package` observed `unowned = ["mixed"]` before the change; GREEN 39/39 on `--lib git`, no previously passing test changed.
+L12. Native-review finding R3-002 corrected: the unowned remainder used to be selected with a positive `.` pathspec plus one `:(exclude)` entry per declared package directory, so a commit changing a package file beside an unowned file matched both queries and rendered twice (under its package and under `### Other changes`). The remainder is now derived in-process as the plain range minus every commit hash already returned by a declared package, making "unowned" mean exactly "returned by no declared package" (S7). The per-package invocations keep `--full-history` (R3-001). RED: `commits_by_package_places_a_mixed_commit_only_in_its_package` observed `unowned = ["mixed"]` first; GREEN 39/39 on `--lib git`.
+
+L13. User, verbatim: "no sé el tamaño o cantidad de código que estás utilizando para la revisión nativa, pero creo que el máximo son 400 líneas a revisar porque es el punto óptimo que el mismo harness lo establece. Si vamos con los con el slice nuevo cumpliendo el contrato del proyecto y utilizando las skills del proyecto."
+
+L14. Process defect acknowledged. The first native review ran over the accumulated branch — 24 paths, 1809 lines — against a frozen correction budget of 200. That violates Contract Pillar IV.4 (PRs under 300-400 lines of effective code to protect human review focus) and the harness warned about slice size three separate times before the review started. The consequence is measurable: two review rounds, 18 findings, and a correction budget that could never cover the scope. From L13 onward a review candidate is one slice of at most 400 effective lines, never the branch.
+
+L15. Second review round (fresh lineage review-fd1af2e9a355e5e4 over 86c2a66) produced two CRITICALs the first round missed: R1-001 (a root-level package skips the unowned remainder, dropping commits with no changed paths) and R3-001 (the ReleaseContext is silently dropped when package sections are active, losing first-time contributors while bump reports success), plus R1-002/R3-002 (raw pathspecs interpreted as patterns) and five readability items. The three deterministic defects become T5 and T6; the readability items stay recorded as follow-ups rather than being folded into these slices.
+
+L16. T5 closes the three deterministic findings recorded in L15. S12 (R1-002, R3-002): the new `AnchoredPathspec` type in `src/git/log.rs` parses each declared directory once and emits `:(top,literal)` / `:(exclude,top,literal)` arguments, so git reads a metacharacter in a directory name literally instead of as pathspec syntax. RED `commits_by_package_anchors_a_magic_directory_literally` observed the `:pkg` package receiving the sibling's commit (`left: ["plain own"]`, `right: ["magic own"]`); GREEN now `["magic own"]`, sibling unchanged. S13 (R1-001): the unowned remainder is derived unconditionally, so a release-range commit that changes no path survives a root-level declaration. RED `commits_by_package_keeps_a_pathless_commit_with_a_root_package_declared` observed `unowned = []` instead of `["release chore"]`. S15: `commits_by_package` uses the checked log runner, so a failing per-package query is a surfaced error rather than an empty section. RED `commits_by_package_surfaces_a_failing_log_query` observed `Ok(PackageCommitSelection { packages: [PackageCommits { package: "a", commits: [] }], unowned: [] })` for an unreadable `to_ref`. `raw_commits_between`'s documented `from_tag: None` suppression is unchanged and its preserve test passes untouched. Residual: `cargo fmt -- --check` exits 1 on the base commit as well as on this slice, with 13 diffs outside these files under rustfmt 1.10.0-stable; no diff in the changed files comes from this slice.

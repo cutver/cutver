@@ -9,7 +9,7 @@ use super::ops::{
 use super::remote::normalize_repo_url;
 use super::status::{current_branch, is_clean, parse_branch, rev_parse, status_files};
 use super::tags::{latest_tag, list_tags, remote_tag_exists, tag_exists, tag_name};
-use super::types::{CommitSha, RawCommit, TagName, TagPrefix};
+use super::types::{CommitSha, Error, RawCommit, TagName, TagPrefix};
 
 static TMP_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
@@ -983,6 +983,155 @@ fn commits_by_package_places_a_mixed_commit_only_in_its_package() {
         .filter(|c| c.message == "mixed")
         .count();
     assert_eq!(total, 1);
+}
+
+/// Repository with a declared package `pkg[1]`, whose directory name carries a glob character,
+/// beside the sibling `pkg1` that the same bare argument also pattern-matches.
+fn glob_name_repo() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    super::init_test_repo(dir.path());
+    commit_files(
+        dir.path(),
+        &[("pkg[1]/Cargo.toml", "[package]\n"), ("pkg1/Cargo.toml", "[package]\n")],
+        "base",
+    );
+    git_at(dir.path(), &["tag", "v1.0.0"]);
+    commit_files(dir.path(), &[("pkg[1]/src/lib.rs", "1")], "glob own");
+    commit_files(dir.path(), &[("pkg1/src/lib.rs", "1")], "glob sibling");
+    dir
+}
+
+#[test]
+fn commits_by_package_anchors_a_glob_directory_literally() {
+    let dir = glob_name_repo();
+    let paths = [
+        crate::config::ManifestPath::parse("pkg[1]/Cargo.toml").unwrap(),
+        crate::config::ManifestPath::parse("pkg1/Cargo.toml").unwrap(),
+    ];
+    let pairs = package_pairs(&["glob", "sibling"], &paths);
+
+    let selection = super::log::commits_by_package(dir.path(), Some("v1.0.0"), "HEAD", &pairs).unwrap();
+
+    // S12: `pkg[1]` reaches git literally, so it owns only its own commit...
+    assert_eq!(messages(&selection.packages[0].commits), vec!["glob own"]);
+    // ...and never receives the sibling's.
+    assert_eq!(messages(&selection.packages[1].commits), vec!["glob sibling"]);
+}
+
+#[test]
+fn anchored_pathspec_keeps_metacharacters_literal() {
+    use super::log::AnchoredPathspec;
+
+    let nested = AnchoredPathspec::parse("crates/a").unwrap();
+    assert_eq!(nested.selector(), ":(top,literal)crates/a");
+    assert_eq!(nested.exclusion(), ":(exclude,top,literal)crates/a");
+
+    // The root is the empty pattern after the magic prefix: the whole tree, changing paths only.
+    assert_eq!(AnchoredPathspec::parse("").unwrap().selector(), ":(top,literal)");
+    assert_eq!(
+        AnchoredPathspec::parse("./").unwrap(),
+        AnchoredPathspec::parse("").unwrap()
+    );
+
+    // Nesting compares whole components, so a sibling name sharing a prefix is not nested.
+    let child = AnchoredPathspec::parse("crates/a/sub").unwrap();
+    let sibling = AnchoredPathspec::parse("crates/ab").unwrap();
+    assert!(nested.is_strictly_nested(&child));
+    assert!(!nested.is_strictly_nested(&sibling));
+    assert!(!child.is_strictly_nested(&nested));
+
+    // A directory that escapes the repository is rejected at construction, never queried.
+    assert!(AnchoredPathspec::parse("../outside").is_err());
+    assert!(AnchoredPathspec::parse("crates/../../outside").is_err());
+}
+
+/// Repository with a declared package `:pkg`, whose directory name starts with git's pathspec
+/// magic character, beside the sibling `pkg`.
+fn magic_name_repo() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    super::init_test_repo(dir.path());
+    commit_files(
+        dir.path(),
+        &[(":pkg/Cargo.toml", "[package]\n"), ("pkg/Cargo.toml", "[package]\n")],
+        "base",
+    );
+    git_at(dir.path(), &["tag", "v1.0.0"]);
+    commit_files(dir.path(), &[(":pkg/src/lib.rs", "1")], "magic own");
+    commit_files(dir.path(), &[("pkg/src/lib.rs", "1")], "plain own");
+    dir
+}
+
+#[test]
+#[cfg_attr(not(unix), ignore)]
+fn commits_by_package_anchors_a_magic_directory_literally() {
+    let dir = magic_name_repo();
+    let paths = [
+        crate::config::ManifestPath::parse(":pkg/Cargo.toml").unwrap(),
+        crate::config::ManifestPath::parse("pkg/Cargo.toml").unwrap(),
+    ];
+    let pairs = package_pairs(&["magic", "plain"], &paths);
+
+    let selection = super::log::commits_by_package(dir.path(), Some("v1.0.0"), "HEAD", &pairs).unwrap();
+
+    // S12: a leading `:` is pathspec magic, so a bare `:pkg` argument selects nothing at all;
+    // anchored literally the package owns exactly its own commit...
+    assert_eq!(messages(&selection.packages[0].commits), vec!["magic own"]);
+    // ...and nothing from the sibling package.
+    assert_eq!(messages(&selection.packages[1].commits), vec!["plain own"]);
+}
+
+/// Repository with a root-level declared package, a nested package, and one commit in the range
+/// that changes no path at all: the release-trigger commit an empty-tree commit produces.
+fn root_and_pathless_commit_repo() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    super::init_test_repo(dir.path());
+    commit_files(
+        dir.path(),
+        &[("Cargo.toml", "[workspace]\n"), ("crates/a/Cargo.toml", "[package]\n")],
+        "base",
+    );
+    git_at(dir.path(), &["tag", "v1.0.0"]);
+    commit_files(dir.path(), &[("crates/a/src/lib.rs", "1")], "a work");
+    git_at(dir.path(), &["commit", "--allow-empty", "-q", "-m", "release chore"]);
+    dir
+}
+
+#[test]
+fn commits_by_package_keeps_a_pathless_commit_with_a_root_package_declared() {
+    let dir = root_and_pathless_commit_repo();
+    let paths = [
+        crate::config::ManifestPath::parse("Cargo.toml").unwrap(),
+        crate::config::ManifestPath::parse("crates/a/Cargo.toml").unwrap(),
+    ];
+    let pairs = package_pairs(&["root", "a"], &paths);
+
+    let selection = super::log::commits_by_package(dir.path(), Some("v1.0.0"), "HEAD", &pairs).unwrap();
+
+    // The root package owns every path outside the nested declaration, and has no commit of its
+    // own in this range: its section stays empty (S6).
+    assert!(selection.packages[0].commits.is_empty());
+    assert_eq!(messages(&selection.packages[1].commits), vec!["a work"]);
+    // S13: no path-limited query can return a commit that changes no path, and no package claims
+    // it, so the always-derived remainder is the only place it can survive.
+    assert_eq!(messages(&selection.unowned), vec!["release chore"]);
+}
+
+#[test]
+fn commits_by_package_surfaces_a_failing_log_query() {
+    let dir = package_repo();
+    let paths = declared_paths();
+    let pairs = package_pairs(&["a"], &paths);
+
+    // An unreadable `to_ref` fails every `git log` of the selection. Without a from-tag the legacy
+    // helper answers with an empty list, which would render as an empty section instead of an
+    // error (S15, Contract Pillar III.4).
+    let error = super::log::commits_by_package(dir.path(), None, "no-such-ref", &pairs).unwrap_err();
+
+    assert!(matches!(error, Error::Status { .. }), "unexpected error: {error}");
+    assert!(
+        error.to_string().contains("no-such-ref"),
+        "the error must name the failing range for the user: {error}"
+    );
 }
 
 #[test]

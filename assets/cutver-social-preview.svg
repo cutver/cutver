@@ -1,0 +1,191 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" width="1280" height="640" fill="none" role="img" aria-labelledby="socialPreviewTitle socialPreviewDesc">
+  <title id="socialPreviewTitle">Cutver — Atomic Release Orchestration Engine</title>
+  <desc id="socialPreviewDesc">Official GitHub Open Graph social preview card for Cutver: Rust release engine, four typed capability slots, and sandboxed WebAssembly plugins.</desc>
+  <defs>
+    <style>
+      .font-sans {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+      }
+      .font-mono {
+        font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+      }
+    </style>
+
+    <!-- Background Gradients -->
+    <linearGradient id="bg-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0d1117" />
+      <stop offset="50%" stop-color="#161b22" />
+      <stop offset="100%" stop-color="#090d13" />
+    </linearGradient>
+
+    <radialGradient id="ambient-emerald" cx="25%" cy="35%" r="60%">
+      <stop offset="0%" stop-color="#238636" stop-opacity="0.18" />
+      <stop offset="100%" stop-color="#238636" stop-opacity="0" />
+    </radialGradient>
+
+    <radialGradient id="ambient-rust" cx="80%" cy="80%" r="50%">
+      <stop offset="0%" stop-color="#ea6341" stop-opacity="0.12" />
+      <stop offset="100%" stop-color="#ea6341" stop-opacity="0" />
+    </radialGradient>
+
+    <linearGradient id="grad-verified" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3fb950" />
+      <stop offset="100%" stop-color="#238636" />
+    </linearGradient>
+
+    <filter id="shadow-card" x="-5%" y="-5%" width="110%" height="110%">
+      <feDropShadow dx="0" dy="12" stdDeviation="20" flood-color="#000000" flood-opacity="0.6" />
+    </filter>
+
+    <filter id="glow-mark" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="0" stdDeviation="10" flood-color="#3fb950" flood-opacity="0.4" />
+    </filter>
+  </defs>
+
+  <!-- 1. Background Canvas -->
+  <rect width="1280" height="640" fill="url(#bg-grad)" />
+  <rect width="1280" height="640" fill="url(#ambient-emerald)" />
+  <rect width="1280" height="640" fill="url(#ambient-rust)" />
+
+  <!-- Subtle grid pattern -->
+  <g stroke="#30363d" stroke-width="1" opacity="0.15">
+    <line x1="80" y1="0" x2="80" y2="640" />
+    <line x1="640" y1="0" x2="640" y2="640" />
+    <line x1="1200" y1="0" x2="1200" y2="640" />
+    <line x1="0" y1="120" x2="1280" y2="120" />
+    <line x1="0" y1="520" x2="1280" y2="520" />
+  </g>
+
+  <!-- Outer Border -->
+  <rect width="1280" height="640" stroke="#30363d" stroke-width="2" />
+
+  <!-- ========================================================== -->
+  <!-- LEFT PANEL: BRANDING, TITLE, TAGLINE, BADGES               -->
+  <!-- ========================================================== -->
+  <g transform="translate(80, 100)">
+    
+    <!-- Cutver Monogram (Width 76, Height 78) -->
+    <g transform="translate(0, 0) scale(0.6)">
+      <!-- 1. The Monolithic 'C' -->
+      <path d="M 132 37 L 61 37 L 39 59 L 39 113 L 59 133 L 93 99 L 73 99 L 67 93 L 67 65 L 73 59 L 132 59 Z" fill="#f0f6fc" />
+      <!-- 2. The '✓' / 'V' Checkmark -->
+      <path d="M 73 147 L 91 129 L 103 141 L 145 73 L 161 83 L 109 163 L 95 163 Z" fill="url(#grad-verified)" filter="url(#glow-mark)" />
+    </g>
+
+    <!-- Release tag pill alongside logo -->
+    <g transform="translate(115, 8)">
+      <rect width="84" height="26" rx="6" fill="#238636" />
+      <text x="42" y="17" text-anchor="middle" class="font-mono" font-size="12" font-weight="700" fill="#ffffff">v0.13.0</text>
+    </g>
+
+    <g transform="translate(208, 8)">
+      <rect width="112" height="26" rx="6" fill="#21262d" stroke="#30363d" stroke-width="1" />
+      <text x="56" y="17" text-anchor="middle" class="font-sans" font-size="11" font-weight="600" fill="#8b949e">RUST CRATE</text>
+    </g>
+
+    <!-- Main Title -->
+    <text x="0" y="112" class="font-mono" font-size="64" font-weight="800" fill="#f0f6fc" letter-spacing="-1">cutver</text>
+
+    <!-- Category / Tagline -->
+    <text x="0" y="152" class="font-sans" font-size="22" font-weight="700" fill="#3fb950">
+      Atomic Release Orchestration Engine
+    </text>
+
+    <!-- Subtitle / Value Proposition -->
+    <text x="0" y="190" class="font-sans" font-size="16" font-weight="400" fill="#c9d1d9">
+      One core, four typed capability slots, and plugins
+    </text>
+    <text x="0" y="214" class="font-sans" font-size="16" font-weight="400" fill="#c9d1d9">
+      that run sandboxed by default in WebAssembly.
+    </text>
+
+    <!-- Capabilities Chips -->
+    <g transform="translate(0, 252)">
+      <!-- Chip 1 -->
+      <rect x="0" y="0" width="134" height="30" rx="8" fill="#161b22" stroke="#30363d" stroke-width="1.2" />
+      <text x="67" y="19" text-anchor="middle" class="font-sans" font-size="12" font-weight="600" fill="#f0f6fc">🦀 Rust Engine</text>
+
+      <!-- Chip 2 -->
+      <rect x="144" y="0" width="138" height="30" rx="8" fill="#161b22" stroke="#30363d" stroke-width="1.2" />
+      <text x="213" y="19" text-anchor="middle" class="font-sans" font-size="12" font-weight="600" fill="#f0f6fc">⚡ WASM Plugins</text>
+
+      <!-- Chip 3 -->
+      <rect x="292" y="0" width="138" height="30" rx="8" fill="#161b22" stroke="#30363d" stroke-width="1.2" />
+      <text x="361" y="19" text-anchor="middle" class="font-sans" font-size="12" font-weight="600" fill="#f0f6fc">🛡️ Atomic Apply</text>
+    </g>
+
+    <!-- Footer URL -->
+    <g transform="translate(0, 340)">
+      <text x="0" y="0" class="font-mono" font-size="14" font-weight="600" fill="#8b949e">
+        github.com/cutver/cutver
+      </text>
+    </g>
+  </g>
+
+  <!-- ========================================================== -->
+  <!-- RIGHT PANEL: TERMINAL SHOWCASE CARD                        -->
+  <!-- ========================================================== -->
+  <g transform="translate(630, 95)" filter="url(#shadow-card)">
+    <!-- Terminal Window Container -->
+    <rect width="570" height="450" rx="14" fill="#0d1117" stroke="#30363d" stroke-width="1.8" />
+    
+    <!-- Titlebar -->
+    <path d="M 0 14 A 14 14 0 0 1 14 0 L 556 0 A 14 14 0 0 1 570 14 L 570 42 L 0 42 Z" fill="#161b22" />
+    <line x1="0" y1="42" x2="570" y2="42" stroke="#30363d" stroke-width="1" />
+    
+    <!-- Window Controls -->
+    <circle cx="22" cy="21" r="5.5" fill="#ff5f56" />
+    <circle cx="38" cy="21" r="5.5" fill="#ffbd2e" />
+    <circle cx="54" cy="21" r="5.5" fill="#27c93f" />
+
+    <!-- Title text -->
+    <text x="285" y="26" text-anchor="middle" class="font-mono" font-size="12" fill="#8b949e">
+      cutver bump auto --dry-run
+    </text>
+
+    <!-- Terminal Output -->
+    <g transform="translate(24, 70)">
+      <!-- Command prompt line -->
+      <text x="0" y="0" class="font-mono" font-size="13" font-weight="700" fill="#58a6ff">$ cutver bump auto --dry-run</text>
+
+      <!-- Simulation Badge Box -->
+      <g transform="translate(0, 16)">
+        <rect width="360" height="26" rx="6" fill="#2b1a09" stroke="#d29922" stroke-width="1" />
+        <text x="180" y="17" text-anchor="middle" class="font-mono" font-size="11.5" font-weight="700" fill="#e3b341">
+          SIMULATION MODE · NO DISK MUTATION
+        </text>
+      </g>
+
+      <!-- SemVer calculation line -->
+      <text x="0" y="74" class="font-mono" font-size="13" fill="#f0f6fc">
+        <tspan fill="#8b949e">Deduction: </tspan>
+        <tspan fill="#e3b341" font-weight="700">0.13.0</tspan>
+        <tspan fill="#8b949e"> → </tspan>
+        <tspan fill="#3fb950" font-weight="700">0.14.0</tspan>
+        <tspan fill="#8b949e"> (minor from 4 commits)</tspan>
+      </text>
+
+      <!-- Tree items -->
+      <text x="0" y="104" class="font-mono" font-size="12.5" fill="#8b949e">├── manifests</text>
+      <text x="0" y="126" class="font-mono" font-size="12.5" fill="#8b949e">│   └── Cargo.toml <tspan fill="#3fb950">(0.13.0 → 0.14.0)</tspan></text>
+      
+      <text x="0" y="152" class="font-mono" font-size="12.5" fill="#8b949e">├── preflight checks</text>
+      <text x="0" y="174" class="font-mono" font-size="12.5" fill="#8b949e">│   └── tests: cargo test <tspan fill="#3fb950">✓ passed</tspan></text>
+
+      <text x="0" y="200" class="font-mono" font-size="12.5" fill="#8b949e">├── changelog</text>
+      <text x="0" y="222" class="font-mono" font-size="12.5" fill="#8b949e">│   └── CHANGELOG.md <tspan fill="#58a6ff">(prepends 0.14.0)</tspan></text>
+
+      <text x="0" y="248" class="font-mono" font-size="12.5" fill="#8b949e">└── git release</text>
+      <text x="0" y="270" class="font-mono" font-size="12.5" fill="#8b949e">    └── tag: <tspan fill="#3fb950" font-weight="700">v0.14.0</tspan> <tspan fill="#8b949e">[atomic staged]</tspan></text>
+
+      <!-- Bottom Status Pill -->
+      <g transform="translate(0, 305)">
+        <rect width="522" height="34" rx="6" fill="#161b22" stroke="#238636" stroke-width="1.2" />
+        <text x="16" y="22" class="font-mono" font-size="12" font-weight="600" fill="#3fb950">
+          ✓ In-memory simulation passed. Ready to release.
+        </text>
+      </g>
+    </g>
+  </g>
+
+</svg>

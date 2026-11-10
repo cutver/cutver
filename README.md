@@ -32,7 +32,7 @@
 <br/>
 
 <p align="center">
-  <img src="assets/cutver_bump_showcase.png" alt="Terminal capture of cutver bump auto running in Windows Terminal with Starship: Showing the boxed SIMULATION MODE banner, SemVer minor version deduction from conventional commits, hierarchical release tree, and atomic Git tagging." width="680" />
+  <img src="assets/cutver_bump_showcase.png" alt="Terminal output of cutver bump auto: Showing the boxed SIMULATION MODE banner, SemVer minor version deduction from conventional commits, hierarchical release tree, and atomic Git tagging." width="680" />
 </p>
 
 </div>
@@ -49,17 +49,17 @@ What separates it from a simple version-bumping script: **four stages are typed 
 
 ## 🖼️ Visual Gallery
 
-See Cutver in action across the release lifecycle — captured live in Windows Terminal with CaskaydiaCove Nerd Font and Starship:
+See Cutver in action across the release lifecycle:
 
 <div align="center">
 
 | Preflight Diagnostics (`cutver doctor`) | Atomic Bump Simulation (`cutver bump --dry-run`) |
 | :---: | :---: |
-| <img src="assets/cutver_doctor_showcase.png" width="440" alt="Terminal capture of cutver doctor running in Windows Terminal: Validating cutver.toml configuration, tracking Cargo.toml at version 0.13.0, and reporting preflight test steps without anomalies." /> | <img src="assets/cutver_bump_showcase.png" width="440" alt="Terminal capture of cutver bump auto in simulation mode: Demonstrating the boxed SIMULATION MODE, semver minor deduction from 5 features and 11 bugfixes, hierarchical tree of manifests, changelog, git tag, and cargo publish." /> |
+| <img src="assets/cutver_doctor_showcase.png" width="440" alt="Terminal output of cutver doctor: Validating cutver.toml configuration, tracking Cargo.toml at version 0.13.0, and reporting preflight test steps without anomalies." /> | <img src="assets/cutver_bump_showcase.png" width="440" alt="Terminal output of cutver bump auto in simulation mode: Demonstrating the boxed SIMULATION MODE banner, SemVer minor deduction from conventional commits, hierarchical tree of manifests, changelog, git tag, and cargo publish." /> |
 
 | WebAssembly Plugin Engine (`cutver plugin add`) | Formatted Release Notes (`cutver changelog latest`) |
 | :---: | :---: |
-| <img src="assets/cutver_plugin_showcase.png" width="440" alt="Terminal capture of cutver plugin add github-releases --dry-run in Windows Terminal: Demonstrating registry index resolution, wasm binary download URL, SHA-256 digest validation, and cutver.toml injection." /> | <img src="assets/cutver_changelog_latest_showcase.png" width="440" alt="Terminal capture of cutver changelog latest in Windows Terminal: Displaying generated release notes with conventional commit links, emojis for bug fixes, features, and full changelog diff." /> |
+| <img src="assets/cutver_plugin_showcase.png" width="440" alt="Terminal output of cutver plugin add github-releases --dry-run: Demonstrating registry index resolution, wasm binary download URL, SHA-256 digest validation, and cutver.toml injection." /> | <img src="assets/cutver_changelog_latest_showcase.png" width="440" alt="Terminal output of cutver changelog latest: Displaying generated release notes with conventional commit links, emojis for bug fixes, features, and full changelog diff." /> |
 
 </div>
 

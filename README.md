@@ -148,22 +148,13 @@ docker pull ghcr.io/cutver/cutver:plugins
 
 ## 🏛️ Architecture & Capabilities
 
-```text
-                      cutver.toml
-                           │
-      ┌────────────────────┴────────────────────┐
-      │               cutver core               │
-      │   orchestration · preflights · SemVer   │
-      │   atomic apply · surgical diffs         │
-      └──┬──────────┬───────────┬───────────┬───┘
-         │          │           │           │
-   manifest.v1  lifecycle.v1  changelog.v1  versioning.v1
-         │          │           │           │
-      ┌──┴──────────┴───────────┴───────────┴───┐
-      │ plugins: sandboxed WASM · native process │
-      │ one versioned wire contract (cutver-pdk) │
-      └──────────────────────────────────────────┘
-```
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/architecture-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="assets/architecture-light.svg">
+    <img alt="Cutver Architecture: cutver.toml configures cutver core, which orchestrates four typed capability slots (manifest.v1, lifecycle.v1, changelog.v1, versioning.v1) backed by sandboxed WebAssembly plugins via cutver-pdk." src="assets/architecture-dark.svg" width="100%" />
+  </picture>
+</p>
 
 | Capability | What a plugin takes over |
 | :--- | :--- |

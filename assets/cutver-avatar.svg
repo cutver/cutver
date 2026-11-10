@@ -1,11 +1,18 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%" fill="none" role="img" aria-labelledby="cutverAvatarTitle cutverAvatarDesc">
   <title id="cutverAvatarTitle">Cutver GitHub Organization Avatar</title>
-  <desc id="cutverAvatarDesc">Squircle profile avatar for Cutver release engine featuring the geometric white C and emerald green verified checkmark.</desc>
+  <desc id="cutverAvatarDesc">Full-bleed official profile avatar for Cutver release engine featuring the geometric white C and emerald green verified checkmark with safe-area padding.</desc>
   <defs>
-    <linearGradient id="avatar-bg" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#1c2128" />
+    <!-- Full-bleed background gradient -->
+    <linearGradient id="avatar-bg-full" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#161b22" />
       <stop offset="100%" stop-color="#0d1117" />
     </linearGradient>
+
+    <!-- Subtle radial glow behind mark -->
+    <radialGradient id="center-glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#238636" stop-opacity="0.2" />
+      <stop offset="100%" stop-color="#238636" stop-opacity="0" />
+    </radialGradient>
 
     <linearGradient id="grad-verified" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#3fb950" />
@@ -13,20 +20,17 @@
     </linearGradient>
 
     <filter id="avatar-glow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="0" stdDeviation="16" flood-color="#3fb950" flood-opacity="0.3" />
-    </filter>
-
-    <filter id="border-shadow" x="-5%" y="-5%" width="110%" height="110%">
-      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#000000" flood-opacity="0.5" />
+      <feDropShadow dx="0" dy="0" stdDeviation="10" flood-color="#3fb950" flood-opacity="0.35" />
     </filter>
   </defs>
 
-  <!-- GitHub Organization Avatar: 512x512 Squircle -->
-  <rect x="16" y="16" width="480" height="480" rx="108" fill="url(#avatar-bg)" stroke="#30363d" stroke-width="4" filter="url(#border-shadow)" />
+  <!-- 1. Full-bleed 512x512 solid background (fills corners completely so GitHub's crop is seamless) -->
+  <rect width="512" height="512" fill="url(#avatar-bg-full)" />
+  <rect width="512" height="512" fill="url(#center-glow)" />
 
-  <!-- Centered Cutver Mark (scale 2.1) -->
-  <g transform="translate(46, 46) scale(2.1)">
-    <!-- 1. The Monolithic 'C' (Rust Core Engine) -->
+  <!-- 2. Centered Cutver Mark with generous Safe-Area breathing room (scale 1.65) -->
+  <g transform="translate(91, 91) scale(1.65)">
+    <!-- The Monolithic 'C' (Rust Core Engine) -->
     <path d="M 132 37 
              L 61 37 
              L 39 59 
@@ -41,7 +45,7 @@
              Z" 
           fill="#f0f6fc" />
 
-    <!-- 2. The '✓' / 'V' Checkmark (Verified Release) -->
+    <!-- The '✓' / 'V' Checkmark (Verified Release) -->
     <path d="M 73 147 
              L 91 129 
              L 103 141 

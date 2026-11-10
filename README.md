@@ -18,6 +18,7 @@
 
 <p align="center">
   <a href="#-the-30-second-path">Quickstart</a> •
+  <a href="#-visual-gallery">Gallery</a> •
   <a href="#-installation">Install</a> •
   <a href="#-architecture--capabilities">Architecture</a> •
   <a href="#-plugins-first-class">Plugins</a> •
@@ -31,7 +32,7 @@
 <br/>
 
 <p align="center">
-  <img src="assets/cutver_bump_showcase.png" alt="Terminal capture of cutver bump auto: Displays the release plan calculation, manifest version synchronization across projects, keep-a-changelog prepending grouped by conventional commits, and transactional git tag creation." width="680" />
+  <img src="assets/cutver_bump_showcase.png" alt="Terminal capture of cutver bump auto running in Windows Terminal with Starship: Showing the boxed SIMULATION MODE banner, SemVer minor version deduction from conventional commits, hierarchical release tree, and atomic Git tagging." width="680" />
 </p>
 
 </div>
@@ -40,9 +41,27 @@
 
 ## Overview
 
-`cutver` is a standalone release orchestration engine written in pure **Rust**. It synchronizes versions across your manifests, runs your preflight checks, renders the changelog, commits, tags, and publishes — driven by one declarative `cutver.toml`. It versions itself, tests itself, generates its own changelogs, and publishes itself.
+`cutver` is a standalone, language-agnostic release orchestration engine written in **Rust**. It synchronizes versions across your manifests, runs your preflight checks, renders the changelog, commits, tags, and publishes — driven by one declarative `cutver.toml`. It versions itself, tests itself, generates its own changelogs, and publishes itself.
 
 What separates it from a simple version-bumping script: **four stages are typed capability slots**. The core orchestrates; the behavior is pluggable.
+
+---
+
+## 🖼️ Visual Gallery
+
+See Cutver in action across the release lifecycle — captured live in Windows Terminal with CaskaydiaCove Nerd Font and Starship:
+
+<div align="center">
+
+| Preflight Diagnostics (`cutver doctor`) | Atomic Bump Simulation (`cutver bump --dry-run`) |
+| :---: | :---: |
+| <img src="assets/cutver_doctor_showcase.png" width="440" alt="Terminal capture of cutver doctor running in Windows Terminal: Validating cutver.toml configuration, tracking Cargo.toml at version 0.13.0, and reporting preflight test steps without anomalies." /> | <img src="assets/cutver_bump_showcase.png" width="440" alt="Terminal capture of cutver bump auto in simulation mode: Demonstrating the boxed SIMULATION MODE, semver minor deduction from 5 features and 11 bugfixes, hierarchical tree of manifests, changelog, git tag, and cargo publish." /> |
+
+| WebAssembly Plugin Engine (`cutver plugin add`) | Formatted Release Notes (`cutver changelog latest`) |
+| :---: | :---: |
+| <img src="assets/cutver_plugin_showcase.png" width="440" alt="Terminal capture of cutver plugin add github-releases --dry-run in Windows Terminal: Demonstrating registry index resolution, wasm binary download URL, SHA-256 digest validation, and cutver.toml injection." /> | <img src="assets/cutver_changelog_latest_showcase.png" width="440" alt="Terminal capture of cutver changelog latest in Windows Terminal: Displaying generated release notes with conventional commit links, emojis for bug fixes, features, and full changelog diff." /> |
+
+</div>
 
 ---
 
@@ -65,15 +84,15 @@ cutver bump auto             # Compute in memory, apply atomically
 | <kbd>cutver changelog</kbd> | Queries entries or extracts release notes | `latest`, `show <version>`, `--notes-file` |
 | <kbd>cutver plugin</kbd> | Manages sandboxed WebAssembly plugins | `add <name>`, `list`, `remove <name>` |
 
-Every mutating command validates in memory first and then applies **atomically**. Comments, key order, and formatting survive the diff, and a failure before the release commit rolls the workspace back rather than leaving it half-mutated.
+Every mutating command validates in memory first and then applies **atomically**. Comments, key order, and formatting survive the diff, and a failure before the release commit rolls the workspace back cleanly rather than leaving it half-mutated. Once the release commit succeeds, the tag and publish steps execute deterministically.
 
 ---
 
 ## 📦 Installation
 
 Choose the build that fits your workflow:
-- **Lean build (~1.25 MB):** Standalone core engine.
-- **Plugin-enabled build (~5 MB):** Adds the WebAssembly plugin runtime (`cutver plugin add/remove/list`).
+- **Recommended: `cutver-plugins` (~5 MB):** Adds the full WebAssembly plugin runtime (`cutver plugin add/remove/list`).
+- **Lean build: `cutver` (~1.25 MB):** Standalone core engine for minimal, zero-overhead CI runners.
 
 <details open>
 <summary><b>🪟 Windows (Scoop)</b></summary>
@@ -227,6 +246,11 @@ name: Release
 on:
   workflow_dispatch:
     inputs:
+      first_release:
+        description: "First release (tag current version without bumping)"
+        required: false
+        default: false
+        type: boolean
       bump:
         description: "Release bump level"
         required: true
@@ -276,6 +300,7 @@ jobs:
         with:
           command: release
           bump: ${{ github.event.inputs.bump }}
+          first-release: ${{ github.event.inputs.first_release }}
           dry-run: ${{ github.event.inputs.dry_run }}
 
       - name: Publish GitHub Release
@@ -298,6 +323,8 @@ Equip coding assistants (Pi, Claude Code, Cursor, Copilot, Eve) with release ski
 npx skills add cutver/skills
 # or
 pnpm dlx skills add cutver/skills
+# or
+bunx skills add cutver/skills
 ```
 
 Includes **8 autonomous skills**:

@@ -2,35 +2,132 @@
 
 # cutver
 
-**A release engine you can extend: one core, four typed capability slots, and plugins that run
-sandboxed by default.**
+**A release engine you can extend: one core, four typed capability slots, and plugins that run sandboxed by default.**
 
 > *Cut a release. Bump SemVer. Every project, every language.*
 
 [![CI](https://github.com/cutver/cutver/actions/workflows/ci.yml/badge.svg)](https://github.com/cutver/cutver/actions/workflows/ci.yml)
 [![Release](https://github.com/cutver/cutver/actions/workflows/release.yml/badge.svg)](https://github.com/cutver/cutver/actions/workflows/release.yml)
-[![GitHub Release](https://img.shields.io/github/v/release/cutver/cutver?logo=github&color=blue)](https://github.com/cutver/cutver/releases)
-[![Cosign Signed](https://img.shields.io/badge/cosign-signed_binaries-blue?logo=sigstore)](https://github.com/cutver/cutver/releases)
-[![Crates.io](https://img.shields.io/crates/v/cutver.svg?logo=rust&color=orange)](https://crates.io/crates/cutver)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![GitHub Release](https://img.shields.io/github/v/release/cutver/cutver?logo=github&color=blue&style=flat-square)](https://github.com/cutver/cutver/releases)
+[![released with: cutver](https://img.shields.io/badge/released%20with-cutver-0969da?style=flat-square&logo=git&logoColor=white)](https://github.com/cutver/cutver)
+[![Cosign Signed](https://img.shields.io/badge/cosign-signed_binaries-blue?style=flat-square&logo=sigstore)](https://github.com/cutver/cutver/releases)
+[![Crates.io](https://img.shields.io/crates/v/cutver.svg?logo=rust&color=orange&style=flat-square)](https://crates.io/crates/cutver)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](LICENSE)
 
 <br/>
 
 <p align="center">
-  <img src="assets/cutver_bump_showcase.png" alt="cutver bump auto preview" width="680">
+  <a href="#-the-30-second-path">Quickstart</a> •
+  <a href="#-installation">Install</a> •
+  <a href="#-architecture--capabilities">Architecture</a> •
+  <a href="#-plugins-first-class">Plugins</a> •
+  <a href="#-supported-manifests">Manifests</a> •
+  <a href="#-official-insignia">Badge</a> •
+  <a href="#-github-actions">CI/CD</a> •
+  <a href="#-ai-coding-skills">AI Skills</a> •
+  <a href="#-documentation">Docs</a>
+</p>
+
+<br/>
+
+<p align="center">
+  <img src="assets/cutver_bump_showcase.png" alt="Terminal capture of cutver bump auto: Displays the release plan calculation, manifest version synchronization across projects, keep-a-changelog prepending grouped by conventional commits, and transactional git tag creation." width="680" />
 </p>
 
 </div>
 
 ---
 
-`cutver` is a standalone release orchestration engine written in pure Rust. It synchronizes versions
-across your manifests, runs your preflight checks, renders the changelog, commits, tags and
-publishes — driven by one declarative `cutver.toml`. It versions itself, tests itself, generates its
-own changelogs and publishes itself.
+## Overview
 
-What separates it from a version-bumping script: **four stages are typed capability slots**. The core
-orchestrates; the behaviour is pluggable.
+`cutver` is a standalone release orchestration engine written in pure **Rust**. It synchronizes versions across your manifests, runs your preflight checks, renders the changelog, commits, tags, and publishes — driven by one declarative `cutver.toml`. It versions itself, tests itself, generates its own changelogs, and publishes itself.
+
+What separates it from a simple version-bumping script: **four stages are typed capability slots**. The core orchestrates; the behavior is pluggable.
+
+---
+
+## ⚡ The 30-Second Path
+
+```bash
+cutver init                  # Discover manifests, scaffold cutver.toml
+cutver doctor                # Validate config, manifests, and version drift
+cutver bump auto --dry-run   # Simulate the entire release without touching disk
+cutver bump auto             # Compute in memory, apply atomically
+```
+
+### Essential Commands
+
+| Command | Action | Key Flags |
+| :--- | :--- | :--- |
+| <kbd>cutver init</kbd> | Scaffolds `cutver.toml` from detected manifests | `--update`, `--force`, `--no-template` |
+| <kbd>cutver doctor</kbd> | Validates manifest sync, changelog drift, and config | `--check-changelog` |
+| <kbd>cutver bump</kbd> | Executes atomic version bumps and Git tagging | `auto`, `patch`, `minor`, `major`, `--dry-run`, `--first-release` |
+| <kbd>cutver changelog</kbd> | Queries entries or extracts release notes | `latest`, `show <version>`, `--notes-file` |
+| <kbd>cutver plugin</kbd> | Manages sandboxed WebAssembly plugins | `add <name>`, `list`, `remove <name>` |
+
+Every mutating command validates in memory first and then applies **atomically**. Comments, key order, and formatting survive the diff, and a failure before the release commit rolls the workspace back rather than leaving it half-mutated.
+
+---
+
+## 📦 Installation
+
+Choose the build that fits your workflow:
+- **Lean build (~1.25 MB):** Standalone core engine.
+- **Plugin-enabled build (~5 MB):** Adds the WebAssembly plugin runtime (`cutver plugin add/remove/list`).
+
+<details open>
+<summary><b>🪟 Windows (Scoop)</b></summary>
+
+```bash
+scoop bucket add row https://github.com/Row0902/scoop-bucket
+
+# Pick one:
+scoop install cutver            # Lean (~1.25 MB)
+scoop install cutver-plugins    # Plugin runtime (~5 MB)
+```
+
+</details>
+
+<details>
+<summary><b>🍎 macOS & 🐧 Linux (Homebrew)</b></summary>
+
+```bash
+# Pick one:
+brew install Row0902/tap/cutver            # Lean (~1.25 MB)
+brew install Row0902/tap/cutver-plugins    # Plugin runtime (~5 MB)
+```
+
+</details>
+
+<details>
+<summary><b>🦀 Rust Cargo</b></summary>
+
+```bash
+# Lean build
+cargo install cutver
+
+# With WebAssembly plugin runtime
+cargo install cutver --features plugins
+```
+
+</details>
+
+<details>
+<summary><b>🐳 OCI Containers (Docker / Podman)</b></summary>
+
+```bash
+# Lean image
+docker pull ghcr.io/cutver/cutver:latest
+
+# With plugin runtime
+docker pull ghcr.io/cutver/cutver:plugins
+```
+
+</details>
+
+---
+
+## 🏛️ Architecture & Capabilities
 
 ```text
                       cutver.toml
@@ -52,67 +149,23 @@ orchestrates; the behaviour is pluggable.
 | Capability | What a plugin takes over |
 | :--- | :--- |
 | `manifest.v1` | Read and write a manifest format the core does not know. |
-| `lifecycle.v1` | Run on `on_pre_bump`, `on_post_bump` and `on_post_release`. |
+| `lifecycle.v1` | Run on `on_pre_bump`, `on_post_bump`, and `on_post_release`. |
 | `changelog.v1` | Render the release notes. |
 | `versioning.v1` | Decide the next version from your commits. |
 
-The core ships its own implementation of every slot, so nothing is required to cut a release.
-Plugins replace or extend a stage when your project needs it. A plugin is a sandboxed WebAssembly
-module or a native process, and both speak the same versioned contract
-([`cutver-pdk`](https://crates.io/crates/cutver-pdk)). A WASM plugin gets **no filesystem, no network
-and no environment** unless you grant it under `[plugins.<name>.permissions]`.
+The core ships its own implementation of every slot, so nothing is required to cut a release. Plugins replace or extend a stage when your project needs it. A plugin is a **sandboxed WebAssembly module** or a native process, and both speak the same versioned contract ([`cutver-pdk`](https://crates.io/crates/cutver-pdk)).
 
-## Install
+---
 
-> **Two builds — pick one.** Homebrew carries two formulae (`cutver`, `cutver-plugins`) and Scoop two
-> manifests, both available for 0.13.0 and later. Both install a binary named `cutver`; the
-> plugin-enabled build adds the WebAssembly plugin runtime (`cutver plugin add/remove/list`) at ~5 MB
-> compressed, against ~1.25 MB lean.
+## 🧩 Plugins, First-Class
 
 ```bash
-# Homebrew (macOS & Linux) — pick one
-brew install Row0902/tap/cutver            # lean (~1.25 MB)
-brew install Row0902/tap/cutver-plugins    # plugin runtime (~5 MB)
-
-# Scoop (Windows) — pick one
-scoop bucket add row https://github.com/Row0902/scoop-bucket
-scoop install cutver            # lean (~1.25 MB)
-scoop install cutver-plugins    # plugin runtime (~5 MB)
-
-# Cargo — add --features plugins for the plugin runtime
-cargo install cutver
-
-# OCI Container (Docker / Podman) — add :plugins for the plugin runtime
-docker pull ghcr.io/cutver/cutver:latest
+cutver plugin add github-releases    # Resolve, download, verify SHA-256, configure
+cutver plugin list                   # Declared vs installed vs digest-matched
+cutver plugin remove github-releases # Surgical removal, artifact included
 ```
 
-## The 30-Second Path
-
-```bash
-cutver init                  # discover manifests, scaffold cutver.toml
-cutver doctor                # validate config, manifests and version drift
-cutver bump auto --dry-run   # see the whole release without writing anything
-cutver bump auto             # compute in memory, apply atomically
-```
-
-Every mutating command validates in memory first and then applies atomically. Comments, key order
-and formatting survive the diff, and a failure before the release commit rolls the workspace back
-rather than leaving it half-mutated. The commit is the point of no return: the tag and the publish
-follow it and are reported, not undone.
-
-## Plugins, First-Class
-
-```bash
-cutver plugin add github-releases    # resolve, download, verify, install, configure
-cutver plugin list                   # declared vs installed vs digest-matched
-cutver plugin remove github-releases # surgical removal, artifact included
-```
-
-`add` reads the [Cutver registry](https://github.com/cutver/registry), downloads the release
-artifact, verifies its SHA-256 **before** the file enters the cache, and writes the declaration for
-you. From then on the loader re-verifies that digest on **every** load of a plugin `add` installed. The install gate has no
-bypass — there is no `--insecure` flag and no fallback to whatever the URL returned — and `add`
-always writes the `hash` that the load gate checks.
+`add` reads the [Cutver registry](https://github.com/cutver/registry), downloads the release artifact, verifies its **SHA-256 before the file enters the cache**, and writes the declaration into `cutver.toml`. From then on, the loader re-verifies that digest on **every single load**.
 
 ```toml
 [plugins.github-releases]
@@ -122,26 +175,144 @@ hash = "a828cbabd247afdaf78fec358ae5a27271097c7c2ef6fc9ec0fe04af22edf841"
 capabilities = ["changelog.v1"]
 ```
 
-> **Gotcha**: a `changelog.v1` plugin is only dispatched when `[changelog] format = "plugin"`. With
-> the default `keep-a-changelog`, the built-in renderer runs and the installed plugin stays idle.
+> **Security Guarantee:** A WASM plugin gets **no filesystem, no network, and no environment** access unless explicitly granted under `[plugins.<name>.permissions]`. There is no `--insecure` bypass.
 
-Full detail in [Installing & Managing Plugins](docs/reference/plugins.md) and the
-[plugin engine architecture](docs/rfcs/0001-wasm-plugin-architecture.md).
+---
 
-## Supported Manifests
+## 📑 Supported Manifests
 
-Each format has its own editor, chosen for what it must preserve: comments, key order and whitespace
-survive in `Cargo.toml` and `pyproject.toml`, and JSON is touched only inside the version string's byte
-span. Gradle and arbitrary text files go through a capture-group replacement, which can touch more than
-the version — Gradle also increments `versionCode`, and every regex match is replaced. Precompiled
-Cosign-signed binaries cover 8 targets — Linux glibc and
-musl on x86_64 and ARM64, macOS Intel and Apple Silicon, Windows x86_64 and ARM64 — plus
-plugin-enabled variants of each, on the [releases page](https://github.com/cutver/cutver/releases).
+Each format has its own format-preserving editor designed to maintain comments, whitespace, and key ordering:
 
-[Language Manifests & Diff Guarantees](docs/reference/manifests.md) documents every kind and what it
-preserves.
+| Ecosystem | Manifest File | Kind in `cutver.toml` | Diff Guarantee |
+| :--- | :--- | :--- | :--- |
+| **Rust** | `Cargo.toml` | `cargo-package` | Preserves comments, whitespace, and table order |
+| **Typst** | `typst.toml` | `toml` | Format-preserving AST editor |
+| **JavaScript / Node** | `package.json` | `json` | Byte-span in-place version editing |
+| **Python** | `pyproject.toml` | `pyproject` / `toml` | Format-preserving TOML AST editor |
+| **Java / Kotlin** | `build.gradle` / `.kts` | `gradle` | Increments version and `versionCode` |
+| **Arbitrary Text** | `VERSION`, `README.md` | `regex` | Targeted capture-group replacement |
+| **Custom Ecosystem** | *Any file* | `plugin` | Delegated to a `manifest.v1` WASM plugin |
 
-## Documentation
+---
+
+## 🏷️ Official Insignia
+
+Show that your project's releases are deterministic, preflight-audited, and automated with Cutver:
+
+<div align="center">
+
+[![released with: cutver](https://img.shields.io/badge/released%20with-cutver-0969da?style=flat-square&logo=git&logoColor=white)](https://github.com/cutver/cutver)
+
+</div>
+
+### Markdown
+```markdown
+[![released with: cutver](https://img.shields.io/badge/released%20with-cutver-0969da?style=flat-square&logo=git&logoColor=white)](https://github.com/cutver/cutver)
+```
+
+### HTML
+```html
+<a href="https://github.com/cutver/cutver"><img src="https://img.shields.io/badge/released%20with-cutver-0969da?style=flat-square&logo=git&logoColor=white" alt="Released with Cutver" /></a>
+```
+
+---
+
+## 🤖 GitHub Actions Integration
+
+Automate releases securely in CI/CD using official GitHub Actions and `@cutver-release[bot]`:
+
+```yaml
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Release bump level"
+        required: true
+        default: "auto"
+        type: choice
+        options: [auto, patch, minor, major]
+      dry_run:
+        description: "Simulate release"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate Token for cutver-release[bot]
+        id: release-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.CUTVER_CLIENT_ID }}
+          private-key: ${{ secrets.CUTVER_APP_PRIVATE_KEY }}
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ steps.release-token.outputs.token }}
+
+      - name: Setup Git credentials
+        run: |
+          git config --global user.name "cutver-release[bot]"
+          git config --global user.email "${{ steps.release-token.outputs.app-slug }}[bot]@users.noreply.github.com"
+
+      - name: Install Cutver CLI
+        uses: cutver/setup@v1
+
+      - name: Execute Cutver Release
+        uses: cutver/release@v1
+        id: cutver
+        env:
+          GH_TOKEN: ${{ steps.release-token.outputs.token }}
+        with:
+          command: release
+          bump: ${{ github.event.inputs.bump }}
+          dry-run: ${{ github.event.inputs.dry_run }}
+
+      - name: Publish GitHub Release
+        if: steps.cutver.outputs.released == 'true' && !github.event.inputs.dry_run
+        env:
+          GH_TOKEN: ${{ steps.release-token.outputs.token }}
+        run: |
+          gh release create "${{ steps.cutver.outputs.tag }}" \
+            --title "${{ steps.cutver.outputs.tag }}" \
+            --notes-file "${{ steps.cutver.outputs.notes-path }}"
+```
+
+---
+
+## 🧠 AI Coding Skills
+
+Equip coding assistants (Pi, Claude Code, Cursor, Copilot, Eve) with release skills from [Cutver Agent Skills](https://github.com/cutver/skills):
+
+```bash
+npx skills add cutver/skills
+# or
+pnpm dlx skills add cutver/skills
+```
+
+Includes **8 autonomous skills**:
+- `cutver-release`: Execute safe semantic version bumps with mandatory dry-run simulation.
+- `cutver-doctor`: Validate manifest synchronization, changelog alignment, and detect drift.
+- `cutver-init`: Auto-discover manifests and scaffold canonical `cutver.toml`.
+- `cutver-actions`: Scaffold and configure GitHub Actions release workflows.
+- `cutver-changelog`: Extract release notes and render MiniJinja templates.
+- `cutver-containers`: Run Cutver inside Docker, Podman, or WSL containers.
+- `cutver-install`: Environment detection and package manager setup.
+- `cutver-open`: Instant navigation to docs, releases, and changelogs.
+
+---
+
+## 📚 Documentation
 
 | Category | Guide | Description |
 | :--- | :--- | :--- |
@@ -153,24 +324,18 @@ preserves.
 | | [Installing & Managing Plugins](docs/reference/plugins.md) | Install flow, digest verification, cache location, and the plugin commands. |
 | **Templates** | [Customizing Release Templates](docs/templates/release-notes.md) | Variables, commit filters, breaking descriptions, and CI attribution. |
 | **Integrations** | [GitHub Actions Integration Guide](docs/integrations/github-actions.md) | Official `cutver/setup` and `cutver/release` action workflows. |
-| | [Container Integration Guide](docs/integrations/containers.md) | Running cutver with Podman, Docker, `docker://`, and GitLab CI. |
+| | [Container Integration Guide](docs/integrations/containers.md) | Running Cutver with Podman, Docker, `docker://`, and GitLab CI. |
 | **Internals** | [Architecture & Design Decisions](docs/internals/design.md) | Two-phase release pipeline, atomic scanner, and design history. |
 | | [Plugin Engine Architecture](docs/rfcs/0001-wasm-plugin-architecture.md) | The microkernel, the capability contract, and the two runtimes. |
-
----
-
-## AI Coding Skills
-
-Equip coding assistants (Pi, Claude Code, Cursor, GitHub Copilot) with release skills from [Cutver Agent Skills](https://github.com/cutver/skills):
-
-```bash
-npx skills add cutver/skills
-```
-
-Includes 8 autonomous skills covering releases (`cutver-release`), diagnostics (`cutver-doctor`), onboarding (`cutver-init`), changelogs (`cutver-changelog`), CI/CD workflows (`cutver-actions`), OCI containers (`cutver-containers`), installation (`cutver-install`), and navigation (`cutver-open`).
 
 ---
 
 ## License
 
 MIT © [Cutver Authors](https://github.com/cutver/cutver) & [Row0902](https://github.com/Row0902)
+
+---
+
+<div align="center">
+  <sub>Built with Rust for deterministic releases and universal developer access.</sub>
+</div>

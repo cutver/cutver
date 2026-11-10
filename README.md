@@ -1,5 +1,11 @@
 <div align="center">
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/cutver-mark-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="assets/cutver-mark-light.svg">
+  <img alt="Cutver logo: a geometric C monogram combined with an emerald green verified release checkmark, separated by an atomic 45-degree cut" src="assets/cutver-mark-dark.svg" width="84" height="84" />
+</picture>
+
 # cutver
 
 **A release engine you can extend: one core, four typed capability slots, and plugins that run sandboxed by default.**
@@ -26,6 +32,7 @@
   <a href="#-official-insignia">Badge</a> •
   <a href="#-github-actions">CI/CD</a> •
   <a href="#-ai-coding-skills">AI Skills</a> •
+  <a href="#-frequently-asked-questions">FAQ</a> •
   <a href="#-documentation">Docs</a>
 </p>
 
@@ -215,21 +222,29 @@ Show that your project's releases are deterministic, preflight-audited, and auto
 
 </div>
 
-### Markdown
+<details>
+<summary><b>📋 Copy Badge Snippets (Markdown &amp; HTML)</b></summary>
+
+#### Markdown
 ```markdown
 [![released with: cutver](https://img.shields.io/badge/released%20with-cutver-0969da?style=flat-square&logo=git&logoColor=white)](https://github.com/cutver/cutver)
 ```
 
-### HTML
+#### HTML
 ```html
 <a href="https://github.com/cutver/cutver"><img src="https://img.shields.io/badge/released%20with-cutver-0969da?style=flat-square&logo=git&logoColor=white" alt="Released with Cutver" /></a>
 ```
+
+</details>
 
 ---
 
 ## 🤖 GitHub Actions Integration
 
 Automate releases securely in CI/CD using official GitHub Actions and `@cutver-release[bot]`:
+
+<details>
+<summary><b>📄 Production Release Workflow (<code>.github/workflows/release.yml</code>)</b></summary>
 
 ```yaml
 name: Release
@@ -304,6 +319,8 @@ jobs:
             --notes-file "${{ steps.cutver.outputs.notes-path }}"
 ```
 
+</details>
+
 ---
 
 ## 🧠 AI Coding Skills
@@ -327,6 +344,54 @@ Includes **8 autonomous skills**:
 - `cutver-containers`: Run Cutver inside Docker, Podman, or WSL containers.
 - `cutver-install`: Environment detection and package manager setup.
 - `cutver-open`: Instant navigation to docs, releases, and changelogs.
+
+---
+
+## ❓ Frequently Asked Questions
+
+<details>
+<summary><b>How does Cutver differ from tools like <code>semantic-release</code>, <code>changesets</code>, or <code>cargo-release</code>?</b></summary>
+<br/>
+
+Cutver is a standalone, language-agnostic release engine written in Rust. Unlike ecosystem-specific tools (`cargo-release` for Rust, `changesets` for npm), Cutver operates across any combination of ecosystems simultaneously (Cargo, npm, PyPI, Gradle, arbitrary text). Unlike Node-heavy orchestrators (`semantic-release`), Cutver requires zero node runtime or dependencies, executes in milliseconds, provides a guaranteed zero-residue rollback on preflight failure, and exposes four typed capability slots extended through sandboxed WebAssembly plugins.
+</details>
+
+<details>
+<summary><b>What happens if a preflight check, hook, or commit fails halfway through?</b></summary>
+<br/>
+
+Cutver uses a strict **two-phase atomic execution model**:
+1. **Phase 1 (In-Memory Validation):** Computes new versions, parses commits, checks changelog drift, runs preflight verification, and dry-runs every mutation in memory.
+2. **Phase 2 (Atomic Apply):** Commits, tags, and runs post-hooks only once all validations pass.
+
+If a failure occurs during preflights or staging, Cutver immediately aborts without touching disk, leaving no uncommitted diffs, no partial manifest bumps, and no orphaned Git tags.
+</details>
+
+<details>
+<summary><b>Do I need WebAssembly / Wasmtime if I only want minimal CI bumps?</b></summary>
+<br/>
+
+No. Cutver provides two distinct builds:
+- **`cutver` (Lean build, ~1.25 MB):** Standalone zero-overhead static binary containing the complete core engine (manifest parsing, SemVer deduction, atomic apply, preflight checks, changelog rendering). Perfect for lean, minimal CI/CD runners.
+- **`cutver-plugins` (~5 MB):** Adds the full sandboxed WebAssembly plugin engine (`Wasmtime`) for projects leveraging custom plugins.
+</details>
+
+<details>
+<summary><b>Are third-party WebAssembly plugins secure? Can they access my filesystem or secrets?</b></summary>
+<br/>
+
+Cutver enforces a strict **default-deny capability model**:
+- Every WASM plugin runs isolated within Wasmtime with **zero filesystem, zero network, and zero environment access** by default.
+- Permissions must be explicitly declared and granted in `cutver.toml` under `[plugins.<name>.permissions]`.
+- There is no `--insecure` CLI bypass. Furthermore, every downloaded plugin has its SHA-256 digest verified prior to caching and re-verified on every load.
+</details>
+
+<details>
+<summary><b>How does Cutver preserve formatting, comments, and key ordering in manifests?</b></summary>
+<br/>
+
+Rather than re-serializing entire configuration files (which destroys comments and formatting), Cutver uses surgical, format-preserving AST editors (like `toml_edit` for TOML and byte-span targeted surgery for JSON and Gradle). Only the exact version fields are mutated; comments, whitespace, and existing key order survive the diff untouched.
+</details>
 
 ---
 

@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="100%" height="100%" fill="none" role="img" aria-labelledby="cutverMarkLightTitle cutverMarkLightDesc">
+  <title id="cutverMarkLightTitle">Cutver Official Logo (Light Theme)</title>
+  <desc id="cutverMarkLightDesc">Geometric C monogram in dark graphite with an emerald green verified release checkmark, separated by an atomic 45-degree cut.</desc>
+  <defs>
+    <linearGradient id="grad-verified-light" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2da44e" />
+      <stop offset="100%" stop-color="#1a7f37" />
+    </linearGradient>
+  </defs>
+
+  <!-- Cutver Monogram: The Verified Cut (Light Theme) -->
+  <!-- 1. The Monolithic 'C' (Rust Core Engine) -->
+  <path d="M 132 37 
+           L 61 37 
+           L 39 59 
+           L 39 113 
+           L 59 133 
+           L 93 99 
+           L 73 99 
+           L 67 93 
+           L 67 65 
+           L 73 59 
+           L 132 59 
+           Z" 
+        fill="#1f2328" />
+
+  <!-- 2. The '✓' / 'V' Checkmark (SemVer / Preflights Verified) -->
+  <path d="M 73 147 
+           L 91 129 
+           L 103 141 
+           L 145 73 
+           L 161 83 
+           L 109 163 
+           L 95 163 
+           Z" 
+        fill="url(#grad-verified-light)" />
+</svg>

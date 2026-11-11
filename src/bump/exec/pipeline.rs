@@ -97,11 +97,11 @@ pub fn run_with_first_release(
     })?;
     let tag_skipped = tag_report.is_some() && !dry_run;
 
-    run_plugin_post_release(&plugin_manager, repo, &next, &tag, dry_run)?;
-
     let floating_tag = handle_floating_tag(config, repo, &next, dry_run)?;
     let publish_push_command = execute_publish_push(config, repo, floating_tag.as_ref(), dry_run)?;
     let publish_commands = run_publish_commands(config, &interp_ctx, dry_run)?;
+
+    run_plugin_post_release(&plugin_manager, repo, &next, &tag, dry_run)?;
 
     Ok(Summary {
         source: source_entry.path.clone(),

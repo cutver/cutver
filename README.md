@@ -281,7 +281,7 @@ jobs:
         id: release-token
         uses: actions/create-github-app-token@v3
         with:
-          client-id: ${{ secrets.CUTVER_CLIENT_ID }}
+          app-id: ${{ secrets.CUTVER_APP_ID }}
           private-key: ${{ secrets.CUTVER_APP_PRIVATE_KEY }}
 
       - name: Checkout repository

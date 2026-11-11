@@ -1,16 +1,19 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::HashMap;
 
-use crate::plugin::driver::{PluginDriver, ProcessDriver};
+mod factory;
+mod glob;
+
+use factory::create_driver;
+pub(crate) use glob::glob_matches;
+
+use crate::plugin::driver::PluginDriver;
 use crate::plugin::dto::{
     ChangelogRenderRequest, ChangelogRenderResponse, ManifestReadRequest, ManifestReadResponse, ManifestWriteRequest,
     ManifestWriteResponse, PluginInvocation, PostBumpPayload, PostReleasePayload, PreBumpPayload, PreBumpResponse,
     VersioningComputeRequest, VersioningComputeResponse,
 };
 use crate::plugin::error::PluginError;
-use crate::plugin::types::{Capability, PluginCall, PluginConfig, PluginName, RuntimeKind};
-
-/// Default timeout in seconds for process plugins when unspecified in config.
-const DEFAULT_PLUGIN_TIMEOUT_SECS: u64 = 30;
+use crate::plugin::types::{Capability, PluginCall, PluginConfig, PluginName};
 
 /// Central facade managing plugin drivers and configuration orchestration.
 #[derive(Debug)]
@@ -234,74 +237,6 @@ impl PluginManager {
     }
 }
 
-/// Creates a driver instance for a plugin based on its runtime configuration.
-fn create_driver(name: &PluginName, config: &PluginConfig) -> Result<Box<dyn PluginDriver>, PluginError> {
-    match config.runtime {
-        RuntimeKind::Wasm => create_wasm_runtime_driver(name, config),
-        RuntimeKind::Process => create_process_driver(name, config),
-    }
-}
-
-#[cfg(not(feature = "plugins"))]
-fn create_wasm_runtime_driver(name: &PluginName, _config: &PluginConfig) -> Result<Box<dyn PluginDriver>, PluginError> {
-    Err(PluginError::WasmNotSupported { name: name.clone() })
-}
-
-#[cfg(feature = "plugins")]
-fn create_wasm_runtime_driver(name: &PluginName, config: &PluginConfig) -> Result<Box<dyn PluginDriver>, PluginError> {
-    create_wasm_driver(name, config)
-}
-
-#[cfg(feature = "plugins")]
-fn create_wasm_driver(name: &PluginName, config: &PluginConfig) -> Result<Box<dyn PluginDriver>, PluginError> {
-    let source = config
-        .source
-        .as_deref()
-        .filter(|s| !s.trim().is_empty())
-        .ok_or_else(|| PluginError::MissingConfiguration {
-            name: name.clone(),
-            reason: "'source' is required for wasm runtime and cannot be empty".to_string(),
-        })?;
-
-    let bytes = crate::plugin::driver::wasm::load_wasm_bytes(name, source, config.hash.as_deref())?;
-    let capabilities = config.capabilities.iter().copied().collect::<HashSet<_>>();
-
-    let driver = crate::plugin::driver::WasmDriver::new(
-        name.clone(),
-        &bytes,
-        &config.permissions,
-        config.timeout_seconds,
-        capabilities,
-        config.hash.as_deref(),
-    )?;
-
-    Ok(Box::new(driver))
-}
-
-/// Creates a `ProcessDriver` from plugin configuration.
-fn create_process_driver(name: &PluginName, config: &PluginConfig) -> Result<Box<dyn PluginDriver>, PluginError> {
-    let command = config
-        .command
-        .as_deref()
-        .filter(|cmd| !cmd.trim().is_empty())
-        .ok_or_else(|| PluginError::MissingConfiguration {
-            name: name.clone(),
-            reason: "'command' is required for process runtime and cannot be empty".to_string(),
-        })?;
-
-    let timeout_secs = config.timeout_seconds.unwrap_or(DEFAULT_PLUGIN_TIMEOUT_SECS);
-    let capabilities = config.capabilities.iter().copied().collect::<HashSet<_>>();
-
-    Ok(Box::new(ProcessDriver::new(
-        name.clone(),
-        command,
-        Vec::new(),
-        BTreeMap::new(),
-        timeout_secs,
-        capabilities,
-    )))
-}
-
 /// Validates that the plugin declared the requested capability.
 fn validate_capability(
     config: Option<&PluginConfig>,
@@ -320,68 +255,11 @@ fn validate_capability(
     Ok(())
 }
 
-/// Matches a glob pattern against a normalized path using regex.
-///
-/// Supported tokens:
-/// - `**`: matches arbitrary directories across `/`
-/// - `*`: matches any characters except `/`
-/// - `?`: matches any single character except `/`
-/// - Literal text: matches exactly
-pub(crate) fn glob_matches(pattern: &str, path: &str) -> bool {
-    // Normalize backslashes to forward slashes for cross-platform glob matching
-    let norm_path = path.replace('\\', "/");
-    let norm_pattern = pattern.replace('\\', "/");
-
-    let regex_pattern = glob_to_regex(&norm_pattern);
-    match regex::Regex::new(&regex_pattern) {
-        Ok(re) => re.is_match(&norm_path),
-        Err(_) => false,
-    }
-}
-
-fn glob_to_regex(pattern: &str) -> String {
-    let mut regex = String::from("^");
-    let chars: Vec<char> = pattern.chars().collect();
-    let mut i = 0;
-    while i < chars.len() {
-        match chars[i] {
-            '*' => {
-                if i + 1 < chars.len() && chars[i + 1] == '*' {
-                    // Match '**'
-                    i += 2;
-                    if i < chars.len() && chars[i] == '/' {
-                        // "**/": matches zero or more directories
-                        regex.push_str("(?:.*/)?");
-                        i += 1;
-                    } else {
-                        // "**": matches anything
-                        regex.push_str(".*");
-                    }
-                } else {
-                    // Single '*': matches non-slash characters
-                    regex.push_str("[^/]*");
-                    i += 1;
-                }
-            }
-            '?' => {
-                regex.push_str("[^/]");
-                i += 1;
-            }
-            c => {
-                regex.push_str(&regex::escape(&c.to_string()));
-                i += 1;
-            }
-        }
-    }
-    regex.push('$');
-    regex
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plugin::types::PluginOperation;
-    use std::collections::{HashMap, VecDeque};
+    use crate::plugin::types::{PluginOperation, RuntimeKind};
+    use std::collections::{HashMap, HashSet, VecDeque};
     use std::sync::Mutex;
 
     #[derive(Debug)]

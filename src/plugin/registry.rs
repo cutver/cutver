@@ -10,6 +10,7 @@
 mod digest;
 mod entry;
 mod fetch;
+mod info;
 mod release;
 mod tier;
 mod transport;
@@ -21,6 +22,7 @@ pub use fetch::{
     ENTRY_TIMEOUT, INDEX_BASE, MAX_ENTRY_BYTES, RegistryIndexUrl, entry_url, entry_url_with, fetch_entry,
     fetch_entry_with,
 };
+pub use info::{CANONICAL_PLUGINS, RegistryEntryJson, RegistryReleaseJson, get_plugin_info, search_plugins};
 pub use release::select_release;
 pub use tier::{Tier, TierParseError};
 pub use transport::{ARTIFACT_TIMEOUT, MAX_ARTIFACT_BYTES, Transport, UreqTransport};

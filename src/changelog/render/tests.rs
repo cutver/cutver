@@ -379,6 +379,7 @@ fn test_render_body_with_plugin_mock() {
         manifest_match: vec![],
         permissions: Default::default(),
         timeout_seconds: None,
+        config: None,
     };
 
     let mut drivers = HashMap::new();

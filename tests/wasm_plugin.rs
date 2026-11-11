@@ -137,6 +137,7 @@ fn test_plugin_manager_wasm_round_trip() {
         manifest_match: vec![],
         permissions: Default::default(),
         timeout_seconds: Some(5),
+        config: None,
     };
 
     let mut map = HashMap::new();

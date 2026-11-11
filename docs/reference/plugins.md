@@ -52,6 +52,10 @@ instruction instead of a `runtime` setting that cannot help.
 | Command | What it does |
 | :--- | :--- |
 | `cutver plugin add <NAME>` | Resolves, downloads, verifies, installs and configures a plugin. |
+| `cutver plugin restore [--dry-run]` | Fetches missing declared plugin artifacts into cache without modifying config. |
+| `cutver plugin update [NAME]` | Upgrades plugins to the latest compatible release, preserving sub-tables. |
+| `cutver plugin search [QUERY]` | Searches the registry index by name, description, capability, or author. |
+| `cutver plugin info <NAME>` | Shows metadata, repository, tier, capabilities, and release history. |
 | `cutver plugin list [--json]` | Reports declared versus installed versus digest-matched state. Mutates nothing. |
 | `cutver plugin remove <NAME>` | Removes the declaration, and its cached artifact when nothing else uses it. |
 

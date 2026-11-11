@@ -12,7 +12,11 @@
 //! ships behind the `plugins` feature (decision A/B).
 
 mod remove;
+mod restore;
 mod status;
+mod update;
 
 pub use remove::{ArtifactDecision, ArtifactOutcome, RemoveOutcome, RemovePlan, execute_remove, plan_remove};
+pub use restore::{PluginRestoreOutcome, RestoreOptions, RestoreReport, restore_plugins};
 pub use status::{DigestState, PluginStatus, list_statuses};
+pub use update::{PluginUpdateOutcome, UpdateOptions, UpdateReport, update_plugins};

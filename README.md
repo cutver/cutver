@@ -66,7 +66,7 @@ See Cutver in action across the release lifecycle:
 
 | WebAssembly Plugin Engine (`cutver plugin add`) | Formatted Release Notes (`cutver changelog latest`) |
 | :---: | :---: |
-| <img src="assets/cutver_plugin_showcase.png" width="440" alt="Terminal output of cutver plugin add github-releases --dry-run: Demonstrating registry index resolution, wasm binary download URL, SHA-256 digest validation, and cutver.toml injection." /> | <img src="assets/cutver_changelog_latest_showcase.png" width="440" alt="Terminal output of cutver changelog latest: Displaying generated release notes with conventional commit links, emojis for bug fixes, features, and full changelog diff." /> |
+| <img src="assets/cutver_plugin_showcase.png" width="440" alt="Terminal output of cutver plugin add github-publish --event on_pre_bump --event on_post_release --dry-run: Demonstrating registry index resolution, wasm binary download URL, SHA-256 digest validation, and cutver.toml injection." /> | <img src="assets/cutver_changelog_latest_showcase.png" width="440" alt="Terminal output of cutver changelog latest: Displaying generated release notes with conventional commit links, emojis for bug fixes, features, and full changelog diff." /> |
 
 </div>
 

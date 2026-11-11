@@ -121,6 +121,7 @@ mod tests {
                 manifest_match: Vec::new(),
                 permissions: Default::default(),
                 timeout_seconds: None,
+                config: None,
             },
         );
         config

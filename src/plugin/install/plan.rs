@@ -59,10 +59,16 @@ pub fn plan_add(
 
     let entry = resolve_entry_with(index, name, transport)?;
     let release = select_release(&entry, options.version.as_deref())?;
-    require_flags(name, &entry.capabilities, options)?;
+    require_flags(name, &entry.capabilities, options, existing)?;
 
     let artifact_name = format!("{name}-{}.wasm", release.version);
-    let table = build_table(&entry.capabilities, options, &artifact_name, release.sha256.as_str());
+    let table = build_table(
+        &entry.capabilities,
+        options,
+        &artifact_name,
+        release.sha256.as_str(),
+        existing,
+    );
     let diff = render_diff(name, existing, &table);
     insert_plugins_table(&mut doc, name, table, &label)?;
 
@@ -116,19 +122,33 @@ fn guard_existing(name: &PluginName, label: &str, existing: Option<&Item>, force
 }
 
 /// Enforces the `--event` / `--manifest-match` requirements of the declared capabilities.
-fn require_flags(name: &PluginName, capabilities: &[Capability], options: &AddOptions) -> Result<(), InstallError> {
+fn require_flags(
+    name: &PluginName,
+    capabilities: &[Capability],
+    options: &AddOptions,
+    existing: Option<&Item>,
+) -> Result<(), InstallError> {
     capabilities
         .iter()
-        .try_for_each(|capability| require_flag(name, capability, options))
+        .try_for_each(|capability| require_flag(name, capability, options, existing))
 }
 
 /// The flag requirement for one capability; capabilities that need neither are no-ops.
-fn require_flag(name: &PluginName, capability: &Capability, options: &AddOptions) -> Result<(), InstallError> {
+fn require_flag(
+    name: &PluginName,
+    capability: &Capability,
+    options: &AddOptions,
+    existing: Option<&Item>,
+) -> Result<(), InstallError> {
+    let existing_table = existing.and_then(Item::as_table);
+    let has_existing_events = existing_table.is_some_and(|t| t.get("events").is_some());
+    let has_existing_match = existing_table.is_some_and(|t| t.get("manifest_match").is_some());
+
     match capability {
-        Capability::LifecycleV1 if options.events.is_empty() => {
+        Capability::LifecycleV1 if options.events.is_empty() && !has_existing_events => {
             Err(flag_required(name, *capability, "events", "--event"))
         }
-        Capability::ManifestV1 if options.manifest_match.is_empty() => {
+        Capability::ManifestV1 if options.manifest_match.is_empty() && !has_existing_match => {
             Err(flag_required(name, *capability, "manifest_match", "--manifest-match"))
         }
         Capability::LifecycleV1 | Capability::ManifestV1 | Capability::ChangelogV1 | Capability::VersioningV1 => Ok(()),
@@ -146,7 +166,13 @@ fn flag_required(name: &PluginName, capability: Capability, key: &'static str, f
 }
 
 /// Builds the `[plugins.<name>]` table for the resolved release.
-fn build_table(capabilities: &[Capability], options: &AddOptions, artifact: &str, digest: &str) -> Table {
+fn build_table(
+    capabilities: &[Capability],
+    options: &AddOptions,
+    artifact: &str,
+    digest: &str,
+    existing: Option<&Item>,
+) -> Table {
     let mut table = Table::new();
     table.insert("runtime", toml_edit::value("wasm"));
     table.insert("source", toml_edit::value(artifact));
@@ -158,12 +184,33 @@ fn build_table(capabilities: &[Capability], options: &AddOptions, artifact: &str
 
     if !options.events.is_empty() {
         table.insert("events", string_array(options.events.iter().map(String::as_str)));
+    } else if let Some(existing_table) = existing.and_then(Item::as_table)
+        && let Some(events) = existing_table.get("events")
+    {
+        table.insert("events", events.clone());
     }
+
     if !options.manifest_match.is_empty() {
         table.insert(
             "manifest_match",
             string_array(options.manifest_match.iter().map(String::as_str)),
         );
+    } else if let Some(existing_table) = existing.and_then(Item::as_table)
+        && let Some(manifest_match) = existing_table.get("manifest_match")
+    {
+        table.insert("manifest_match", manifest_match.clone());
+    }
+
+    // Preserve existing subtables and custom keys (Pillar II.1 Surgical Diffs)
+    if let Some(existing_table) = existing.and_then(Item::as_table) {
+        for (key, item) in existing_table.iter() {
+            if !matches!(
+                key,
+                "runtime" | "source" | "hash" | "command" | "capabilities" | "events" | "manifest_match"
+            ) {
+                table.insert(key, item.clone());
+            }
+        }
     }
 
     table

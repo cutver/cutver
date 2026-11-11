@@ -118,6 +118,7 @@ const PLUGIN_KEYS: &[&str] = &[
     "manifest_match",
     "permissions",
     "timeout_seconds",
+    "config",
 ];
 const PERMISSIONS_KEYS: &[&str] = &["network", "env", "filesystem"];
 

@@ -13,6 +13,14 @@ use crate::cli::args::PluginCommands;
 
 #[cfg(feature = "plugins")]
 mod add;
+#[cfg(feature = "plugins")]
+mod info;
+#[cfg(feature = "plugins")]
+mod restore;
+#[cfg(feature = "plugins")]
+mod search;
+#[cfg(feature = "plugins")]
+mod update;
 
 #[cfg(feature = "plugins")]
 use crate::cli::style::Theme;
@@ -32,6 +40,10 @@ pub fn run_plugin(config_override: Option<PathBuf>, command: PluginCommands) -> 
     match command {
         PluginCommands::List { json } => run_list(config_override, json),
         PluginCommands::Add(args) => add::run_add(config_override, &args),
+        PluginCommands::Restore(args) => restore::run_restore(config_override, &args),
+        PluginCommands::Update(args) => update::run_update(config_override, &args),
+        PluginCommands::Info(args) => info::run_info(&args),
+        PluginCommands::Search(args) => search::run_search(&args),
         PluginCommands::Remove { name, keep_artifact } => run_remove(config_override, &name, keep_artifact),
     }
 }
@@ -42,6 +54,10 @@ pub fn run_plugin(_config_override: Option<PathBuf>, command: PluginCommands) ->
     let operation = match command {
         PluginCommands::List { .. } => "list",
         PluginCommands::Add(_) => "add",
+        PluginCommands::Restore(_) => "restore",
+        PluginCommands::Update(_) => "update",
+        PluginCommands::Info(_) => "info",
+        PluginCommands::Search(_) => "search",
         PluginCommands::Remove { .. } => "remove",
     };
 

@@ -314,6 +314,39 @@ fn force_replaces_the_table_and_preserves_unrelated_content() {
 }
 
 #[test]
+fn force_replaces_the_table_and_preserves_permissions_and_config_subtables() {
+    let existing = format!(
+        "{BASE_CONFIG}\n[plugins.demo]\nruntime = \"wasm\"\nsource = \"old.wasm\"\nhash = \"deadbeef\"\n\
+         capabilities = [\"lifecycle.v1\"]\nevents = [\"on_pre_bump\"]\n\n\
+         [plugins.demo.permissions]\nnetwork = [\"api.github.com\"]\nenv = [\"GITHUB_TOKEN\"]\n\n\
+         [plugins.demo.config]\nrepository = \"cutver/sandbox\"\n"
+    );
+    let project = Project::new(&existing);
+    let fixture = Fixture::new(entry_body(&["lifecycle.v1"], PAYLOAD_HASH), PAYLOAD);
+
+    let options = AddOptions {
+        force: true,
+        ..AddOptions::default()
+    };
+
+    let plan = plan(&project, &options, &fixture).expect("plan succeeds without requiring flags already present");
+    apply_add(&plan, &fixture).expect("apply succeeds");
+
+    let config = project.read_config();
+    assert!(config.contains("source = \"demo-0.1.0.wasm\""), "config: {config}");
+    assert!(
+        config.contains(&format!("hash = \"{PAYLOAD_HASH}\"")),
+        "config: {config}"
+    );
+    assert!(config.contains("events = [\"on_pre_bump\"]"), "config: {config}");
+    assert!(config.contains("[plugins.demo.permissions]"), "config: {config}");
+    assert!(config.contains("network = [\"api.github.com\"]"), "config: {config}");
+    assert!(config.contains("env = [\"GITHUB_TOKEN\"]"), "config: {config}");
+    assert!(config.contains("[plugins.demo.config]"), "config: {config}");
+    assert!(config.contains("repository = \"cutver/sandbox\""), "config: {config}");
+}
+
+#[test]
 fn lifecycle_requires_an_event_and_writes_events_when_given() {
     let project = Project::new(BASE_CONFIG);
     let fixture = Fixture::new(entry_body(&["lifecycle.v1"], PAYLOAD_HASH), PAYLOAD);

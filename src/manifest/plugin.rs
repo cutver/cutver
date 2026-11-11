@@ -124,6 +124,7 @@ mod tests {
                 manifest_match: vec!["custom.manifest".into()],
                 permissions: Default::default(),
                 timeout_seconds: None,
+                config: None,
             },
         );
 

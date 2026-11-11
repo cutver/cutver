@@ -437,6 +437,7 @@ mod tests {
             manifest_match: vec![],
             permissions: Default::default(),
             timeout_seconds: Some(10),
+            config: None,
         };
 
         let mut map = HashMap::new();
@@ -470,6 +471,7 @@ mod tests {
             manifest_match: vec![],
             permissions: Default::default(),
             timeout_seconds: Some(5),
+            config: None,
         };
 
         let mut map = HashMap::new();
@@ -492,6 +494,7 @@ mod tests {
             manifest_match: vec![],
             permissions: Default::default(),
             timeout_seconds: None,
+            config: None,
         };
 
         let mut map = HashMap::new();
@@ -522,6 +525,7 @@ mod tests {
             manifest_match: vec![],
             permissions: Default::default(),
             timeout_seconds: Some(5),
+            config: None,
         };
 
         let cfg2 = PluginConfig {
@@ -534,6 +538,7 @@ mod tests {
             manifest_match: vec![],
             permissions: Default::default(),
             timeout_seconds: None,
+            config: None,
         };
 
         let mut map = HashMap::new();
@@ -580,6 +585,7 @@ mod tests {
             manifest_match: vec![],
             permissions: Default::default(),
             timeout_seconds: Some(5),
+            config: None,
         };
 
         let mut drivers: HashMap<PluginName, Box<dyn PluginDriver>> = HashMap::new();
@@ -630,6 +636,7 @@ mod tests {
             manifest_match: vec![],
             permissions: Default::default(),
             timeout_seconds: Some(5),
+            config: None,
         };
 
         let mut drivers: HashMap<PluginName, Box<dyn PluginDriver>> = HashMap::new();
@@ -727,6 +734,7 @@ mod tests {
             manifest_match: vec![],
             permissions: Default::default(),
             timeout_seconds: None,
+            config: None,
         };
 
         let cfg_pre = PluginConfig {
@@ -739,6 +747,7 @@ mod tests {
             manifest_match: vec![],
             permissions: Default::default(),
             timeout_seconds: None,
+            config: None,
         };
 
         let cfg_post = PluginConfig {
@@ -751,6 +760,7 @@ mod tests {
             manifest_match: vec![],
             permissions: Default::default(),
             timeout_seconds: None,
+            config: None,
         };
 
         let cfg_non_lc = PluginConfig {
@@ -763,6 +773,7 @@ mod tests {
             manifest_match: vec![],
             permissions: Default::default(),
             timeout_seconds: None,
+            config: None,
         };
 
         let mut configs = HashMap::new();
@@ -833,6 +844,7 @@ mod tests {
             manifest_match: vec!["Chart.yaml".into(), "charts/**/Chart.yaml".into()],
             permissions: Default::default(),
             timeout_seconds: None,
+            config: None,
         };
 
         let cfg_k8s = PluginConfig {
@@ -845,6 +857,7 @@ mod tests {
             manifest_match: vec!["k8s/*.yaml".into(), "charts/**/Chart.yaml".into()],
             permissions: Default::default(),
             timeout_seconds: None,
+            config: None,
         };
 
         let cfg_other = PluginConfig {
@@ -857,6 +870,7 @@ mod tests {
             manifest_match: vec!["other.yaml".into()],
             permissions: Default::default(),
             timeout_seconds: None,
+            config: None,
         };
 
         let mut configs = HashMap::new();
@@ -909,6 +923,7 @@ mod tests {
             manifest_match: vec![],
             permissions: Default::default(),
             timeout_seconds: None,
+            config: None,
         };
 
         let cfg_extra = PluginConfig {
@@ -921,6 +936,7 @@ mod tests {
             manifest_match: vec![],
             permissions: Default::default(),
             timeout_seconds: None,
+            config: None,
         };
 
         let cfg_other = PluginConfig {
@@ -933,6 +949,7 @@ mod tests {
             manifest_match: vec![],
             permissions: Default::default(),
             timeout_seconds: None,
+            config: None,
         };
 
         // 0 matches -> Err(NoChangelogPlugin)
@@ -980,6 +997,7 @@ mod tests {
             manifest_match: vec![],
             permissions: Default::default(),
             timeout_seconds: None,
+            config: None,
         };
 
         let cfg_extra = PluginConfig {
@@ -992,6 +1010,7 @@ mod tests {
             manifest_match: vec![],
             permissions: Default::default(),
             timeout_seconds: None,
+            config: None,
         };
 
         let cfg_other = PluginConfig {
@@ -1004,6 +1023,7 @@ mod tests {
             manifest_match: vec![],
             permissions: Default::default(),
             timeout_seconds: None,
+            config: None,
         };
 
         // 0 matches -> Err(NoVersioningPlugin)

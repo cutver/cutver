@@ -167,7 +167,7 @@ pub struct PermissionsConfig {
 }
 
 /// Plugin declaration parsed from `cutver.toml`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PluginConfig {
     pub runtime: RuntimeKind,
     pub source: Option<String>,
@@ -182,6 +182,25 @@ pub struct PluginConfig {
     #[serde(default)]
     pub permissions: PermissionsConfig,
     pub timeout_seconds: Option<u64>,
+    #[serde(default)]
+    pub config: Option<toml::Table>,
+}
+
+impl Default for PluginConfig {
+    fn default() -> Self {
+        Self {
+            runtime: RuntimeKind::Wasm,
+            source: None,
+            hash: None,
+            command: None,
+            capabilities: Vec::new(),
+            events: Vec::new(),
+            manifest_match: Vec::new(),
+            permissions: PermissionsConfig::default(),
+            timeout_seconds: None,
+            config: None,
+        }
+    }
 }
 
 #[cfg(test)]

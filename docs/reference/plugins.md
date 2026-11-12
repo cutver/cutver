@@ -29,6 +29,10 @@ it, and writes the configuration entry that makes `cutver` load it.
    cutver plugin add github-releases --dry-run
    ```
 
+Writing your own plugin — scaffolding the crate, exporting `invoke`, building for `wasm32-wasip1`
+and publishing the digest a registry entry needs — is covered in
+[Writing a Plugin](../guides/plugin-authoring.md).
+
 ## Building with Plugin Support
 
 Plugin support ships as its own artifact, so most users never build from source. Releases carry

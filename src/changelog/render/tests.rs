@@ -326,7 +326,7 @@ Type: [{{ type }}]
     assert!(res.contains("body: Body details."));
     assert!(res.contains("breaking: broke api"));
 
-    // Types ordered as first seen: feat, then fix
+    // Types follow the canonical section order, not the order they appear in
     let pos_feat = res.find("Type: [feat]").unwrap();
     let pos_fix = res.find("Type: [fix]").unwrap();
     assert!(pos_feat < pos_fix);
@@ -555,4 +555,36 @@ fn default_release_template_renders_markdown_only() {
         !out.to_lowercase().contains("cutver"),
         "the default template must not brand the tool: {out}"
     );
+}
+
+#[test]
+fn group_by_type_orders_sections_canonically() {
+    // Deliberately scrambled: the rendered order must not depend on it.
+    let commits = vec![
+        ConventionalCommit::parse("chore(deps): bump serde").unwrap(),
+        ConventionalCommit::parse("docs(readme): explain the flag").unwrap(),
+        ConventionalCommit::parse("fix(api): stop dropping commits").unwrap(),
+        ConventionalCommit::parse("build(cargo): bump the toolchain").unwrap(),
+        ConventionalCommit::parse("feat(cli): add the flag").unwrap(),
+    ];
+    let ctx = build_context(
+        "0.1.0",
+        None,
+        "v0.1.0",
+        None,
+        "2026-11-12",
+        None,
+        &commits,
+        vec![],
+        false,
+        "1.99",
+    );
+
+    let out = render_template(
+        "{% for type, cs in commits | group_by_type %}{{ type }},{% endfor %}",
+        &ctx,
+    )
+    .unwrap();
+
+    assert_eq!(out.trim(), "feat,fix,docs,chore,build,");
 }

@@ -83,7 +83,10 @@ The `commits` list provides rich commit metadata for custom loops:
 
 ## Built-in Filters & Helpers
 
-- `commits | group_by_type`: Groups commits by conventional type (`feat`, `fix`, etc.).
+- `commits | group_by_type`: Groups commits by conventional type (`feat`, `fix`, etc.) in a
+  fixed section order — `feat`, `fix`, `perf`, `refactor`, `docs`, `chore`, `build`, `ci`, `test`,
+  `style`, `revert` — followed by any other type alphabetically, so a release reads the same way
+  regardless of the order the commits landed in.
 - `commits | group_by_scope`: Groups commits by conventional scope.
 - `env("VAR_NAME", "default")`: Accesses environment variables directly inside templates (e.g. `{{ env("GITHUB_ACTOR", "CI") }}`).
 

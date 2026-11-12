@@ -135,7 +135,7 @@ Declares one target file to update. Multiple `[[manifest]]` blocks can be specif
 | `[git]` | `commit_message` | `string` | `"chore(release): v{version}"` | Release commit message template. |
 | `[git]` | `require_clean_tree` | `bool` | `true` | Abort if uncommitted changes exist. |
 | `[git]` | `require_branch` | `string` | `None` | Single branch name allowed to cut releases. The type is `Option<String>` (`src/config/types.rs:257`); there is no list form. |
-| `[hooks]` | `pre_bump` | `string` | `None` | Parsed, but the release pipeline does not execute it today; only `post_bump` runs. |
+| `[hooks]` | `pre_bump` | `string` | `None` | Shell command executed before manifest edits. Aborts the release cleanly on non-zero exit. |
 | `[hooks]` | `post_bump` | `string` | `None` | Shell command executed after manifest edits, before git staging. |
 | `[publish]` | `push` | `bool` | `false` | When `true`, runs `git push origin <branch> --tags`. |
 | `[publish]` | `commands` | `list<string>` | `[]` | Shell commands executed post-tag/post-push. |

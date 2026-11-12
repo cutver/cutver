@@ -18,6 +18,7 @@ Most release tools re-serialize entire files using generic object serializers. T
 | `gradle` | `build.gradle`, `*.gradle.kts` | Regex byte replacement | Updates `versionName` string and increments `versionCode` integer without altering Gradle DSL structure. |
 | `regex` | Arbitrary text files | Regex capture group | Replaces matched token with `replacement`, substituting `{{version}}`. |
 | `plugin` | Any file an installed `manifest.v1` plugin handles | Wasm plugin (`manifest.v1`) | Format preservation is the plugin's responsibility. Requires a plugin-enabled build. |
+| `template` | Any file generated from a template | MiniJinja over the release context | The whole target file is replaced. A sink generates output; it never supplies a version. |
 
 ---
 
@@ -93,6 +94,31 @@ plugin = "my-manifest"   # optional; omit to match by manifest_match globs
 ```
 
 Delegates reads and writes to an installed `manifest.v1` plugin. The `plugin` key is optional: without it, `cutver` matches the declared `path` against each plugin's `manifest_match` globs. Format preservation is the plugin's responsibility, not `cutver`'s. A lean build has no plugin runtime and fails with `PluginManagerRequired` (see [the plugin reference](plugins.md)).
+
+### Generated source (`template`)
+
+```toml
+[[manifest]]
+path = "src/version.ts"
+kind = "template"
+template = "src/version.ts.jinja"   # optional; defaults to <path>.jinja
+```
+
+Renders the template with the full release context and writes the result over `path`, so a
+`version.h`, `version.ts` or `version.go` is generated instead of reverse-matched by a regex that
+breaks when the file is reformatted. The template sees the same context a release-notes template
+gets: `version`, `tag`, `date`, `major`, `minor`, `patch`, `repository` and the commit categories.
+Output is byte-exact, including the template's trailing newline.
+
+> **A template manifest is a sink, not a source.** It replaces the whole target file, so a template
+> that also held hand-written content would lose it. It can never be `[version] current_source`, and
+> `cutver` fails closed if `template` names the target itself. Point `current_source` at a manifest
+> that holds the version.
+
+`cutver doctor` verifies a sink by rendering the template for the expected version and comparing
+it with the file on disk. The comparison uses what survives after a release: version, tag and
+remote. The commit set is empty and the release date is not recoverable, so a template that
+interpolates `date` or commit-derived fields can report drift for a file that is in fact current.
 
 ---
 

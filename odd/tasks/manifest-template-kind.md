@@ -38,12 +38,12 @@ deterministically instead of reverse-matched by a brittle regex.
 
 | ID | Spec | Route | State | Commit |
 | :--- | :--- | :--- | :--- | :--- |
-| T1 | S1, S4, S5 | Inline: config enum, key allowlist, validation rules, unit tests | pending | — |
-| T2 | S7 | Inline: `render_source` beside `render_template`, without trimming | pending | — |
-| T3 | S1, S2, S6, S7 | Inline: `TemplateEditor` implementing `ManifestEditor` and template rendering | pending | — |
-| T4 | S2 | Inline: assemble the `ReleaseContext` before manifest compute and thread it through | pending | — |
-| T5 | S3 | Inline: doctor renders and compares instead of reading a version | pending | — |
-| T6 | S1–S8 | Inline: reference docs and end-to-end tests | pending | — |
+| T1 | S1, S4, S5 | Inline: config enum, key allowlist, validation rules, unit tests | done | see Log |
+| T2 | S7 | Inline: `render_source` beside `render_template`, without trimming | done | see Log |
+| T3 | S1, S2, S6, S7 | Inline: `TemplateEditor` implementing `ManifestEditor` and template rendering | done | see Log |
+| T4 | S2 | Inline: assemble the `ReleaseContext` before manifest compute and thread it through | done | see Log |
+| T5 | S3 | Inline: doctor renders and compares instead of reading a version | done | see Log |
+| T6 | S1–S8 | Inline: reference docs and end-to-end tests | done | see Log |
 
 ## Design notes
 
@@ -59,6 +59,10 @@ deterministically instead of reverse-matched by a brittle regex.
 ## Log
 
 L1. Request: "Mergea todo lo verde y dale al 65" — implement GitHub issue #65.
+L3. T1-T5 implemented and verified: config enum and its three fail-closed rules, byte-exact render_source (MiniJinja drops a template trailing newline by default; render_source sets keep_trailing_newline), TemplateEditor as a sink, the release scope lifted before compute and shared with the changelog, and doctor verifying sinks by re-rendering. 368 lib tests and 5 e2e tests green in the default build, 394 with the plugins feature.
+
+L4. T6 documented the kind in the manifest reference together with the residual limit: doctor rebuilds the context from version, tag and remote only, so a template that interpolates date or commit fields can report drift for a file that is current. That limit is stated in the reference rather than hidden behind a green check.
+
 L2. Exploration mapped the blast radius: `ManifestEditor` has 6 implementors and ~40 call sites;
 `assemble_release_context` runs after `compute` and only when a changelog path is configured;
 `render_template` trims output, so generated source needs its own entry point. Decided to keep the

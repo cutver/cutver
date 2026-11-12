@@ -24,6 +24,15 @@ pub fn resolve_author(name: &str, email: &str) -> String {
     name.trim().to_string()
 }
 
+/// True when `author` names an automated identity rather than a person.
+///
+/// GitHub marks App and bot accounts with a `[bot]` suffix — `cutver-release[bot]`,
+/// `dependabot[bot]`, `github-actions[bot]` — and a release must not thank them as contributors.
+/// The suffix is the only marker used: a bare `-bot` could be somebody's handle.
+pub fn is_bot(author: &str) -> bool {
+    author.trim().to_ascii_lowercase().ends_with("[bot]")
+}
+
 pub fn list_authors_since(dir: &Path, tag: Option<&str>) -> io::Result<Vec<String>> {
     list_authors_between(dir, tag, "HEAD")
 }
@@ -92,7 +101,7 @@ fn list_authors_from_ref(dir: &Path, from_tag: Option<&str>, to_ref: &str) -> io
             None => (line, ""),
         };
         let author = resolve_author(name, email);
-        if !author.is_empty() && seen.insert(author.clone()) {
+        if !author.is_empty() && !is_bot(&author) && seen.insert(author.clone()) {
             authors.push(author);
         }
     }

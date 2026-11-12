@@ -48,22 +48,75 @@ fn type_sort_key(type_str: &str) -> (usize, String) {
     (rank, lower)
 }
 
+fn type_attr(item: &Value) -> String {
+    item.get_attr("type")
+        .ok()
+        .or_else(|| item.get_attr("commit_type").ok())
+        .and_then(|v| v.as_str().map(String::from))
+        .unwrap_or_default()
+}
+
 fn group_by_type_filter(seq: Vec<Value>) -> Value {
     let mut groups: BTreeMap<String, Vec<Value>> = BTreeMap::new();
 
     for item in seq {
-        let type_str = item
-            .get_attr("type")
-            .ok()
-            .or_else(|| item.get_attr("commit_type").ok())
-            .and_then(|v| v.as_str().map(String::from))
-            .unwrap_or_default();
+        let type_str = type_attr(&item);
 
         groups.entry(type_str).or_default().push(item);
     }
 
     let mut res: Vec<(String, Vec<Value>)> = groups.into_iter().collect();
     res.sort_by_key(|(type_str, _)| type_sort_key(type_str));
+    Value::from_serialize(res)
+}
+
+/// The canonical release sections, in the order a release reads them.
+///
+/// `chore`, `build`, `ci`, `test`, `style` and `revert` are one Maintenance section: grouping by
+/// literal type would emit that heading once per type, which is what a release must not do.
+const SECTIONS: &[(&str, &str)] = &[
+    ("feat", "✨ Features"),
+    ("fix", "🐛 Fixes"),
+    ("perf", "⚡ Performance"),
+    ("refactor", "🔄 Refactoring"),
+    ("docs", "📚 Documentation"),
+    ("chore", "🛠️ Maintenance"),
+    ("build", "🛠️ Maintenance"),
+    ("ci", "🛠️ Maintenance"),
+    ("test", "🛠️ Maintenance"),
+    ("style", "🛠️ Maintenance"),
+    ("revert", "🛠️ Maintenance"),
+];
+
+/// Maps a conventional type to its section label and the section's rank.
+fn section_for(type_str: &str) -> (usize, String) {
+    let lower = type_str.to_ascii_lowercase();
+    match SECTIONS.iter().position(|(known, _)| *known == lower) {
+        Some(index) => (index, SECTIONS[index].1.to_string()),
+        None => (usize::MAX, capitalise(type_str)),
+    }
+}
+
+fn capitalise(value: &str) -> String {
+    let mut chars = value.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+        None => String::new(),
+    }
+}
+
+fn group_by_section_filter(seq: Vec<Value>) -> Value {
+    let mut sections: BTreeMap<String, Vec<Value>> = BTreeMap::new();
+    let mut ranks: BTreeMap<String, usize> = BTreeMap::new();
+
+    for item in seq {
+        let (rank, label) = section_for(&type_attr(&item));
+        ranks.entry(label.clone()).or_insert(rank);
+        sections.entry(label).or_default().push(item);
+    }
+
+    let mut res: Vec<(String, Vec<Value>)> = sections.into_iter().collect();
+    res.sort_by_key(|(label, _)| (ranks[label], label.to_ascii_lowercase()));
     Value::from_serialize(res)
 }
 
@@ -74,6 +127,7 @@ pub fn create_environment() -> minijinja::Environment<'static> {
     env.add_function("env", env_global);
     env.add_filter("group_by_scope", group_by_scope_filter);
     env.add_filter("group_by_type", group_by_type_filter);
+    env.add_filter("group_by_section", group_by_section_filter);
     env
 }
 

@@ -83,6 +83,11 @@ The `commits` list provides rich commit metadata for custom loops:
 
 ## Built-in Filters & Helpers
 
+- `commits | group_by_section`: The same commits already collapsed into release sections —
+  Features, Fixes, Performance, Refactoring, Documentation, and one Maintenance section covering
+  `chore`, `build`, `ci`, `test`, `style` and `revert`, with unknown types after them. Prefer it
+  when a template renders section headings: grouping by type would emit the Maintenance heading
+  once per type.
 - `commits | group_by_type`: Groups commits by conventional type (`feat`, `fix`, etc.) in a
   fixed section order — `feat`, `fix`, `perf`, `refactor`, `docs`, `chore`, `build`, `ci`, `test`,
   `style`, `revert` — followed by any other type alphabetically, so a release reads the same way

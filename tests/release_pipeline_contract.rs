@@ -116,7 +116,7 @@ fn the_plugin_owns_release_creation_and_the_workflow_publishes_its_draft() {
     );
     for needle in [
         "gh release view \"$TAG\" --json isDraft",
-        "gh release upload \"$TAG\" dist/*",
+        "gh release upload \"$TAG\" dist/* --clobber",
         "gh release edit \"$TAG\"",
         "--draft=false",
         "--notes-file RELEASE_NOTES.md",
@@ -130,4 +130,59 @@ fn the_plugin_owns_release_creation_and_the_workflow_publishes_its_draft() {
         upload < publish,
         "assets must be uploaded before the release is published"
     );
+}
+
+/// The guard must accept a draft, accept an already-published release as a retry, and fail only
+/// when no release exists — while tolerating unexpected output rather than blocking a release on a
+/// stray byte from `gh`.
+#[test]
+fn publish_guard_distinguishes_draft_published_and_missing() {
+    let workflow = repo_text(".github/workflows/release.yml");
+    for needle in [
+        "if .isDraft then \"draft\" else \"published\" end",
+        "draft|published) echo",
+        "if [ \"$state\" = \"published\" ]",
+        "No release found for $TAG",
+    ] {
+        assert!(workflow.contains(needle), "release.yml must keep `{needle}`");
+    }
+    assert!(
+        !workflow.contains("grep -qx true"),
+        "a byte-exact match on `.isDraft` blocks the release on trailing whitespace"
+    );
+}
+
+/// Both gh steps must authenticate and receive the tag; the publish job infers the repository from
+/// the checkout, so a missing GH_TOKEN fails at the API rather than at the guard.
+#[test]
+fn publish_steps_pass_gh_token_and_tag() {
+    let workflow = repo_text(".github/workflows/release.yml");
+    assert_eq!(
+        workflow
+            .matches("GH_TOKEN: ${{ steps.release-token.outputs.token || secrets.GITHUB_TOKEN }}")
+            .count(),
+        2,
+        "the upload and the publish step must both authenticate, falling back to GITHUB_TOKEN"
+    );
+    assert_eq!(
+        workflow.matches("TAG: ${{ needs.version.outputs.tag }}").count(),
+        2,
+        "both gh steps must receive the tag as TAG"
+    );
+}
+
+/// The notes the publish step reads must be the artifact the version job produced, downloaded into
+/// the job's workspace root.
+#[test]
+fn release_notes_artifact_matches_the_publish_path() {
+    let workflow = repo_text(".github/workflows/release.yml");
+    assert!(
+        workflow.contains("name: release-notes\n          path: RELEASE_NOTES.md"),
+        "the version job must save RELEASE_NOTES.md as the `release-notes` artifact"
+    );
+    assert!(
+        workflow.contains("name: release-notes\n          path: ./"),
+        "the publish job must download `release-notes` into the workspace root"
+    );
+    assert!(workflow.contains("--notes-file RELEASE_NOTES.md"));
 }

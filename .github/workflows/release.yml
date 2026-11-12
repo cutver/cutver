@@ -517,13 +517,21 @@ jobs:
           GH_TOKEN: ${{ steps.release-token.outputs.token || secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.version.outputs.tag }}
         run: |
-          # The github-publish plugin created this release as a draft during the version job,
-          # before any binary existed. A missing draft means the plugin did not run or its
-          # on_post_release failed: fail closed here rather than creating a second release.
-          if ! gh release view "$TAG" --json isDraft --jq '.isDraft' | grep -qx true; then
-            echo "::error::No draft release found for $TAG. The github-publish plugin creates it in the version job; check that the plugin-enabled build was installed and that on_post_release succeeded."
+          # The github-publish plugin creates this release during the version job, as a draft.
+          # Only a missing release is an error: that means the plugin-enabled build or
+          # on_post_release did not happen, and creating a second release here would race it.
+          # An already-published release is a legitimate retry, so it falls through to the upload.
+          if ! state=$(gh release view "$TAG" --json isDraft --jq 'if .isDraft then "draft" else "published" end' 2>/dev/null); then
+            echo "::error::No release found for $TAG. The github-publish plugin creates it in the version job; check that the plugin-enabled build was installed and that on_post_release succeeded."
             exit 1
           fi
+          case "$state" in
+            draft|published) echo "release $TAG is $state; uploading assets" ;;
+            *)
+              echo "::error::Could not read the release state for $TAG (got '$state')."
+              exit 1
+              ;;
+          esac
           gh release upload "$TAG" dist/* --clobber
 
       - name: Publish the release
@@ -531,9 +539,16 @@ jobs:
           GH_TOKEN: ${{ steps.release-token.outputs.token || secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.version.outputs.tag }}
         run: |
-          # Everything that has to exist before the release is visible now exists: ten platform
-          # assets, their checksums, the cosign bundle and the notes. A failed build never reaches
-          # this step, so a draft can never become public without its artefacts.
+          state=$(gh release view "$TAG" --json isDraft --jq 'if .isDraft then "draft" else "published" end')
+          if [ "$state" = "published" ]; then
+            # A retry after a successful run: the Homebrew and Scoop steps below must still be
+            # able to run, so publishing again is a no-op rather than a failure.
+            echo "release $TAG is already published; nothing to promote"
+            exit 0
+          fi
+          # Every artefact exists by now: the platform archives, SHA256SUMS, the cosign bundle
+          # and the notes. A failed build never reaches this step, so a draft cannot become
+          # public without them.
           gh release edit "$TAG" \
             --draft=false \
             --title "Release $TAG" \

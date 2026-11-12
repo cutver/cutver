@@ -53,7 +53,7 @@ pub struct PluginAddArgs {
     /// Manifest glob the plugin matches; required by manifest.v1 (repeatable)
     #[arg(long = "manifest-match", value_name = "GLOB")]
     pub manifest_match: Vec<String>,
-    /// Resolve and print the plan without downloading or writing anything
+    /// Resolve and print the plan without downloading the artifact or writing anything
     #[arg(long)]
     pub dry_run: bool,
     /// Replace an existing `[plugins.<name>]` declaration

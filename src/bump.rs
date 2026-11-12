@@ -5,4 +5,4 @@ pub mod types;
 
 pub use exec::{doctor, doctor_changelog, run, run_with_first_release};
 pub(crate) use types::Change;
-pub use types::{ChangelogDrift, Drift, Error, Summary, Touched};
+pub use types::{BumpLevel, ChangelogDrift, Drift, Error, Summary, Touched};

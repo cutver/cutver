@@ -1,5 +1,5 @@
 use super::*;
-use crate::cli::BumpLevel;
+use crate::bump::BumpLevel;
 use crate::config;
 use crate::semver_bump::Bump;
 use std::fs;

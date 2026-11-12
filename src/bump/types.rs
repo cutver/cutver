@@ -169,3 +169,22 @@ pub(crate) struct Change {
     pub new: String,
     pub changed: bool,
 }
+
+/// Level or strategy to increment the version in the release pipeline.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BumpLevel {
+    Patch,
+    Minor,
+    Major,
+    Auto,
+}
+
+impl From<crate::semver_bump::Bump> for BumpLevel {
+    fn from(b: crate::semver_bump::Bump) -> Self {
+        match b {
+            crate::semver_bump::Bump::Patch => BumpLevel::Patch,
+            crate::semver_bump::Bump::Minor => BumpLevel::Minor,
+            crate::semver_bump::Bump::Major => BumpLevel::Major,
+        }
+    }
+}

@@ -31,6 +31,13 @@
 {% endfor %}
 {%- endfor %}
 
+{%- if first_time_contributors %}
+### 🌱 First-Time Contributors
+{% for author in first_time_contributors -%}
+- @{{ author }}
+{% endfor %}
+{%- endif %}
+
 {%- if contributors %}
 ### 👥 Contributors
 {% for author in contributors -%}

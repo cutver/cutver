@@ -75,11 +75,18 @@ pub fn generate_fresh_config(discovery: &DiscoveryResult, no_template: bool) -> 
         out.push_str("template_file = \".github/templates/cutver/RELEASE.md\"\n");
     } else {
         out.push_str("mode = \"conventional\"\n");
+        // The built-in renderer omits first-time contributors unless asked. A scaffolded project
+        // has no previous output to preserve, so it starts with the section on.
+        out.push_str("# Surface the authors making their first contribution, at ### level.\n");
+        out.push_str("new_contributors = true\n");
     }
 
     out.push_str("\n[git]\n");
     out.push_str("tag_prefix = \"v\"\n");
     out.push_str("require_clean_tree = true\n");
+    // Left commented: it maintains a floating major tag (v1, v2) for consumers such as Docker
+    // images and GitHub Actions, which is only correct once a project actually publishes those.
+    out.push_str("# floating_major_tag = true\n");
     out.push_str("commit_message = \"chore(release): v{version} [skip ci]\"\n");
     out.push_str("require_branch = \"main\"\n");
 
@@ -97,6 +104,15 @@ pub fn generate_fresh_config(discovery: &DiscoveryResult, no_template: bool) -> 
 
     out.push_str("\n[publish]\n");
     out.push_str("push = true\n");
+
+    // A generated file (a version constant, a header, a badge block) is a sink: it is rendered from
+    // a template instead of reverse-matched by a regex. Shown commented so the shape is discoverable
+    // without generating anything the project did not ask for.
+    out.push_str("\n# Generated from a template instead of edited in place:\n");
+    out.push_str("# [[manifest]]\n");
+    out.push_str("# path = \"src/version.ts\"\n");
+    out.push_str("# kind = \"template\"\n");
+    out.push_str("# template = \"src/version.ts.jinja\"  # optional; defaults to <path>.jinja\n");
 
     out
 }

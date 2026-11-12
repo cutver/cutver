@@ -13,6 +13,11 @@ on:
           - patch
           - minor
           - major
+      dry_run:
+        description: "Simulate the release without publishing or creating a release"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -49,7 +54,16 @@ jobs:
         with:
           version: "latest"
           cache: "false"
+          # The lean variant ships no plugin runtime: it hides the subcommand and fails closed on
+          # the [plugins.github-publish] declaration this repository now carries.
+          plugins: "true"
           github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Fetch the github-publish plugin artifact
+        run: |
+          mkdir -p "$HOME/.cache/cutver/plugins"
+          curl -fsSL https://github.com/cutver/plugins/releases/download/github-publish-v0.1.2/github-publish.wasm \
+            -o "$HOME/.cache/cutver/plugins/github-publish-0.1.2.wasm"
 
       - name: Run Cutver Release
         id: cutver
@@ -58,10 +72,14 @@ jobs:
           command: "release"
           bump: ${{ inputs.bump || 'auto' }}
           check-changelog: "true"
+          dry-run: ${{ inputs.dry_run }}
           notes-file: "RELEASE_NOTES.md"
           template: ".github/templates/cutver/RELEASE.md"
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          # Declared in permissions.env, so these are the only environment keys the plugin sees.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
 
       - name: Save Release Notes Artifact
         if: steps.cutver.outputs.released == 'true'

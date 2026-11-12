@@ -19,7 +19,7 @@ pub use context::{
     build_context_with_raw_and_filter, enrich_commit_context, filter_commits, parse_repo_forge,
 };
 pub use error::{ChangelogError, Error};
-pub use extract::{extract_latest, extract_version, list_versions, read_latest, read_version};
+pub use extract::{extract_latest, extract_version, list_versions, read_latest, read_version, release_notes};
 pub use render::{
     create_environment, interpolate_string, render_body, render_body_with_context, render_body_with_plugin,
     render_source, render_template,

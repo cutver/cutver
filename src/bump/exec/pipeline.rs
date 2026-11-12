@@ -86,6 +86,13 @@ pub fn run_with_first_release(
     let computed = compute(config, &next, scope.as_ref().map(|s| &s.context), Some(&plugin_manager))?;
     let cl_params = ChangelogPlanParams { scope, ..cl_params };
     let changelog_plan = prepare_changelog(cl_params)?;
+    // The entry the host just rendered, not a second derivation: a plugin publishes exactly what
+    // the changelog says, heading included. `None` when the project declares no changelog.
+    let release_notes = changelog_plan
+        .update
+        .as_ref()
+        .and_then(|update| update.updated.as_deref())
+        .and_then(changelog::release_notes);
     let mut transaction = MutationTransaction::new(repo);
     let (touched, mut paths_to_stage) = apply(&computed, &next, dry_run, &mut transaction)?;
     apply_changelog(changelog_plan.update, dry_run, &mut transaction, &mut paths_to_stage)?;
@@ -109,7 +116,7 @@ pub fn run_with_first_release(
     let publish_push_command = execute_publish_push(config, repo, floating_tag.as_ref(), dry_run)?;
     let publish_commands = run_publish_commands(config, &interp_ctx, dry_run)?;
 
-    run_plugin_post_release(&plugin_manager, repo, &next, &tag, dry_run)?;
+    run_plugin_post_release(&plugin_manager, repo, &next, &tag, dry_run, release_notes.as_deref())?;
 
     Ok(Summary {
         source: source_entry.path.clone(),
@@ -475,6 +482,7 @@ fn run_plugin_post_release(
     next: &Version,
     tag: &str,
     dry_run: bool,
+    notes: Option<&str>,
 ) -> Result<(), Error> {
     let commit_sha = if dry_run {
         "0000000000000000000000000000000000000000".to_string()
@@ -487,6 +495,7 @@ fn run_plugin_post_release(
         tag_name: tag.to_string(),
         commit_sha,
         dry_run,
+        notes: notes.map(str::to_string),
     };
     for plugin_name in manager.plugins_for_event("on_post_release") {
         manager.dispatch_post_release(plugin_name, &payload)?;

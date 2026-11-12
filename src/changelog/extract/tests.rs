@@ -3,6 +3,7 @@ use super::parser::{
     extract_heading_version, extract_latest, extract_version, is_release_heading, list_versions, normalize_version,
 };
 use crate::changelog::Error;
+use crate::changelog::extract::release_notes;
 use std::fs;
 
 static TMP_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -413,4 +414,25 @@ fn test_heading_helpers_internal() {
     assert_eq!(extract_heading_version("[1.0.0] - date"), Some("1.0.0"));
     assert_eq!(extract_heading_version("1.0.0: date"), Some("1.0.0"));
     assert_eq!(extract_heading_version(""), None);
+}
+
+/// The entry handed to a publishing plugin is the same text the changelog holds, heading included:
+/// one rendering, no second derivation.
+#[test]
+fn release_notes_returns_the_newest_entry_with_its_heading() {
+    let rendered = "# Changelog\n\n## [v1.3.0] - 2026-11-12\n### Features\n- a new capability\n\n## [v1.2.0] - 2026-10-01\n- older\n";
+    let notes = release_notes(rendered).expect("a rendered changelog has a newest entry");
+    assert!(
+        notes.starts_with("## [v1.3.0]"),
+        "the heading belongs to the entry: {notes}"
+    );
+    assert!(notes.contains("a new capability"));
+    assert!(
+        !notes.contains("older"),
+        "the entry must stop at the next release: {notes}"
+    );
+
+    // A project that declares no changelog passes an empty string, and there is no entry to send.
+    assert_eq!(release_notes(""), None);
+    assert_eq!(release_notes("# Changelog\n\n## [Unreleased]\n"), None);
 }

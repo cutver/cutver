@@ -59,6 +59,14 @@ pub struct PostReleasePayload {
     pub commit_sha: String,
     /// Whether this is a simulation run (`--dry-run`).
     pub dry_run: bool,
+    /// The rendered release entry, heading included.
+    ///
+    /// Already produced by the host from the project's changelog template, so a plugin publishes
+    /// exactly what the changelog says instead of re-deriving it. `None` when the project declares
+    /// no `[changelog] path`: the entry does not exist, and a plugin should fail closed rather than
+    /// invent one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
 }
 
 #[cfg(test)]
@@ -106,9 +114,25 @@ mod tests {
             tag_name: "v1.1.0".to_string(),
             commit_sha: "abcdef123456".to_string(),
             dry_run: false,
+            notes: Some("## [v1.1.0] - 2026-11-12\n### Features\n- a thing".to_string()),
         };
         let post_rel_json = serde_json::to_string(&post_rel).unwrap();
         let deserialized_rel: PostReleasePayload = serde_json::from_str(&post_rel_json).unwrap();
         assert_eq!(post_rel, deserialized_rel);
+
+        // A project without a changelog sends no notes, and the key is absent from the wire rather
+        // than null, so a plugin that predates the field keeps decoding the payload.
+        let without_notes = PostReleasePayload {
+            notes: None,
+            ..post_rel.clone()
+        };
+        let without_json = serde_json::to_string(&without_notes).unwrap();
+        assert!(
+            !without_json.contains("notes"),
+            "an absent entry must not be serialized: {without_json}"
+        );
+        let legacy = r#"{"root_dir":"/w","version":"1.0.0","tag_name":"v1.0.0","commit_sha":"abc","dry_run":false}"#;
+        let legacy_decoded: PostReleasePayload = serde_json::from_str(legacy).unwrap();
+        assert_eq!(legacy_decoded.notes, None);
     }
 }

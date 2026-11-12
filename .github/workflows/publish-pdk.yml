@@ -1,0 +1,60 @@
+name: Publish cutver-pdk
+
+# The wire contract is a separate crates.io package with its own version, published on its own
+# schedule (see the `[publish]` note in cutver.toml). This workflow is that schedule: it exists so
+# the member can be published deliberately, without shipping a CLI release to carry it.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type the exact version in crates/cutver-pdk/Cargo.toml to publish it"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish cutver-pdk
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Read the declared version
+        id: version
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' crates/cutver-pdk/Cargo.toml | head -1)
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+          echo "cutver-pdk declares $version"
+
+      - name: Refuse a confirmation that does not match the manifest
+        env:
+          DECLARED: ${{ steps.version.outputs.value }}
+          CONFIRMED: ${{ inputs.confirm }}
+        run: |
+          if [ "$DECLARED" != "$CONFIRMED" ]; then
+            echo "::error::confirmation '$CONFIRMED' does not match the declared version '$DECLARED'"
+            exit 1
+          fi
+
+      - name: Refuse an already published version
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          # A crate version cannot be unpublished, so publishing twice must fail before the
+          # attempt, with a message that says which version is already taken.
+          if curl -fsS "https://crates.io/api/v1/crates/cutver-pdk/$VERSION" -o /dev/null 2>/dev/null; then
+            echo "::error::cutver-pdk $VERSION is already published and cannot be replaced."
+            exit 1
+          fi
+
+      - name: Verify the package
+        run: cargo publish -p cutver-pdk --dry-run --locked
+
+      - name: Publish
+        run: cargo publish -p cutver-pdk --locked
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}

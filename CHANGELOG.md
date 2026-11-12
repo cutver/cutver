@@ -3,6 +3,13 @@
 All notable changes to this project are documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com).
 
+## [v0.16.0] - 2026-11-12
+### 👥 Contributors
+- @Row0902
+
+
+---
+**Full Changelog**: https://github.com/cutver/cutver/compare/v0.15.0...v0.16.0 • *CI Build #24*
 ## [v0.15.0] - 2026-11-12
 ### 🚀 Features & Enhancements
 - **init**: teach the scaffold the template sink and first-time contributors in [#228](https://github.com/cutver/cutver/pull/228) ([7785834](https://github.com/cutver/cutver/commit/7785834c9d417b01f764b62eb97aa6842db4ade8)) by @Row0902

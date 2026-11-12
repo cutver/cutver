@@ -42,7 +42,7 @@ pub enum Commands {
         /// Skip named preflight verification steps (repeatable)
         #[arg(long, value_name = "STEP")]
         skip_preflight: Vec<String>,
-        /// Initial release without incrementing the version in manifests
+        /// Initial release without incrementing version strings in manifests (Gradle versionCode still increments)
         #[arg(long = "first-release", visible_alias = "fr")]
         first_release: bool,
     },

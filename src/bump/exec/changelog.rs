@@ -96,6 +96,7 @@ fn render_changelog_body(
     repo: &Path,
     from_tag: Option<&str>,
     commits: &[conventional::ConventionalCommit],
+    raw_commits: Option<&[git::RawCommit]>,
     context: Option<&changelog::ReleaseContext>,
     plugin_manager: Option<&crate::plugin::PluginManager>,
 ) -> Result<String, Error> {
@@ -118,7 +119,7 @@ fn render_changelog_body(
         )?);
     }
 
-    let selection = git::commits_by_package(repo, from_tag, "HEAD", &packages)?;
+    let selection = git::commits_by_package_with_range(repo, from_tag, "HEAD", &packages, raw_commits)?;
     let groups: Vec<(String, Vec<conventional::ConventionalCommit>)> = selection
         .packages
         .iter()
@@ -198,6 +199,7 @@ pub(crate) fn prepare_changelog(params: ChangelogPlanParams<'_>) -> Result<Chang
             params.repo,
             latest_tag.as_deref(),
             &commits,
+            raw_commits.as_deref(),
             Some(&context),
             params.plugin_manager,
         )?;

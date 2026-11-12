@@ -1,5 +1,7 @@
 use crate::changelog::context::{ReleaseContext, filter_commits};
-use crate::changelog::render::{render_categorised, render_item, render_new_contributors};
+use crate::changelog::render::{
+    PACKAGE_CATEGORY_HEADING_LEVEL, SECTION_HEADING_LEVEL, render_categorised, render_item, render_new_contributors,
+};
 use crate::config::Changelog;
 use crate::conventional::ConventionalCommit;
 
@@ -37,14 +39,16 @@ pub fn render_body_with_packages(
     context: Option<&ReleaseContext>,
 ) -> String {
     let mut rendered: Vec<String> = Vec::new();
+    let section_heading = "#".repeat(SECTION_HEADING_LEVEL);
 
     for package in packages {
+        // Filter once, here: the same slice decides whether the heading exists and what it holds.
         let commits = filter_commits(package.commits, config.ignore_release_commits, &config.ignore_scopes);
         if commits.is_empty() {
             continue;
         }
-        let body = render_categorised(config, &commits, 4);
-        rendered.push(format!("### {}\n{body}", package.name));
+        let body = render_categorised(config, &commits, PACKAGE_CATEGORY_HEADING_LEVEL);
+        rendered.push(format!("{section_heading} {}\n{body}", package.name));
     }
 
     let unowned = filter_commits(unowned, config.ignore_release_commits, &config.ignore_scopes);
@@ -53,7 +57,7 @@ pub fn render_body_with_packages(
             .iter()
             .map(|commit| render_item(commit, config.include_scopes))
             .collect();
-        rendered.push(format!("### Other changes\n{}", items.join("\n")));
+        rendered.push(format!("{section_heading} Other changes\n{}", items.join("\n")));
     }
 
     if rendered.is_empty() {

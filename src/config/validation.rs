@@ -2,7 +2,13 @@ use std::collections::HashSet;
 
 use toml_edit::{InlineTable, Item, Table, Value};
 
-use super::types::{Config, ConfigError, Manifest, default_strategy};
+use super::types::{Config, ConfigError, Manifest, ManifestKind, ManifestPath, default_strategy};
+
+/// True for a manifest that generates its target from a template instead of holding a version, so
+/// it can never be the authoritative source.
+fn is_template_sink(manifest: &Manifest) -> bool {
+    matches!(manifest.kind, ManifestKind::Template { .. })
+}
 
 pub(crate) fn deduce_current_source(config: &mut Config) -> Result<(), ConfigError> {
     if config.manifest.is_empty() {
@@ -12,12 +18,25 @@ pub(crate) fn deduce_current_source(config: &mut Config) -> Result<(), ConfigErr
     if candidates.len() > 1 {
         return Err(ConfigError::MultiplePrimaryManifests);
     }
+    if let Some(sink) = candidates
+        .iter()
+        .find(|m| matches!(m.kind, ManifestKind::Template { .. }))
+    {
+        return Err(ConfigError::TemplateAsCurrentSource {
+            path: sink.path.to_string(),
+        });
+    }
     let primary_path = candidates.first().map(|m| m.path.as_str());
     if config.version.current_source.is_empty() {
         if let Some(p) = primary_path {
             config.version.current_source = p.to_string();
+        } else if let Some(first) = config.manifest.iter().find(|m| !is_template_sink(m)) {
+            config.version.current_source = first.path.to_string();
         } else {
-            config.version.current_source = config.manifest[0].path.to_string();
+            // Every declared manifest is a template sink, so nothing can supply the version.
+            return Err(ConfigError::TemplateAsCurrentSource {
+                path: config.manifest[0].path.to_string(),
+            });
         }
     } else if let Some(p) = primary_path
         && config.version.current_source != p
@@ -51,7 +70,50 @@ pub(crate) fn validate(config: &Config) -> Result<(), ConfigError> {
             config.version.current_source.clone(),
         ));
     }
+    if let Some(sink) = config
+        .manifest
+        .iter()
+        .find(|m| m.path == config.version.current_source && is_template_sink(m))
+    {
+        return Err(ConfigError::TemplateAsCurrentSource {
+            path: sink.path.to_string(),
+        });
+    }
+    for m in &config.manifest {
+        if let ManifestKind::Template {
+            template: Some(template),
+        } = &m.kind
+        {
+            let parsed = validate_template_path(template).ok_or_else(|| ConfigError::TemplatePathInvalid {
+                path: m.path.to_string(),
+                template: template.clone(),
+            })?;
+            if parsed == m.path {
+                return Err(ConfigError::TemplateRendersOverItself {
+                    path: m.path.to_string(),
+                });
+            }
+        }
+    }
     Ok(())
+}
+
+/// Accepts only a repository-relative template path.
+///
+/// `ManifestPath::parse` normalises separators but accepts absolute paths and `..` components, so a
+/// `template` value could point outside the repository and have its contents rendered into the
+/// target. The template is read, never written, so the confinement has to be explicit here.
+fn validate_template_path(template: &str) -> Option<ManifestPath> {
+    if template.trim().is_empty() {
+        return None;
+    }
+    if template.starts_with('/') || template.starts_with('\\') || template.contains(":") {
+        return None;
+    }
+    if template.split(['/', '\\']).any(|component| component == "..") {
+        return None;
+    }
+    ManifestPath::parse(template).ok()
 }
 
 /// Accepted top-level keys of `cutver.toml`.
@@ -83,6 +145,7 @@ const MANIFEST_KEYS: &[&str] = &[
     "replacement",
     "table",
     "plugin",
+    "template",
 ];
 const CHANGELOG_KEYS: &[&str] = &[
     "path",
@@ -190,18 +253,46 @@ fn check_manifests(item: &Item) -> Result<(), ConfigError> {
         Item::ArrayOfTables(manifests) => {
             for manifest in manifests.iter() {
                 check_table_unknown(manifest, MANIFEST_KEYS, "manifest")?;
+                reject_template_key_on_other_kind(
+                    manifest.get("kind").and_then(Item::as_str),
+                    manifest.get("template").and_then(Item::as_str),
+                    manifest.get("path").and_then(Item::as_str),
+                )?;
             }
         }
         Item::Value(Value::Array(manifests)) => {
             for value in manifests.iter() {
                 if let Value::InlineTable(t) = value {
                     check_inline_unknown(t, MANIFEST_KEYS, "manifest")?;
+                    reject_template_key_on_other_kind(
+                        t.get("kind").and_then(Value::as_str),
+                        t.get("template").and_then(Value::as_str),
+                        t.get("path").and_then(Value::as_str),
+                    )?;
                 }
             }
         }
         _ => {}
     }
     Ok(())
+}
+
+/// Rejects a `template` key on a manifest whose `kind` is not `template`.
+///
+/// `MANIFEST_KEYS` is the union of every kind's keys, so without this check the key would parse
+/// and then be silently ignored: an explicit configuration option that does nothing is worse than
+/// one that fails closed.
+fn reject_template_key_on_other_kind(
+    kind: Option<&str>,
+    template: Option<&str>,
+    path: Option<&str>,
+) -> Result<(), ConfigError> {
+    if template.is_none() || kind == Some("template") {
+        return Ok(());
+    }
+    Err(ConfigError::TemplateKeyOnOtherKind {
+        path: path.unwrap_or("(unnamed)").to_string(),
+    })
 }
 
 fn check_plugins(item: &Item) -> Result<(), ConfigError> {
@@ -329,6 +420,107 @@ mod tests {
 
     fn manifest(kind: &str, extra: &str) -> String {
         format!("[version]\ncurrent_source = \"a\"\n\n[[manifest]]\npath = \"a\"\nkind = \"{kind}\"\n{extra}")
+    }
+
+    /// S1: `kind = "template"` parses with an optional `template` key.
+    #[test]
+    fn template_kind_parses_with_and_without_the_template_key() {
+        let source = "[version]\ncurrent_source = \"src.toml\"\n\n[[manifest]]\npath = \"src.toml\"\nkind = \"cargo-package\"\n\n";
+
+        let inherited = load_str(&format!("{source}[[manifest]]\npath = \"a\"\nkind = \"template\"")).unwrap();
+        assert!(matches!(
+            inherited.manifest[1].kind,
+            ManifestKind::Template { template: None }
+        ));
+
+        let explicit = load_str(&format!(
+            "{source}[[manifest]]\npath = \"a\"\nkind = \"template\"\ntemplate = \"a.jinja\""
+        ))
+        .unwrap();
+        assert!(matches!(
+            &explicit.manifest[1].kind,
+            ManifestKind::Template { template: Some(t) } if t == "a.jinja"
+        ));
+    }
+
+    /// S5: a sink cannot be the authoritative version source, explicitly or by deduction.
+    #[test]
+    fn template_kind_is_rejected_as_the_version_source() {
+        let explicit = "[version]\ncurrent_source = \"a\"\n\n[[manifest]]\npath = \"a\"\nkind = \"template\"";
+        assert!(matches!(
+            load_str(explicit),
+            Err(ConfigError::TemplateAsCurrentSource { .. })
+        ));
+
+        let by_primary = "[version]\n\n[[manifest]]\npath = \"a\"\nkind = \"template\"\nprimary = true";
+        assert!(matches!(
+            load_str(by_primary),
+            Err(ConfigError::TemplateAsCurrentSource { .. })
+        ));
+
+        // The implicit fallback to the first manifest skips a sink and takes the next one.
+        let fallback = "[version]\n\n[[manifest]]\npath = \"a\"\nkind = \"template\"\n\n[[manifest]]\npath = \"b\"\nkind = \"cargo-package\"";
+        let config = load_str(fallback).unwrap();
+        assert_eq!(config.version.current_source, "b");
+
+        // Every declared manifest is a sink: nothing can supply the version.
+        let all_sinks = "[version]\n\n[[manifest]]\npath = \"a\"\nkind = \"template\"";
+        assert!(matches!(
+            load_str(all_sinks),
+            Err(ConfigError::TemplateAsCurrentSource { .. })
+        ));
+    }
+
+    /// R1-001: the template is read, never written, so its path must stay inside the repository.
+    #[test]
+    fn template_kind_rejects_a_path_that_escapes_the_repository() {
+        let source = "[version]
+current_source = \"src.toml\"
+
+[[manifest]]
+path = \"src.toml\"
+kind = \"cargo-package\"
+
+";
+        for escape in ["/etc/passwd", "../secret", "C:/secret", "a/../../b"] {
+            let toml = format!(
+                "{source}[[manifest]]
+path = \"out.h\"
+kind = \"template\"
+template = \"{escape}\""
+            );
+            assert!(
+                matches!(load_str(&toml), Err(ConfigError::TemplatePathInvalid { .. })),
+                "template path {escape:?} was accepted"
+            );
+        }
+    }
+
+    /// R3-001: the key only means something for the template kind, so another kind must not
+    /// accept it and silently ignore it.
+    #[test]
+    fn template_key_on_another_kind_is_rejected() {
+        let toml = "[version]
+current_source = \"a\"
+
+[[manifest]]
+path = \"a\"
+kind = \"cargo-package\"
+template = \"a.jinja\"";
+        assert!(matches!(
+            load_str(toml),
+            Err(ConfigError::TemplateKeyOnOtherKind { .. })
+        ));
+    }
+
+    /// S4: a template that names its own target would overwrite its own source.
+    #[test]
+    fn template_kind_fails_closed_when_it_renders_over_itself() {
+        let toml = "[version]\n\n[[manifest]]\npath = \"b\"\nkind = \"cargo-package\"\n\n[[manifest]]\npath = \"a\"\nkind = \"template\"\ntemplate = \"a\"";
+        assert!(matches!(
+            load_str(toml),
+            Err(ConfigError::TemplateRendersOverItself { .. })
+        ));
     }
 
     #[test]

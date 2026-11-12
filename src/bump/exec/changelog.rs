@@ -21,6 +21,77 @@ pub(crate) struct ChangelogPlanParams<'a> {
     pub(crate) dry_run: bool,
     pub(crate) first_release: bool,
     pub(crate) plugin_manager: Option<&'a crate::plugin::PluginManager>,
+    /// Release scope assembled before manifest compute, so template sinks can render with the same
+    /// context the changelog uses. `None` on a dry run, where nothing is rendered.
+    pub(crate) scope: Option<ReleaseScope>,
+}
+
+/// Everything one release needs from Git, assembled once per run.
+///
+/// The changelog and the `template` manifest kind both render from the release context, so it is
+/// built here rather than inside the changelog path: a project with template sinks and no
+/// `[changelog] path` still needs it (S2).
+pub(crate) struct ReleaseScope {
+    pub(crate) latest_tag: Option<String>,
+    pub(crate) raw_commits: Option<Vec<git::RawCommit>>,
+    pub(crate) commits: Vec<conventional::ConventionalCommit>,
+    pub(crate) context: changelog::ReleaseContext,
+    pub(crate) warnings: Vec<String>,
+}
+
+/// Assembles the release scope for `params`, recording every degradation as data.
+pub(crate) fn assemble_scope(params: &ChangelogPlanParams<'_>) -> Result<ReleaseScope, Error> {
+    let mut warnings = Vec::new();
+    let latest_tag = if params.first_release {
+        None
+    } else {
+        git::latest_tag(params.repo, Some(&params.config.git.tag_prefix))?
+    };
+    let raw_commits = git::raw_commits_since(params.repo, latest_tag.as_deref()).ok();
+    let commits = match (params.first_release, params.auto_commits.as_ref()) {
+        (true, _) => {
+            let msgs = git::commits_since(params.repo, None)?;
+            conventional::parse_and_deduce_bump(&msgs).1
+        }
+        (false, Some(parsed)) => parsed.clone(),
+        (false, None) => {
+            let msgs = git::commits_since(params.repo, latest_tag.as_deref())?;
+            conventional::parse_and_deduce_bump(&msgs).1
+        }
+    };
+    let contributors = contributor_list_or_warn(
+        git::list_authors_since(params.repo, latest_tag.as_deref()),
+        &mut warnings,
+    );
+    // Fail-safe policy lives in `git::first_time_contributors`: a first release marks
+    // everyone new, but unreadable prior history announces nobody and is reported here.
+    let first_time_contributors = first_time_contributors_or_warn(
+        git::first_time_contributors(params.repo, latest_tag.as_deref(), &contributors),
+        &mut warnings,
+    );
+    let repository = git::remote_url(params.repo);
+    let today = changelog::format_date(std::time::SystemTime::now());
+    let (next_ver, curr_ver) = (params.next.to_string(), params.current.to_string());
+    let context = changelog::assemble_release_context(changelog::AssembleContextParams {
+        version: &next_ver,
+        prev_version: Some(&curr_ver),
+        tag: params.tag,
+        prev_tag: latest_tag.as_deref(),
+        date: &today,
+        repository,
+        parsed_commits: &commits,
+        raw_commits: raw_commits.as_deref(),
+        contributors,
+        first_time_contributors,
+        changelog_config: &params.config.changelog,
+    });
+    Ok(ReleaseScope {
+        latest_tag,
+        raw_commits,
+        commits,
+        context,
+        warnings,
+    })
 }
 
 pub(crate) struct ChangelogUpdate {
@@ -142,6 +213,7 @@ fn render_changelog_body(
 }
 
 pub(crate) fn prepare_changelog(params: ChangelogPlanParams<'_>) -> Result<ChangelogPlan, Error> {
+    let mut params = params;
     let Some(cl_path) = &params.config.changelog.path else {
         return Ok(ChangelogPlan {
             update: None,
@@ -151,49 +223,18 @@ pub(crate) fn prepare_changelog(params: ChangelogPlanParams<'_>) -> Result<Chang
     let mut warnings = Vec::new();
     let original = if !params.dry_run { Some(read(cl_path)?) } else { None };
     let updated = if !params.dry_run {
-        let latest_tag = if params.first_release {
-            None
-        } else {
-            git::latest_tag(params.repo, Some(&params.config.git.tag_prefix))?
+        let scope = match params.scope.take() {
+            Some(s) => s,
+            None => assemble_scope(&params)?,
         };
-        let raw_commits = git::raw_commits_since(params.repo, latest_tag.as_deref()).ok();
-        let commits = match (params.first_release, params.auto_commits) {
-            (true, _) => {
-                let msgs = git::commits_since(params.repo, None)?;
-                conventional::parse_and_deduce_bump(&msgs).1
-            }
-            (false, Some(parsed)) => parsed,
-            (false, None) => {
-                let msgs = git::commits_since(params.repo, latest_tag.as_deref())?;
-                conventional::parse_and_deduce_bump(&msgs).1
-            }
-        };
-        let contributors = contributor_list_or_warn(
-            git::list_authors_since(params.repo, latest_tag.as_deref()),
-            &mut warnings,
-        );
-        // Fail-safe policy lives in `git::first_time_contributors`: a first release marks
-        // everyone new, but unreadable prior history announces nobody and is reported here.
-        let first_time_contributors = first_time_contributors_or_warn(
-            git::first_time_contributors(params.repo, latest_tag.as_deref(), &contributors),
-            &mut warnings,
-        );
-        let repository = git::remote_url(params.repo);
-        let today = changelog::format_date(std::time::SystemTime::now());
-        let (next_ver, curr_ver) = (params.next.to_string(), params.current.to_string());
-        let context = changelog::assemble_release_context(changelog::AssembleContextParams {
-            version: &next_ver,
-            prev_version: Some(&curr_ver),
-            tag: params.tag,
-            prev_tag: latest_tag.as_deref(),
-            date: &today,
-            repository,
-            parsed_commits: &commits,
-            raw_commits: raw_commits.as_deref(),
-            contributors,
-            first_time_contributors,
-            changelog_config: &params.config.changelog,
-        });
+        let ReleaseScope {
+            latest_tag,
+            raw_commits,
+            commits,
+            context,
+            warnings: scope_warnings,
+        } = scope;
+        warnings.extend(scope_warnings);
         let body = render_changelog_body(
             params.config,
             params.repo,

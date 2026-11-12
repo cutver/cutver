@@ -15,6 +15,7 @@ pub mod json_scan;
 pub mod plugin;
 pub mod pyproject;
 pub mod regex;
+pub mod template;
 
 #[cfg(test)]
 mod tests;
@@ -23,3 +24,4 @@ pub use dispatch::{editor_for, editor_for_with_manager};
 pub use editor::ManifestEditor;
 pub use error::Error;
 pub use plugin::PluginManifestEditor;
+pub use template::TemplateEditor;

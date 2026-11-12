@@ -541,7 +541,7 @@ fn default_release_template_renders_markdown_only() {
     assert!(out.contains("## v0.17.0 — 2026-11-12"));
     assert!(out.contains("### ✨ Features"));
     assert!(out.contains("### 🐛 Fixes"));
-    assert!(out.contains("### 🧰 Maintenance"));
+    assert!(out.contains("### 🛠️ Maintenance"));
     assert!(out.contains("> [!WARNING]"));
     assert!(
         out.contains("[Compare v0.16.0...v0.17.0](https://example.test/compare/v0.16.0...v0.17.0)"),

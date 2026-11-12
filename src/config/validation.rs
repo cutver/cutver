@@ -98,6 +98,7 @@ const CHANGELOG_KEYS: &[&str] = &[
     "ignore_release_commits",
     "ignore_scopes",
     "plugin",
+    "new_contributors",
 ];
 const GIT_KEYS: &[&str] = &[
     "tag_prefix",

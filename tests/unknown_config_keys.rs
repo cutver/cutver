@@ -248,6 +248,22 @@ fn invalid_package_names_are_rejected() {
 }
 
 #[test]
+fn new_contributors_key_is_accepted_in_changelog() {
+    let cfg = load(
+        r#"
+[[manifest]]
+path = "Cargo.toml"
+kind = "cargo-package"
+
+[changelog]
+new_contributors = true
+"#,
+    )
+    .unwrap();
+    assert!(cfg.changelog.new_contributors);
+}
+
+#[test]
 fn plugin_tables_and_permissions_keep_parsing() {
     load(
         r#"

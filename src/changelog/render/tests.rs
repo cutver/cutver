@@ -426,3 +426,88 @@ fn test_render_body_with_plugin_mock() {
     let err = render_body_with_plugin(&changelog_cfg, &commits, Some(&ctx), None).unwrap_err();
     assert!(matches!(err, crate::changelog::Error::PluginManagerRequired));
 }
+
+#[test]
+fn test_render_new_contributors_disabled_by_default() {
+    let config = Changelog::default(); // new_contributors = false
+    let commits = vec![ConventionalCommit::parse("feat: shiny feature").unwrap()];
+    let ctx = crate::changelog::assemble_release_context(crate::changelog::AssembleContextParams {
+        version: "1.0.0",
+        prev_version: None,
+        tag: "v1.0.0",
+        prev_tag: None,
+        date: "2026-11-12",
+        repository: None,
+        parsed_commits: &commits,
+        raw_commits: None,
+        contributors: vec!["Alice".into(), "Bob".into()],
+        first_time_contributors: vec!["Bob".into()],
+        changelog_config: &config,
+    });
+
+    let body = render_body(&config, &commits, Some(&ctx)).unwrap();
+    assert_eq!(body, "### Features\n- shiny feature");
+    assert!(!body.contains("New Contributors"));
+}
+
+#[test]
+fn test_render_new_contributors_enabled() {
+    let config = Changelog {
+        new_contributors: true,
+        ..Default::default()
+    };
+    let commits = vec![ConventionalCommit::parse("feat: shiny feature").unwrap()];
+    let ctx = crate::changelog::assemble_release_context(crate::changelog::AssembleContextParams {
+        version: "1.0.0",
+        prev_version: None,
+        tag: "v1.0.0",
+        prev_tag: None,
+        date: "2026-11-12",
+        repository: None,
+        parsed_commits: &commits,
+        raw_commits: None,
+        contributors: vec!["Alice".into(), "octocat".into(), "Jane Doe".into()],
+        first_time_contributors: vec!["octocat".into(), "Jane Doe".into()],
+        changelog_config: &config,
+    });
+
+    let body = render_body(&config, &commits, Some(&ctx)).unwrap();
+    assert!(body.starts_with("### Features\n- shiny feature\n\n### New Contributors\n"));
+    assert!(body.contains("- @octocat"));
+    assert!(body.contains("- Jane Doe"));
+}
+
+#[test]
+fn test_render_new_contributors_empty_list_omitted() {
+    let config = Changelog {
+        new_contributors: true,
+        ..Default::default()
+    };
+    let commits = vec![ConventionalCommit::parse("fix: small fix").unwrap()];
+    let ctx = crate::changelog::assemble_release_context(crate::changelog::AssembleContextParams {
+        version: "1.0.0",
+        prev_version: None,
+        tag: "v1.0.0",
+        prev_tag: None,
+        date: "2026-11-12",
+        repository: None,
+        parsed_commits: &commits,
+        raw_commits: None,
+        contributors: vec!["Alice".into()],
+        first_time_contributors: vec![],
+        changelog_config: &config,
+    });
+
+    let body = render_body(&config, &commits, Some(&ctx)).unwrap();
+    assert_eq!(body, "### Bug Fixes\n- small fix");
+    assert!(!body.contains("New Contributors"));
+}
+
+#[test]
+fn test_format_contributor_bullet() {
+    use crate::changelog::render::body::format_contributor_bullet;
+    assert_eq!(format_contributor_bullet("octocat"), "- @octocat");
+    assert_eq!(format_contributor_bullet("@octocat"), "- @octocat");
+    assert_eq!(format_contributor_bullet("Jane Doe"), "- Jane Doe");
+    assert_eq!(format_contributor_bullet("  Alice  "), "- @Alice");
+}

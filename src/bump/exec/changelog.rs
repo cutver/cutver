@@ -136,6 +136,7 @@ fn render_changelog_body(
         &config.changelog,
         &sections,
         &unowned,
+        context,
     ))
 }
 

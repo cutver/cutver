@@ -84,8 +84,8 @@ jobs:
       - name: Fetch the github-publish plugin artifact
         run: |
           mkdir -p "$HOME/.cache/cutver/plugins"
-          curl -fsSL https://github.com/cutver/plugins/releases/download/github-publish-v0.2.1/github-publish.wasm \
-            -o "$HOME/.cache/cutver/plugins/github-publish-0.2.1.wasm"
+          curl -fsSL https://github.com/cutver/plugins/releases/download/github-publish-v0.1.2/github-publish.wasm \
+            -o "$HOME/.cache/cutver/plugins/github-publish-0.1.2.wasm"
 
       - name: Run Cutver Release
         id: cutver

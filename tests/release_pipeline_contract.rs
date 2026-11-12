@@ -103,3 +103,31 @@ fn workflow_requests_the_plugin_build_and_forwards_dry_run() {
         );
     }
 }
+
+/// The plugin owns release creation, so the workflow must fill that draft and publish it — not
+/// create a second release. A leftover `softprops/action-gh-release` would race the plugin for the
+/// same tag and fail with 422.
+#[test]
+fn the_plugin_owns_release_creation_and_the_workflow_publishes_its_draft() {
+    let workflow = repo_text(".github/workflows/release.yml");
+    assert!(
+        !workflow.contains("softprops/action-gh-release"),
+        "release.yml must not create the release: the github-publish plugin does, as a draft"
+    );
+    for needle in [
+        "gh release view \"$TAG\" --json isDraft",
+        "gh release upload \"$TAG\" dist/*",
+        "gh release edit \"$TAG\"",
+        "--draft=false",
+        "--notes-file RELEASE_NOTES.md",
+    ] {
+        assert!(workflow.contains(needle), "release.yml must keep `{needle}`");
+    }
+    // Assets must be uploaded before the draft becomes visible.
+    let upload = workflow.find("gh release upload").expect("upload step");
+    let publish = workflow.find("--draft=false").expect("publish step");
+    assert!(
+        upload < publish,
+        "assets must be uploaded before the release is published"
+    );
+}

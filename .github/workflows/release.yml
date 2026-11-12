@@ -512,16 +512,33 @@ jobs:
         run: |
           echo "::warning::the cutver-release app token is unavailable, so this release will be published as github-actions[bot]. Check the CUTVER_APP_ID / CUTVER_APP_PRIVATE_KEY secrets and that the app is installed on ${{ github.repository }} with contents:write."
 
-      - name: Create release and upload binaries
-        uses: softprops/action-gh-release@v3
-        with:
-          tag_name: ${{ needs.version.outputs.tag }}
-          name: Release ${{ needs.version.outputs.tag }}
-          body_path: RELEASE_NOTES.md
-          files: dist/*
-          token: ${{ steps.release-token.outputs.token || secrets.GITHUB_TOKEN }}
+      - name: Upload binaries into the draft release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.release-token.outputs.token || secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          # The github-publish plugin created this release as a draft during the version job,
+          # before any binary existed. A missing draft means the plugin did not run or its
+          # on_post_release failed: fail closed here rather than creating a second release.
+          if ! gh release view "$TAG" --json isDraft --jq '.isDraft' | grep -qx true; then
+            echo "::error::No draft release found for $TAG. The github-publish plugin creates it in the version job; check that the plugin-enabled build was installed and that on_post_release succeeded."
+            exit 1
+          fi
+          gh release upload "$TAG" dist/* --clobber
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ steps.release-token.outputs.token || secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          # Everything that has to exist before the release is visible now exists: ten platform
+          # assets, their checksums, the cosign bundle and the notes. A failed build never reaches
+          # this step, so a draft can never become public without its artefacts.
+          gh release edit "$TAG" \
+            --draft=false \
+            --title "Release $TAG" \
+            --notes-file RELEASE_NOTES.md
+          gh release view "$TAG" --json isDraft,tagName --jq 'if .isDraft then error("release is still a draft after publishing") else "published \(.tagName)" end'
 
       - name: Generate distribution bot token
         id: bot-token

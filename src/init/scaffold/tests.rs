@@ -165,9 +165,12 @@ kind = "cargo-package"
 fn shipped_release_template_matches_the_repository_one() {
     let shipped = crate::init::scaffold::DEFAULT_RELEASE_TEMPLATE;
     let in_repo = include_str!("../../../.github/templates/cutver/RELEASE.md");
+    // Git checks the template out with CRLF on Windows, while the constant in the source is LF.
+    // Line endings are a checkout setting, not content drift, so normalise before comparing.
+    let normalise = |text: &str| text.replace("\r\n", "\n").trim().to_string();
     assert_eq!(
-        shipped.trim(),
-        in_repo.trim(),
+        normalise(shipped),
+        normalise(in_repo),
         "DEFAULT_RELEASE_TEMPLATE and .github/templates/cutver/RELEASE.md have drifted apart"
     );
 }

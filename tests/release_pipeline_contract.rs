@@ -197,3 +197,30 @@ fn release_notes_artifact_matches_the_publish_path() {
     );
     assert!(workflow.contains("--notes-file RELEASE_NOTES.md"));
 }
+
+/// The plugin authenticates with whatever token reaches it, so that token decides who the release
+/// is attributed to. `secrets.GITHUB_TOKEN` publishes as github-actions[bot], which is the
+/// attribution regression issue #166 removed.
+#[test]
+fn the_plugin_authenticates_with_the_app_token() {
+    let workflow = repo_text(".github/workflows/release.yml");
+    assert!(
+        workflow.contains("GITHUB_TOKEN: ${{ steps.release-token.outputs.token || secrets.GITHUB_TOKEN }}"),
+        "the plugin must receive the app token, falling back to GITHUB_TOKEN only when it is absent"
+    );
+    assert!(
+        !workflow.contains("GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}"),
+        "a bare secrets.GITHUB_TOKEN attributes the release to github-actions[bot]"
+    );
+    // The token has to be generated in the same job as the release step: a version job without it
+    // falls back silently, which is exactly how 0.16.0 was published under the wrong identity.
+    let version_job = workflow
+        .split("\n  version:\n")
+        .nth(1)
+        .and_then(|rest| rest.split("\n  build:\n").next())
+        .expect("release.yml must keep a version job");
+    assert!(
+        version_job.contains("id: release-token"),
+        "the version job must generate the app token the plugin uses"
+    );
+}

@@ -126,35 +126,49 @@ fn insert_section(content: &str, section: &str) -> String {
     let lines: Vec<&str> = content.lines().collect();
     let idx = find_insertion_index(&lines);
 
+    let double_ending = format!("{line_ending}{line_ending}");
     let mut out = String::new();
     for (i, line) in lines.iter().enumerate() {
         if i == idx {
+            if !out.is_empty() && !out.ends_with(&double_ending) {
+                out.push_str(line_ending);
+            }
             out.push_str(&normalized_section);
         }
         out.push_str(line);
         out.push_str(line_ending);
     }
     if idx == lines.len() {
+        if !out.is_empty() && !out.ends_with(&double_ending) {
+            out.push_str(line_ending);
+        }
         out.push_str(&normalized_section);
     }
     out
 }
 
 fn find_insertion_index(lines: &[&str]) -> usize {
-    if let Some(pos) = lines.iter().position(|line| line.starts_with("## [")) {
+    if let Some(pos) = lines
+        .iter()
+        .position(|line| line.starts_with("## [") || line.starts_with("## "))
+    {
         return pos;
     }
 
     if let Some(pos) = lines.iter().position(|line| line.starts_with("# Changelog")) {
         let mut i = pos + 1;
-        while i < lines.len() && lines[i].trim_start().starts_with("<!--") {
+        while i < lines.len() && (lines[i].trim_start().starts_with("<!--") || lines[i].trim().is_empty()) {
             i += 1;
         }
         return i;
     }
 
     if !lines.is_empty() && lines[0].starts_with("# ") {
-        return 1;
+        let mut i = 1;
+        while i < lines.len() && (lines[i].trim_start().starts_with("<!--") || lines[i].trim().is_empty()) {
+            i += 1;
+        }
+        return i;
     }
 
     0
@@ -268,7 +282,49 @@ mod tests {
 
         let lines: Vec<&str> = out.lines().collect();
         assert_eq!(lines[0], "# Changelog");
-        assert_eq!(lines[1], format!("## [v1.0.0] - {today}"));
+        assert_eq!(lines[1], "");
+        assert_eq!(lines[2], format!("## [v1.0.0] - {today}"));
+    }
+
+    #[test]
+    fn insert_into_file_with_header_no_blank_line() {
+        let path = tmp_file("cutver-cl-no-blank");
+        let base = "# Changelog\n";
+        let out = update_file(&path, base, "v1.0.0", "Maintenance and updates.");
+        let today = format_date(SystemTime::now());
+
+        assert!(out.starts_with(&format!("# Changelog\n\n## [v1.0.0] - {today}")));
+    }
+
+    #[test]
+    fn insert_into_file_with_existing_blank_line_not_doubled() {
+        let path = tmp_file("cutver-cl-existing-blank");
+        let base = "# Changelog\n\n## [1.0.0] - 2022-01-01\n\n- First release\n";
+        let out = update_file(&path, base, "v1.1.0", "Maintenance and updates.");
+        let today = format_date(SystemTime::now());
+
+        assert!(out.starts_with(&format!("# Changelog\n\n## [v1.1.0] - {today}")));
+        assert!(!out.starts_with("# Changelog\n\n\n"));
+    }
+
+    #[test]
+    fn insert_into_file_with_consecutive_headings_repaired() {
+        let path = tmp_file("cutver-cl-consecutive");
+        let base = "# Changelog\n## [1.0.0] - 2022-01-01\n\n- First release\n";
+        let out = update_file(&path, base, "v1.1.0", "Maintenance and updates.");
+        let today = format_date(SystemTime::now());
+
+        assert!(out.starts_with(&format!("# Changelog\n\n## [v1.1.0] - {today}")));
+        assert!(!out.starts_with("# Changelog\n## [v1.1.0]"));
+    }
+
+    #[test]
+    fn insert_plugin_full_heading_separated_by_blank_line() {
+        let path = tmp_file("cutver-cl-plugin");
+        let base = "# Changelog\n";
+        let out = update_file(&path, base, "v1.1.0", "## Breaking Changes\n- something");
+
+        assert!(out.starts_with("# Changelog\n\n## Breaking Changes\n"));
     }
 
     #[test]

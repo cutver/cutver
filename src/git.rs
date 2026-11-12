@@ -1,7 +1,10 @@
 //! Git boundary operations and domain models.
 //!
-//! Decomposed into cohesive submodules behind this Facade adhering to `CONTRACT.md`
-//! Pillar V.4 (Module Budget $\le 300-400$ lines) and Pillar V.5 (Domain Newtypes).
+//! A pure facade, per Contract Pillar IV.4: this file declares the submodules and re-exports their
+//! surface, and carries no implementation. The domain newtypes live in [`types`], process
+//! execution in [`command`], the working-tree guards in [`status`], the mutating operations in
+//! [`ops`], tag querying in [`tags`], log traversal in [`log`] and remote URL handling in
+//! [`remote`].
 
 pub mod command;
 pub mod log;
@@ -13,9 +16,11 @@ pub mod types;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_support;
 
 #[cfg(test)]
-pub use tests::init_test_repo;
+pub use tests_support::init_test_repo;
 
 // Re-export types
 pub use types::{CommitSha, Error, RawCommit, TagError, TagName, TagPrefix};

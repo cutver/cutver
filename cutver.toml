@@ -44,3 +44,33 @@ post_bump = "cargo check --workspace --features plugins"
 push = true
 commands = ["cargo publish"]
 default_timeout = 300
+
+# Publishing the release itself, through the microkernel rather than a shell command.
+#
+# The dry-run rehearsal in this repository's release workflow exercises the plugin's
+# `on_pre_bump` (token validity and tag collision against the API) before the step that
+# replaces softprops/action-gh-release. `on_post_release` creates the release as a draft, so a
+# failed build cannot leave a public release without assets.
+#
+# A lean build cannot load this: `bump` fails closed with `PluginError::WasmNotSupported`. Run
+# the plugin-enabled variant (the `cutver-plugins-*` archive) when releasing.
+[plugins.github-publish]
+runtime = "wasm"
+source = "github-publish-0.1.2.wasm"
+hash = "5f44775e7b6f14a0b7cc57c19a3c694b5f3c177971f797e1a61177bcc0ae5b23"
+capabilities = ["lifecycle.v1"]
+events = ["on_pre_bump", "on_post_release"]
+
+[plugins.github-publish.permissions]
+network = ["api.github.com", "uploads.github.com"]
+env = ["GITHUB_TOKEN", "GITHUB_REPOSITORY"]
+# Grants the whole workspace tree, wider than the two files the plugin reads. Kept to match the
+# configuration cutver/sandbox validates rather than guessing at a narrower set.
+filesystem = ["."]
+
+[plugins.github-publish.config]
+repository = "cutver/cutver"
+# Required, and its default is false. Without it the plugin publishes a public, asset-less
+# release during the version job, before the binaries are built: the exact failure the draft
+# exists to prevent. The publish job uploads the assets and publishes it afterwards.
+draft = true

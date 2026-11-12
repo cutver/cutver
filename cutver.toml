@@ -45,13 +45,13 @@ post_bump = "cargo check --workspace --features plugins"
 # Publishes the root package only. `cutver-pdk` is a separate crates.io package with its own
 # version, and bumping the CLI is not evidence that its API changed.
 push = true
-# Deliberately paused for the 0.16.0 release: the GitHub side now goes through the
-# github-publish plugin (draft, asset upload, promotion), and a crate version on crates.io
-# cannot be unpublished. The GitHub release is verified first; then publish the same commit
-# with `git checkout v0.16.0 && cargo publish`, which is a deliberate act rather than a side
-# effect of the bump. Restore this line once that is done, so 0.17.0 publishes automatically
-# again.
-# commands = ["cargo publish"]
+# Publishing resumes here. v0.16.0 never reached the registry: publication was paused while the
+# GitHub path was proven, and by then the tag could no longer be published — `cargo publish`
+# resolves path dependencies against the registry, `^0.1.0` accepts `cutver-pdk` 0.1.1, and that
+# tag's source predates the `notes` field the newer pdk requires. `--no-verify` would have shipped
+# a crate that does not compile for its consumers, so the registry moves 0.15.0 → 0.17.0 and the
+# gap is permanent.
+commands = ["cargo publish"]
 default_timeout = 300
 
 # Publishing the release itself, through the microkernel rather than a shell command.

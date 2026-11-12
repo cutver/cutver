@@ -32,6 +32,9 @@ require_branch = "main"
 floating_major_tag = true
 
 [hooks]
+# Runs in phase 1, before any manifest is touched: an unformatted tree must not become a
+# release commit. Cheap and deterministic, so it belongs here rather than in the slower gate.
+pre_bump = "cargo fmt --all -- --check"
 # `--workspace` also compiles the `cutver-pdk` member, so a change that breaks the wire
 # contract fails this gate instead of shipping. That member is versioned independently and
 # published on its own schedule (`cargo publish -p cutver-pdk`); a CLI release never
@@ -80,3 +83,8 @@ repository = "cutver/cutver"
 # release during the version job, before the binaries are built: the exact failure the draft
 # exists to prevent. The publish job uploads the assets and publishes it afterwards.
 draft = true
+# The plugin's default title is the bare tag (`v0.17.0`). Name the release for what it is.
+title_template = "cutver {version}"
+# Deliberately unset, so nobody "restores" them: `checksums` only covers assets the plugin
+# uploads itself (here the publish job uploads them with `gh release upload`), and
+# `generate_release_notes` would ask GitHub to write notes this repository renders itself.

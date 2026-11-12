@@ -70,6 +70,18 @@ fn test_first_time_contributors_flag_present_before_vs_new() {
     assert!(bob.is_first_contribution, "a contributor absent before must be flagged");
 }
 
+/// Descriptions that survive `filter_commits`, in commit order, for the given messages.
+fn filtered_descriptions(messages: &[&str], ignore_release_commits: bool) -> Vec<String> {
+    let commits: Vec<ConventionalCommit> = messages
+        .iter()
+        .map(|message| ConventionalCommit::parse(message).expect("test message must parse"))
+        .collect();
+    filter_commits(&commits, ignore_release_commits, &[])
+        .into_iter()
+        .map(|commit| commit.description)
+        .collect()
+}
+
 #[test]
 fn test_filter_commits_release_commits() {
     let commits = vec![
@@ -81,12 +93,277 @@ fn test_filter_commits_release_commits() {
         ConventionalCommit::parse("feat: add feature").unwrap(),
     ];
 
+    // Only the bare-version `chore(release)` commit is self-referential. A description that
+    // merely begins with `release:` or `v<digit>` carries content and must survive.
     let filtered = filter_commits(&commits, true, &[]);
     let descriptions: Vec<&str> = filtered.iter().map(|c| c.description.trim()).collect();
-    assert_eq!(descriptions, vec!["update foo", "clean up", "add feature"]);
+    assert_eq!(
+        descriptions,
+        vec!["update foo", "clean up", "release: 1.0.0", "v2.0.0 bug", "add feature"]
+    );
 
     let unfiltered = filter_commits(&commits, false, &[]);
     assert_eq!(unfiltered.len(), commits.len());
+}
+
+#[test]
+fn drops_self_referential_release_commit() {
+    assert_eq!(
+        filtered_descriptions(&["chore(release): v0.16.0 [skip ci]"], true),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn drops_bare_version_without_a_prefix() {
+    assert_eq!(
+        filtered_descriptions(&["chore(release): 0.16.0"], true),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn drops_calver_release_commit() {
+    assert_eq!(
+        filtered_descriptions(&["chore(release): 2026.11.12"], true),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn drops_two_component_scheme_release_commit() {
+    // A SemVer-only check would keep `2026.11`; any versioning scheme must be accepted.
+    assert_eq!(
+        filtered_descriptions(&["chore(release): 2026.11"], true),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn drops_prerelease_and_build_release_commits() {
+    assert_eq!(
+        filtered_descriptions(&["chore(release): 1.2.3-rc.1", "chore(release): 2.0.0+build.5"], true),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn drops_self_referential_release_commit_case_insensitively() {
+    assert_eq!(
+        filtered_descriptions(&["CHORE(Release): V1.2.0"], true),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn keeps_release_commit_carrying_content() {
+    let messages = [
+        "chore(release): pin the github-publish plugin to v0.2.1 (#236)",
+        "chore(release): pause crates.io publication until the GitHub path is proven (#231)",
+        "chore(release): cover the plugin feature in the release gate",
+    ];
+    assert_eq!(
+        filtered_descriptions(&messages, true),
+        vec![
+            "pin the github-publish plugin to v0.2.1 (#236)",
+            "pause crates.io publication until the GitHub path is proven (#231)",
+            "cover the plugin feature in the release gate",
+        ]
+    );
+}
+
+#[test]
+fn keeps_release_commit_whose_description_mentions_a_version() {
+    assert_eq!(
+        filtered_descriptions(&["chore(release): v2 rollout"], true),
+        vec!["v2 rollout"]
+    );
+}
+
+#[test]
+fn keeps_fix_scoped_to_release() {
+    assert_eq!(
+        filtered_descriptions(&["fix(release): correct the published body"], true),
+        vec!["correct the published body"]
+    );
+}
+
+#[test]
+fn keeps_feature_scoped_to_release() {
+    assert_eq!(
+        filtered_descriptions(&["feat(release): rehearse the plugin in the workflow"], true),
+        vec!["rehearse the plugin in the workflow"]
+    );
+}
+
+#[test]
+fn keeps_description_mentioning_release() {
+    assert_eq!(
+        filtered_descriptions(&["fix(api): release the lock"], true),
+        vec!["release the lock"]
+    );
+}
+
+#[test]
+fn keeps_chore_with_another_scope() {
+    assert_eq!(
+        filtered_descriptions(&["chore(deps): bump serde"], true),
+        vec!["bump serde"]
+    );
+}
+
+#[test]
+fn keeps_everything_when_the_option_is_disabled() {
+    assert_eq!(
+        filtered_descriptions(&["chore(release): v1.2.0"], false),
+        vec!["v1.2.0"]
+    );
+}
+
+#[test]
+fn drops_release_commit_with_a_custom_marker() {
+    assert_eq!(
+        filtered_descriptions(
+            &[
+                "chore(release): v1.2.3 [bump: minor]",
+                "chore(release): v1.2.3 [SKIP CI]",
+                "chore(release): v1.2.3 (hotfix)",
+                "chore(release): v1.2.3 [skip ci] (hotfix)",
+            ],
+            true
+        ),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn drops_release_commit_for_a_custom_version_scheme() {
+    assert_eq!(
+        filtered_descriptions(
+            &[
+                "chore(release): v1.0.0_rc1",
+                "chore(release): 1.0.0~beta",
+                "chore(release): 1.2.3-α",
+            ],
+            true
+        ),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn keeps_single_token_prose_containing_a_digit() {
+    assert_eq!(
+        filtered_descriptions(
+            &[
+                "chore(release): step1",
+                "chore(release): http2",
+                "chore(release): v1rollout",
+            ],
+            true
+        ),
+        vec!["step1", "http2", "v1rollout"]
+    );
+}
+
+#[test]
+fn keeps_release_commit_with_a_marker_followed_by_prose() {
+    // Conservative: a version token followed by anything other than marker groups is content.
+    assert_eq!(
+        filtered_descriptions(&["chore(release): v1.2.3 [skip ci] trailing wording"], true),
+        vec!["v1.2.3 [skip ci] trailing wording"]
+    );
+}
+
+#[test]
+fn drops_all_supported_version_shapes() {
+    assert_eq!(
+        filtered_descriptions(
+            &[
+                "chore(release): v0.16.0 [skip ci]",
+                "chore(release): 0.16.0",
+                "chore(release): 2026.11.12",
+                "chore(release): 2026.11",
+                "chore(release): 26.11",
+                "chore(release): 1.2.3-rc.1",
+                "chore(release): 2.0.0+build.5",
+                "chore(release): v2",
+                "chore(release): 2024",
+            ],
+            true
+        ),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn keeps_every_content_bearing_chore_release_commit_from_history() {
+    assert_eq!(
+        filtered_descriptions(
+            &[
+                "chore(release): pin the github-publish plugin to v0.2.1 (#236)",
+                "chore(release): pause crates.io publication until the GitHub path is proven (#231)",
+                "chore(release): cover the plugin feature in the release gate",
+            ],
+            true
+        ),
+        vec![
+            "pin the github-publish plugin to v0.2.1 (#236)",
+            "pause crates.io publication until the GitHub path is proven (#231)",
+            "cover the plugin feature in the release gate",
+        ]
+    );
+}
+
+#[test]
+fn is_bare_version_accepts_version_tokens() {
+    for description in [
+        "v0.16.0",
+        "0.16.0",
+        "v0.16.0 [skip ci]",
+        "v1.2.3 [bump: minor]",
+        "v1.2.3 [SKIP CI]",
+        "v1.2.3 (hotfix)",
+        "v1.2.3 [skip ci] (hotfix)",
+        "2026.11.12",
+        "2026.11",
+        "26.11",
+        "1.2.3-rc.1",
+        "2.0.0+build.5",
+        "v1.0.0_rc1",
+        "1.0.0~beta",
+        "1.2.3-α",
+        "v2",
+        "2024",
+        "  v1.2.0  ",
+    ] {
+        assert!(
+            super::enrich::is_bare_version(description),
+            "expected {description:?} to be a bare version"
+        );
+    }
+}
+
+#[test]
+fn is_bare_version_rejects_prose_and_empty_values() {
+    for description in [
+        "pin the github-publish plugin to v0.2.1 (#236)",
+        "pause crates.io publication until the GitHub path is proven (#231)",
+        "v2 rollout",
+        "v1.2.3 [skip ci] trailing wording",
+        "step1",
+        "http2",
+        "v1rollout",
+        "v{{ version }} [skip ci]",
+        "",
+        "v",
+        "release",
+    ] {
+        assert!(
+            !super::enrich::is_bare_version(description),
+            "expected {description:?} not to be a bare version"
+        );
+    }
 }
 
 #[test]

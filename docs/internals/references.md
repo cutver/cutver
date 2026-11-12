@@ -65,7 +65,7 @@ When `cutver bump auto` runs, it scans commit history from the latest tag matchi
 
 By default, self-referential release commits are excluded so they do not pollute changelog categories:
 
-- **`ignore_release_commits = true`** (default): Excludes commits like `chore(release): v1.2.0`, commits with scope `release`, and prefix descriptions matching release patterns.
+- **`ignore_release_commits = true`** (default): Excludes a commit only when its type is `chore`, its scope is `release`, and its description is a bare version token — a single token (optionally prefixed `v`/`V`) containing a digit and either a separator (`.`, `+`, `-`, `_`, `~`) or only digits, so `chore(release): v1.2.0`, `chore(release): 0.16.0`, `chore(release): 2026.11`, `chore(release): 1.0.0_rc1` and `chore(release): 1.2.3-α` all qualify. The token may be followed by marker groups — a whitespace-separated tail of bracketed `[...]` or parenthesized `(...)` groups such as `[skip ci]`, `[SKIP CI]`, `[bump: minor]` or `(hotfix)`. This is a shape test, not a guarantee for every conceivable scheme, and commits carrying content are kept: `fix(release)`/`feat(release)` commits, a single token with no version separator (`chore(release): step1`), and `chore(release)` commits like `chore(release): pin the github-publish plugin to v0.2.1 (#236)`.
 - **`ignore_scopes = ["internal", "wip"]`** (default: `[]`): Excludes commits matching specified scopes case-insensitively.
 
 Filtered commits are excluded from both Keep-a-Changelog sections and the template context `commits` list.

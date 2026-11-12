@@ -123,6 +123,7 @@ Declares one target file to update. Multiple `[[manifest]]` blocks can be specif
 | `fallback_entry` | `string` | `"Maintenance and updates."` | Bullet rendered when no commits match a category. |
 | `ignore_release_commits` | `bool` | `true` | Exclude self-referential release commits from the changelog. |
 | `ignore_scopes` | `list<string>` | `[]` | Exclude commits whose scope matches one of these values. |
+| `new_contributors` | `bool` | `false` | Emit a Level 3 `### New Contributors` section listing first-time authors when non-empty. |
 
 ### `[preflight]`, `[git]`, `[hooks]`, & `[publish]`
 

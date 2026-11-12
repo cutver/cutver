@@ -1,5 +1,5 @@
-use crate::changelog::context::filter_commits;
-use crate::changelog::render::{render_categorised, render_item};
+use crate::changelog::context::{ReleaseContext, filter_commits};
+use crate::changelog::render::{render_categorised, render_item, render_new_contributors};
 use crate::config::Changelog;
 use crate::conventional::ConventionalCommit;
 
@@ -34,6 +34,7 @@ pub fn render_body_with_packages(
     config: &Changelog,
     packages: &[PackageSection<'_>],
     unowned: &[ConventionalCommit],
+    context: Option<&ReleaseContext>,
 ) -> String {
     let mut rendered: Vec<String> = Vec::new();
 
@@ -56,10 +57,16 @@ pub fn render_body_with_packages(
     }
 
     if rendered.is_empty() {
-        format!("- {}", config.fallback_entry.trim())
-    } else {
-        rendered.join("\n\n")
+        rendered.push(format!("- {}", config.fallback_entry.trim()));
     }
+
+    if config.new_contributors
+        && let Some(new_contrib_section) = context.and_then(|ctx| render_new_contributors(&ctx.first_time_contributors))
+    {
+        rendered.push(new_contrib_section);
+    }
+
+    rendered.join("\n\n")
 }
 
 #[cfg(test)]
@@ -85,7 +92,7 @@ mod tests {
             },
         ];
 
-        let body = render_body_with_packages(&Changelog::default(), &packages, &[]);
+        let body = render_body_with_packages(&Changelog::default(), &packages, &[], None);
         assert_eq!(body, "### alpha\n#### Features\n- **alpha**: alpha feature");
         assert!(!body.contains("### beta"));
     }
@@ -93,7 +100,7 @@ mod tests {
     #[test]
     fn unowned_commits_render_under_other_changes_without_category_headings() {
         let unowned = [commit("ci: tune pipeline"), commit("chore(deps): bump serde")];
-        let body = render_body_with_packages(&Changelog::default(), &[], &unowned);
+        let body = render_body_with_packages(&Changelog::default(), &[], &unowned, None);
         assert_eq!(body, "### Other changes\n- tune pipeline\n- **deps**: bump serde");
         assert!(!body.contains("####"));
     }
@@ -106,7 +113,66 @@ mod tests {
             commits: &alpha,
         }];
 
-        let body = render_body_with_packages(&Changelog::default(), &packages, &[]);
+        let body = render_body_with_packages(&Changelog::default(), &packages, &[], None);
         assert_eq!(body, "- Maintenance and updates.");
+    }
+
+    #[test]
+    fn packages_render_new_contributors_when_enabled() {
+        let alpha = [commit("feat(alpha): alpha feature")];
+        let packages = [PackageSection {
+            name: "alpha",
+            commits: &alpha,
+        }];
+        let config = Changelog {
+            new_contributors: true,
+            ..Default::default()
+        };
+        let ctx = crate::changelog::assemble_release_context(crate::changelog::AssembleContextParams {
+            version: "1.0.0",
+            prev_version: None,
+            tag: "v1.0.0",
+            prev_tag: None,
+            date: "2026-11-12",
+            repository: None,
+            parsed_commits: &alpha,
+            raw_commits: None,
+            contributors: vec!["Alice".into()],
+            first_time_contributors: vec!["Alice".into()],
+            changelog_config: &config,
+        });
+
+        let body = render_body_with_packages(&config, &packages, &[], Some(&ctx));
+        assert_eq!(
+            body,
+            "### alpha\n#### Features\n- **alpha**: alpha feature\n\n### New Contributors\n- @Alice"
+        );
+    }
+
+    #[test]
+    fn packages_omit_new_contributors_when_disabled_by_default() {
+        let alpha = [commit("feat(alpha): alpha feature")];
+        let packages = [PackageSection {
+            name: "alpha",
+            commits: &alpha,
+        }];
+        let config = Changelog::default(); // new_contributors = false
+        let ctx = crate::changelog::assemble_release_context(crate::changelog::AssembleContextParams {
+            version: "1.0.0",
+            prev_version: None,
+            tag: "v1.0.0",
+            prev_tag: None,
+            date: "2026-11-12",
+            repository: None,
+            parsed_commits: &alpha,
+            raw_commits: None,
+            contributors: vec!["Alice".into()],
+            first_time_contributors: vec!["Alice".into()],
+            changelog_config: &config,
+        });
+
+        let body = render_body_with_packages(&config, &packages, &[], Some(&ctx));
+        assert_eq!(body, "### alpha\n#### Features\n- **alpha**: alpha feature");
+        assert!(!body.contains("New Contributors"));
     }
 }

@@ -218,6 +218,8 @@ pub struct Changelog {
     pub ignore_scopes: Vec<String>,
     #[serde(default)]
     pub plugin: Option<String>,
+    #[serde(default)]
+    pub new_contributors: bool,
 }
 
 impl Default for Changelog {
@@ -236,6 +238,7 @@ impl Default for Changelog {
             ignore_release_commits: default_true(),
             ignore_scopes: Vec::new(),
             plugin: None,
+            new_contributors: false,
         }
     }
 }

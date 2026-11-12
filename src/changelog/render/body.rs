@@ -117,7 +117,7 @@ pub fn render_body_with_plugin(
 
         render_template(&template_str, context)
     } else {
-        Ok(render_conventional(config, commits))
+        Ok(render_conventional(config, commits, context_override))
     }
 }
 
@@ -140,8 +140,41 @@ pub fn render_body_with_context(
     render_body(config, commits, Some(context))
 }
 
-pub(crate) fn render_conventional(config: &Changelog, commits: &[ConventionalCommit]) -> String {
-    render_categorised(config, commits, 3)
+pub(crate) fn render_conventional(
+    config: &Changelog,
+    commits: &[ConventionalCommit],
+    context: Option<&ReleaseContext>,
+) -> String {
+    let mut body = render_categorised(config, commits, 3);
+    if config.new_contributors
+        && let Some(new_contrib_section) = context.and_then(|ctx| render_new_contributors(&ctx.first_time_contributors))
+    {
+        body.push_str("\n\n");
+        body.push_str(&new_contrib_section);
+    }
+    body
+}
+
+/// Formats a single contributor name as a markdown list item bullet.
+pub(crate) fn format_contributor_bullet(name: &str) -> String {
+    let trimmed = name.trim();
+    if trimmed.starts_with('@') || trimmed.contains(' ') {
+        format!("- {trimmed}")
+    } else {
+        format!("- @{trimmed}")
+    }
+}
+
+/// Renders the new contributors section if non-empty, shared across flat and grouped modes.
+pub(crate) fn render_new_contributors(first_time_contributors: &[String]) -> Option<String> {
+    if first_time_contributors.is_empty() {
+        return None;
+    }
+    let items: Vec<String> = first_time_contributors
+        .iter()
+        .map(|name| format_contributor_bullet(name))
+        .collect();
+    Some(format!("### New Contributors\n{}", items.join("\n")))
 }
 
 /// Renders one changelog item line, shared by the flat and the per-package renderers.

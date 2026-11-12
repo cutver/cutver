@@ -109,12 +109,16 @@ cutver changelog open
 
 ### `cutver plugin`
 
-Installs, inspects and removes plugins from the registry index. Requires a plugin-enabled build
+Installs, inspects, updates and removes plugins from the registry index. Requires a plugin-enabled build
 (`--features plugins`): a lean binary hides the subcommand and fails closed naming the flag.
 
 ```bash
 cutver plugin add <NAME> [--version <VERSION>] [--registry <BASE>] [--event <EVENT>]... [--manifest-match <GLOB>]... [--dry-run] [--force]
 cutver plugin list [--json]
+cutver plugin restore [--registry <BASE>] [--dry-run]
+cutver plugin update [NAME] [--version <VERSION>] [--registry <BASE>] [--dry-run]
+cutver plugin info <NAME> [--registry <BASE>] [--json]
+cutver plugin search [QUERY] [--registry <BASE>] [--json]
 cutver plugin remove <NAME> [--keep-artifact]
 ```
 

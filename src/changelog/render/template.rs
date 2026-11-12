@@ -30,8 +30,25 @@ fn group_by_scope_filter(seq: Vec<Value>) -> Value {
     Value::from_serialize(result)
 }
 
+/// Canonical order for the type sections a template renders.
+///
+/// A release should read the same way every time, so sections follow this order instead of the
+/// order the commits happened to land in. A type outside the list sorts alphabetically after
+/// these, and each group keeps the casing it arrived with.
+const TYPE_ORDER: &[&str] = &[
+    "feat", "fix", "perf", "refactor", "docs", "chore", "build", "ci", "test", "style", "revert",
+];
+
+fn type_sort_key(type_str: &str) -> (usize, String) {
+    let lower = type_str.to_ascii_lowercase();
+    let rank = TYPE_ORDER
+        .iter()
+        .position(|known| *known == lower)
+        .unwrap_or(usize::MAX);
+    (rank, lower)
+}
+
 fn group_by_type_filter(seq: Vec<Value>) -> Value {
-    let mut ordered_types: Vec<String> = Vec::new();
     let mut groups: BTreeMap<String, Vec<Value>> = BTreeMap::new();
 
     for item in seq {
@@ -42,16 +59,11 @@ fn group_by_type_filter(seq: Vec<Value>) -> Value {
             .and_then(|v| v.as_str().map(String::from))
             .unwrap_or_default();
 
-        if !groups.contains_key(&type_str) {
-            ordered_types.push(type_str.clone());
-        }
         groups.entry(type_str).or_default().push(item);
     }
 
-    let res: Vec<(String, Vec<Value>)> = ordered_types
-        .into_iter()
-        .filter_map(|t| groups.remove(&t).map(|items| (t, items)))
-        .collect();
+    let mut res: Vec<(String, Vec<Value>)> = groups.into_iter().collect();
+    res.sort_by_key(|(type_str, _)| type_sort_key(type_str));
     Value::from_serialize(res)
 }
 

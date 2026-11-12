@@ -326,7 +326,7 @@ Type: [{{ type }}]
     assert!(res.contains("body: Body details."));
     assert!(res.contains("breaking: broke api"));
 
-    // Types ordered as first seen: feat, then fix
+    // Types follow the canonical section order, not the order they appear in
     let pos_feat = res.find("Type: [feat]").unwrap();
     let pos_fix = res.find("Type: [fix]").unwrap();
     assert!(pos_feat < pos_fix);
@@ -510,4 +510,81 @@ fn test_format_contributor_bullet() {
     assert_eq!(format_contributor_bullet("@octocat"), "- @octocat");
     assert_eq!(format_contributor_bullet("Jane Doe"), "- Jane Doe");
     assert_eq!(format_contributor_bullet("  Alice  "), "- @Alice");
+}
+
+#[test]
+fn default_release_template_renders_markdown_only() {
+    use crate::init::scaffold::templates::DEFAULT_RELEASE_TEMPLATE;
+
+    let commits = vec![
+        ConventionalCommit::parse("feat(plugin): hand the entry to plugins").unwrap(),
+        ConventionalCommit::parse("fix(api): stop dropping scoped commits").unwrap(),
+        ConventionalCommit::parse("chore(deps): bump serde").unwrap(),
+        ConventionalCommit::parse("refactor(core): split the filter\n\nBREAKING CHANGE: shape changed").unwrap(),
+    ];
+    let ctx = build_context(
+        "0.17.0",
+        Some("0.16.0"),
+        "v0.17.0",
+        Some("v0.16.0"),
+        "2026-11-12",
+        Some("https://example.test".to_string()),
+        &commits,
+        vec!["ana".to_string()],
+        false,
+        "1.99",
+    );
+
+    let out = render_template(DEFAULT_RELEASE_TEMPLATE, &ctx).expect("the default template must render");
+    println!("---RENDER---\n{out}\n---END---");
+
+    assert!(out.contains("## v0.17.0 — 2026-11-12"));
+    assert!(out.contains("### ✨ Features"));
+    assert!(out.contains("### 🐛 Fixes"));
+    assert!(out.contains("### 🧰 Maintenance"));
+    assert!(out.contains("> [!WARNING]"));
+    assert!(
+        out.contains("[Compare v0.16.0...v0.17.0](https://example.test/compare/v0.16.0...v0.17.0)"),
+        "the compare link must carry anchor text: {out}"
+    );
+    assert!(
+        !out.contains('<'),
+        "the default template must stay markdown-only: {out}"
+    );
+    assert!(
+        !out.to_lowercase().contains("cutver"),
+        "the default template must not brand the tool: {out}"
+    );
+}
+
+#[test]
+fn group_by_type_orders_sections_canonically() {
+    // Deliberately scrambled: the rendered order must not depend on it.
+    let commits = vec![
+        ConventionalCommit::parse("chore(deps): bump serde").unwrap(),
+        ConventionalCommit::parse("docs(readme): explain the flag").unwrap(),
+        ConventionalCommit::parse("fix(api): stop dropping commits").unwrap(),
+        ConventionalCommit::parse("build(cargo): bump the toolchain").unwrap(),
+        ConventionalCommit::parse("feat(cli): add the flag").unwrap(),
+    ];
+    let ctx = build_context(
+        "0.1.0",
+        None,
+        "v0.1.0",
+        None,
+        "2026-11-12",
+        None,
+        &commits,
+        vec![],
+        false,
+        "1.99",
+    );
+
+    let out = render_template(
+        "{% for type, cs in commits | group_by_type %}{{ type }},{% endfor %}",
+        &ctx,
+    )
+    .unwrap();
+
+    assert_eq!(out.trim(), "feat,fix,docs,chore,build,");
 }

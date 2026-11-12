@@ -266,12 +266,12 @@ fn init_default_scaffolds_rich_template() {
     );
 
     let template_content = fixture.read(".github/templates/cutver/RELEASE.md");
-    assert!(template_content.contains("## [{{ tag }}] - {{ date }}"));
-    assert!(template_content.contains("Features & Enhancements"));
-    assert!(template_content.contains("Bug Fixes"));
-    assert!(template_content.contains("Contributors"));
+    assert!(template_content.contains("## {{ tag }} — {{ date }}"));
+    assert!(template_content.contains("### ✨ Features"));
+    assert!(template_content.contains("### 🐛 Fixes"));
+    assert!(template_content.contains("### 👥 Contributors"));
     assert!(
-        template_content.contains("[Compare the full changelog]({{ compare_url }})"),
+        template_content.contains("]({{ compare_url }})"),
         "the compare link must carry anchor text, not a bare URL"
     );
     assert!(

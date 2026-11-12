@@ -81,11 +81,12 @@ jobs:
           plugins: "true"
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Fetch the github-publish plugin artifact
-        run: |
-          mkdir -p "$HOME/.cache/cutver/plugins"
-          curl -fsSL https://github.com/cutver/plugins/releases/download/github-publish-v0.2.1/github-publish.wasm \
-            -o "$HOME/.cache/cutver/plugins/github-publish-0.2.1.wasm"
+      # Single source of truth: `source` and `hash` live in cutver.toml, the command writes into the
+      # cache root the host resolves from $HOME, and it verifies the digest before accepting the
+      # file. Resolving the URL goes through the Cutver registry, so a plugin version must be
+      # indexed there before a release that pins it.
+      - name: Restore the declared plugin artifacts
+        run: cutver plugin restore
 
       - name: Run Cutver Release
         id: cutver

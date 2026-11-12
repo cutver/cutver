@@ -584,9 +584,10 @@ jobs:
           # Every artefact exists by now: the platform archives, SHA256SUMS, the cosign bundle
           # and the notes. A failed build never reaches this step, so a draft cannot become
           # public without them.
+          # The title is not repeated here: the plugin already created the draft with the title
+          # `title_template` asked for, and overriding it here made that option dead.
           gh release edit "$TAG" \
             --draft=false \
-            --title "Release $TAG" \
             --notes-file RELEASE_NOTES.md
           gh release view "$TAG" --json isDraft,tagName --jq 'if .isDraft then error("release is still a draft after publishing") else "published \(.tagName)" end'
 

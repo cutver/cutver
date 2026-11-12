@@ -220,3 +220,19 @@ fn the_plugin_authenticates_with_the_app_token() {
         "the version job must generate the app token the plugin uses"
     );
 }
+
+/// The plugin sets the release title from `title_template` when it creates the draft. The
+/// promotion used to pass its own `--title`, which is what made that option dead: the release
+/// shipped as `Release v0.17.0` while the configuration asked for `cutver 0.17.0`.
+#[test]
+fn the_promotion_does_not_override_the_title() {
+    let workflow = repo_text(".github/workflows/release.yml");
+    assert!(
+        !workflow.contains("--title \"Release"),
+        "the promotion must not pass its own title: cutver.toml owns it through title_template"
+    );
+    assert!(
+        repo_text("cutver.toml").contains("title_template"),
+        "the title must be declared where the plugin reads it"
+    );
+}

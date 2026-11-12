@@ -123,10 +123,24 @@ pub fn interpolate_string(template: &str, context: &InterpolationContext) -> Res
 
 /// Render release notes using a MiniJinja template string and release context.
 pub fn render_template(template_str: &str, context: &ReleaseContext) -> Result<String, Error> {
-    let env = create_environment();
-    let val = minijinja::Value::from_serialize(context);
-    let rendered = env.render_str(template_str, val).map_err(|e| Error::TemplateRender {
-        detail: format!("{e:#}"),
-    })?;
+    let rendered = render_source(template_str, context)?;
     Ok(rendered.trim().to_string())
+}
+
+/// Render a template for **source generation**, keeping the output byte-exact.
+///
+/// [`render_template`] trims, which is right for a changelog body and wrong for a generated
+/// source file: a `version.h` or `version.ts` must be reproducible byte for byte, including its
+/// trailing newline. Both entry points share [`create_environment`], so filters and globals cannot
+/// drift apart.
+pub fn render_source(template_str: &str, context: &ReleaseContext) -> Result<String, Error> {
+    let mut env = create_environment();
+    // MiniJinja drops a template's trailing newline by default, as Jinja2 does. A generated source
+    // file must end exactly where its template says it ends, so the newline is kept here and only
+    // here: the changelog path trims anyway and is unaffected.
+    env.set_keep_trailing_newline(true);
+    let val = minijinja::Value::from_serialize(context);
+    env.render_str(template_str, val).map_err(|e| Error::TemplateRender {
+        detail: format!("{e:#}"),
+    })
 }

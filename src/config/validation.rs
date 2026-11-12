@@ -2,7 +2,13 @@ use std::collections::HashSet;
 
 use toml_edit::{InlineTable, Item, Table, Value};
 
-use super::types::{Config, ConfigError, Manifest, default_strategy};
+use super::types::{Config, ConfigError, Manifest, ManifestKind, ManifestPath, default_strategy};
+
+/// True for a manifest that generates its target from a template instead of holding a version, so
+/// it can never be the authoritative source.
+fn is_template_sink(manifest: &Manifest) -> bool {
+    matches!(manifest.kind, ManifestKind::Template { .. })
+}
 
 pub(crate) fn deduce_current_source(config: &mut Config) -> Result<(), ConfigError> {
     if config.manifest.is_empty() {
@@ -12,12 +18,25 @@ pub(crate) fn deduce_current_source(config: &mut Config) -> Result<(), ConfigErr
     if candidates.len() > 1 {
         return Err(ConfigError::MultiplePrimaryManifests);
     }
+    if let Some(sink) = candidates
+        .iter()
+        .find(|m| matches!(m.kind, ManifestKind::Template { .. }))
+    {
+        return Err(ConfigError::TemplateAsCurrentSource {
+            path: sink.path.to_string(),
+        });
+    }
     let primary_path = candidates.first().map(|m| m.path.as_str());
     if config.version.current_source.is_empty() {
         if let Some(p) = primary_path {
             config.version.current_source = p.to_string();
+        } else if let Some(first) = config.manifest.iter().find(|m| !is_template_sink(m)) {
+            config.version.current_source = first.path.to_string();
         } else {
-            config.version.current_source = config.manifest[0].path.to_string();
+            // Every declared manifest is a template sink, so nothing can supply the version.
+            return Err(ConfigError::TemplateAsCurrentSource {
+                path: config.manifest[0].path.to_string(),
+            });
         }
     } else if let Some(p) = primary_path
         && config.version.current_source != p
@@ -51,6 +70,26 @@ pub(crate) fn validate(config: &Config) -> Result<(), ConfigError> {
             config.version.current_source.clone(),
         ));
     }
+    if let Some(sink) = config
+        .manifest
+        .iter()
+        .find(|m| m.path == config.version.current_source && is_template_sink(m))
+    {
+        return Err(ConfigError::TemplateAsCurrentSource {
+            path: sink.path.to_string(),
+        });
+    }
+    for m in &config.manifest {
+        if let ManifestKind::Template {
+            template: Some(template),
+        } = &m.kind
+            && ManifestPath::parse(template.clone()).is_ok_and(|p| p == m.path)
+        {
+            return Err(ConfigError::TemplateRendersOverItself {
+                path: m.path.to_string(),
+            });
+        }
+    }
     Ok(())
 }
 
@@ -83,6 +122,7 @@ const MANIFEST_KEYS: &[&str] = &[
     "replacement",
     "table",
     "plugin",
+    "template",
 ];
 const CHANGELOG_KEYS: &[&str] = &[
     "path",
@@ -329,6 +369,65 @@ mod tests {
 
     fn manifest(kind: &str, extra: &str) -> String {
         format!("[version]\ncurrent_source = \"a\"\n\n[[manifest]]\npath = \"a\"\nkind = \"{kind}\"\n{extra}")
+    }
+
+    /// S1: `kind = "template"` parses with an optional `template` key.
+    #[test]
+    fn template_kind_parses_with_and_without_the_template_key() {
+        let source = "[version]\ncurrent_source = \"src.toml\"\n\n[[manifest]]\npath = \"src.toml\"\nkind = \"cargo-package\"\n\n";
+
+        let inherited = load_str(&format!("{source}[[manifest]]\npath = \"a\"\nkind = \"template\"")).unwrap();
+        assert!(matches!(
+            inherited.manifest[1].kind,
+            ManifestKind::Template { template: None }
+        ));
+
+        let explicit = load_str(&format!(
+            "{source}[[manifest]]\npath = \"a\"\nkind = \"template\"\ntemplate = \"a.jinja\""
+        ))
+        .unwrap();
+        assert!(matches!(
+            &explicit.manifest[1].kind,
+            ManifestKind::Template { template: Some(t) } if t == "a.jinja"
+        ));
+    }
+
+    /// S5: a sink cannot be the authoritative version source, explicitly or by deduction.
+    #[test]
+    fn template_kind_is_rejected_as_the_version_source() {
+        let explicit = "[version]\ncurrent_source = \"a\"\n\n[[manifest]]\npath = \"a\"\nkind = \"template\"";
+        assert!(matches!(
+            load_str(explicit),
+            Err(ConfigError::TemplateAsCurrentSource { .. })
+        ));
+
+        let by_primary = "[version]\n\n[[manifest]]\npath = \"a\"\nkind = \"template\"\nprimary = true";
+        assert!(matches!(
+            load_str(by_primary),
+            Err(ConfigError::TemplateAsCurrentSource { .. })
+        ));
+
+        // The implicit fallback to the first manifest skips a sink and takes the next one.
+        let fallback = "[version]\n\n[[manifest]]\npath = \"a\"\nkind = \"template\"\n\n[[manifest]]\npath = \"b\"\nkind = \"cargo-package\"";
+        let config = load_str(fallback).unwrap();
+        assert_eq!(config.version.current_source, "b");
+
+        // Every declared manifest is a sink: nothing can supply the version.
+        let all_sinks = "[version]\n\n[[manifest]]\npath = \"a\"\nkind = \"template\"";
+        assert!(matches!(
+            load_str(all_sinks),
+            Err(ConfigError::TemplateAsCurrentSource { .. })
+        ));
+    }
+
+    /// S4: a template that names its own target would overwrite its own source.
+    #[test]
+    fn template_kind_fails_closed_when_it_renders_over_itself() {
+        let toml = "[version]\n\n[[manifest]]\npath = \"b\"\nkind = \"cargo-package\"\n\n[[manifest]]\npath = \"a\"\nkind = \"template\"\ntemplate = \"a\"";
+        assert!(matches!(
+            load_str(toml),
+            Err(ConfigError::TemplateRendersOverItself { .. })
+        ));
     }
 
     #[test]

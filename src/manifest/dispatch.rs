@@ -2,7 +2,7 @@
 
 use super::plugin::PluginManifestEditor;
 use super::{Error, ManifestEditor};
-use super::{cargo_toml, gradle, json, pyproject, regex};
+use super::{cargo_toml, gradle, json, pyproject, regex, template};
 use crate::plugin::manager::PluginManager;
 use std::sync::Arc;
 
@@ -69,5 +69,9 @@ pub fn editor_for_with_manager(
                 Arc::clone(manager),
             )))
         }
+        config::ManifestKind::Template { template } => Ok(Box::new(template::TemplateEditor::new(
+            entry.path.as_str(),
+            template.clone(),
+        ))),
     }
 }

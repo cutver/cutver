@@ -22,7 +22,7 @@ pub use error::{ChangelogError, Error};
 pub use extract::{extract_latest, extract_version, list_versions, read_latest, read_version};
 pub use render::{
     create_environment, interpolate_string, render_body, render_body_with_context, render_body_with_plugin,
-    render_template,
+    render_source, render_template,
 };
 pub use sections::{PackageSection, render_body_with_packages, supports_package_sections};
 pub use update::{compute_update, format_date, update, update_with_options};

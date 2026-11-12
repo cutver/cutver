@@ -40,6 +40,14 @@ pub enum ConfigError {
     MultiplePrimaryManifests,
     #[error("conflicting primary manifest: [version] specifies '{0}' but '{1}' is marked as primary")]
     ConflictingPrimaryManifest(String, String),
+    #[error(
+        "manifest '{path}' uses kind = \"template\" with template = \"{path}\": a template sink cannot render over itself"
+    )]
+    TemplateRendersOverItself { path: String },
+    #[error(
+        "manifest '{path}' uses kind = \"template\" as the version source: a template sink generates from the version, it cannot supply it"
+    )]
+    TemplateAsCurrentSource { path: String },
     #[error("unknown configuration key '{key}' in [{table}] table in cutver.toml")]
     UnknownKey { table: String, key: String },
     #[error("unknown table [{table}] in cutver.toml")]
@@ -161,6 +169,10 @@ pub enum ManifestKind {
     Plugin {
         #[serde(default)]
         plugin: Option<String>,
+    },
+    Template {
+        #[serde(default)]
+        template: Option<String>,
     },
 }
 

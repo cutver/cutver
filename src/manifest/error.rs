@@ -22,4 +22,20 @@ pub enum Error {
     PluginManagerRequired(String),
     #[error("invalid plugin name '{0}': {1}")]
     InvalidPluginName(String, crate::plugin::types::PluginNameError),
+    #[error("failed to read template file '{path}': {source}")]
+    TemplateRead {
+        path: String,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error(
+        "manifest '{path}' is generated from a template: it has no version of its own to read. Set [version] current_source to a manifest that holds the version"
+    )]
+    TemplateSinkHasNoVersion { path: String },
+    #[error(
+        "manifest '{path}' is generated from a template and needs the release context; render it through the bump pipeline instead of the version-only editor path"
+    )]
+    TemplateNeedsReleaseContext { path: String },
+    #[error("failed to render template: {detail}")]
+    TemplateRender { detail: String },
 }

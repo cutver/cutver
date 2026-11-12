@@ -118,7 +118,6 @@ fn the_plugin_owns_release_creation_and_the_workflow_publishes_its_draft() {
         "gh release upload \"$TAG\" dist/* --clobber",
         "gh release edit \"$TAG\"",
         "--draft=false",
-        "--notes-file RELEASE_NOTES.md",
     ] {
         assert!(workflow.contains(needle), "release.yml must keep `{needle}`");
     }
@@ -178,20 +177,24 @@ fn publish_steps_pass_gh_token_and_tag() {
     );
 }
 
-/// The notes the publish step reads must be the artifact the version job produced, downloaded into
-/// the job's workspace root.
+/// The version job saves the rendered entry as an artifact, so a release can be audited after the
+/// fact — but nothing consumes it. The body and the title belong to the plugin, which created the
+/// draft from the same entry; repeating them in the promotion gives the release a second owner.
 #[test]
-fn release_notes_artifact_matches_the_publish_path() {
+fn release_notes_artifact_is_kept_but_does_not_feed_the_promotion() {
     let workflow = repo_text(".github/workflows/release.yml");
     assert!(
         workflow.contains("name: release-notes\n          path: RELEASE_NOTES.md"),
         "the version job must save RELEASE_NOTES.md as the `release-notes` artifact"
     );
     assert!(
-        workflow.contains("name: release-notes\n          path: ./"),
-        "the publish job must download `release-notes` into the workspace root"
+        !workflow.contains("--notes-file"),
+        "the promotion must not set the body: the plugin publishes the entry Cutver rendered"
     );
-    assert!(workflow.contains("--notes-file RELEASE_NOTES.md"));
+    assert!(
+        !workflow.contains("name: release-notes\n          path: ./"),
+        "downloading the notes artifact back is dead plumbing once the plugin owns the body"
+    );
 }
 
 /// The plugin authenticates with whatever token reaches it, so that token decides who the release

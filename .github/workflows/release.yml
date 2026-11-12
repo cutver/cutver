@@ -496,12 +496,6 @@ jobs:
           pattern: asset-*
           merge-multiple: true
 
-      - name: Download release notes artifact
-        uses: actions/download-artifact@v5
-        with:
-          name: release-notes
-          path: ./
-
       - name: Generate SHA256SUMS
         run: |
           cd dist
@@ -581,14 +575,13 @@ jobs:
               exit 1
               ;;
           esac
-          # Every artefact exists by now: the platform archives, SHA256SUMS, the cosign bundle
-          # and the notes. A failed build never reaches this step, so a draft cannot become
-          # public without them.
-          # The title is not repeated here: the plugin already created the draft with the title
-          # `title_template` asked for, and overriding it here made that option dead.
-          gh release edit "$TAG" \
-            --draft=false \
-            --notes-file RELEASE_NOTES.md
+          # Every artefact exists by now: the platform archives, SHA256SUMS and the cosign bundle.
+          # A failed build never reaches this step, so a draft cannot become public without them.
+          #
+          # Neither the title nor the body is repeated here: the plugin created the draft from the
+          # entry Cutver rendered and the title `title_template` asked for. Passing either again
+          # gave the release a second owner — that is how `title_template` once came out dead.
+          gh release edit "$TAG" --draft=false
           gh release view "$TAG" --json isDraft,tagName --jq 'if .isDraft then error("release is still a draft after publishing") else "published \(.tagName)" end'
 
       - name: Generate distribution bot token

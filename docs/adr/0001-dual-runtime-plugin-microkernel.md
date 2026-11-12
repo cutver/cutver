@@ -12,7 +12,7 @@
 `cutver` releases one repository from one declarative `cutver.toml`. Every
 ecosystem format and external integration would otherwise be compiled into the
 binary or reached through an untyped shell hook. Manifest editing is a `match`
-over kinds (`src/manifest/mod.rs:49`), so each new format is another core arm.
+over kinds (`src/manifest.rs:49`), so each new format is another core arm.
 Third-party binary code must not inherit ambient filesystem, network and
 environment access by default. Lifecycle hooks must fire at defined points in
 the pipeline: `on_pre_bump` before any mutation

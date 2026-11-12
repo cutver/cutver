@@ -989,7 +989,10 @@ fn post_release_payload_carries_the_rendered_entry() {
     let script = fixture.dir.join("capture.sh");
     fixture.write(
         "capture.sh",
-        "#!/bin/sh\nINPUT=$(cat)\ncase \"$INPUT\" in\n  *'\"on_post_release\"'*) printf '%s' \"$INPUT\" > post-release.json ;;\n  *'\"on_pre_bump\"'*) echo '{\"allow\": true}' ;;\nesac\n",
+        // The process driver expects a JSON answer for every invocation, including the events whose
+        // contract defines no response, so the script always replies and only the post-release
+        // branch captures its stdin.
+        "#!/bin/sh\nINPUT=$(cat)\ncase \"$INPUT\" in\n  *'\"on_post_release\"'*) printf '%s' \"$INPUT\" > post-release.json ;;\nesac\necho '{\"allow\": true}'\n",
     );
     #[cfg(unix)]
     {

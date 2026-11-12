@@ -16,7 +16,10 @@ const PLUGIN: &str = "github-publish";
 
 fn repo_text(relative: &str) -> String {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(relative);
-    std::fs::read_to_string(&path).unwrap_or_else(|err| panic!("failed to read {}: {err}", path.display()))
+    let raw = std::fs::read_to_string(&path).unwrap_or_else(|err| panic!("failed to read {}: {err}", path.display()));
+    // Git checks these files out with CRLF on Windows. Line endings are a checkout setting, not
+    // content, so every assertion in this file compares normalised text.
+    raw.replace("\r\n", "\n")
 }
 
 fn declared_plugin() -> PluginConfig {
@@ -102,4 +105,95 @@ fn workflow_requests_the_plugin_build_and_forwards_dry_run() {
             "the release step must export `{key}`, or the declared permission arrives empty"
         );
     }
+}
+
+/// The plugin owns release creation, so the workflow must fill that draft and publish it — not
+/// create a second release. A leftover `softprops/action-gh-release` would race the plugin for the
+/// same tag and fail with 422.
+#[test]
+fn the_plugin_owns_release_creation_and_the_workflow_publishes_its_draft() {
+    let workflow = repo_text(".github/workflows/release.yml");
+    assert!(
+        !workflow.contains("softprops/action-gh-release"),
+        "release.yml must not create the release: the github-publish plugin does, as a draft"
+    );
+    for needle in [
+        "gh release view \"$TAG\" --json isDraft",
+        "gh release upload \"$TAG\" dist/* --clobber",
+        "gh release edit \"$TAG\"",
+        "--draft=false",
+        "--notes-file RELEASE_NOTES.md",
+    ] {
+        assert!(workflow.contains(needle), "release.yml must keep `{needle}`");
+    }
+    // Assets must be uploaded before the draft becomes visible.
+    let upload = workflow.find("gh release upload").expect("upload step");
+    let publish = workflow.find("--draft=false").expect("publish step");
+    assert!(
+        upload < publish,
+        "assets must be uploaded before the release is published"
+    );
+}
+
+/// The guard must accept a draft, accept an already-published release as a retry, and fail only
+/// when no release exists — while tolerating unexpected output rather than blocking a release on a
+/// stray byte from `gh`.
+#[test]
+fn publish_guard_distinguishes_draft_published_and_missing() {
+    let workflow = repo_text(".github/workflows/release.yml");
+    for needle in [
+        "if .isDraft then \"draft\" else \"published\" end",
+        "draft|published) echo",
+        "published)",
+        "draft) ;;",
+        "Could not read the release for $TAG",
+        "Unexpected release state for $TAG",
+        "Refusing to promote $TAG",
+    ] {
+        assert!(workflow.contains(needle), "release.yml must keep `{needle}`");
+    }
+    // An auth failure must surface gh's own message, never a fabricated "no release" verdict.
+    assert!(
+        workflow.contains("--json isDraft --jq 'if .isDraft then \"draft\" else \"published\" end' 2>&1"),
+        "the state read must capture stderr so a 401 is diagnosable"
+    );
+    assert!(
+        !workflow.contains("grep -qx true"),
+        "a byte-exact match on `.isDraft` blocks the release on trailing whitespace"
+    );
+}
+
+/// Both gh steps must authenticate and receive the tag; the publish job infers the repository from
+/// the checkout, so a missing GH_TOKEN fails at the API rather than at the guard.
+#[test]
+fn publish_steps_pass_gh_token_and_tag() {
+    let workflow = repo_text(".github/workflows/release.yml");
+    assert_eq!(
+        workflow
+            .matches("GH_TOKEN: ${{ steps.release-token.outputs.token || secrets.GITHUB_TOKEN }}")
+            .count(),
+        2,
+        "the upload and the publish step must both authenticate, falling back to GITHUB_TOKEN"
+    );
+    assert_eq!(
+        workflow.matches("TAG: ${{ needs.version.outputs.tag }}").count(),
+        2,
+        "both gh steps must receive the tag as TAG"
+    );
+}
+
+/// The notes the publish step reads must be the artifact the version job produced, downloaded into
+/// the job's workspace root.
+#[test]
+fn release_notes_artifact_matches_the_publish_path() {
+    let workflow = repo_text(".github/workflows/release.yml");
+    assert!(
+        workflow.contains("name: release-notes\n          path: RELEASE_NOTES.md"),
+        "the version job must save RELEASE_NOTES.md as the `release-notes` artifact"
+    );
+    assert!(
+        workflow.contains("name: release-notes\n          path: ./"),
+        "the publish job must download `release-notes` into the workspace root"
+    );
+    assert!(workflow.contains("--notes-file RELEASE_NOTES.md"));
 }

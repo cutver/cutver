@@ -512,16 +512,59 @@ jobs:
         run: |
           echo "::warning::the cutver-release app token is unavailable, so this release will be published as github-actions[bot]. Check the CUTVER_APP_ID / CUTVER_APP_PRIVATE_KEY secrets and that the app is installed on ${{ github.repository }} with contents:write."
 
-      - name: Create release and upload binaries
-        uses: softprops/action-gh-release@v3
-        with:
-          tag_name: ${{ needs.version.outputs.tag }}
-          name: Release ${{ needs.version.outputs.tag }}
-          body_path: RELEASE_NOTES.md
-          files: dist/*
-          token: ${{ steps.release-token.outputs.token || secrets.GITHUB_TOKEN }}
+      - name: Upload binaries into the draft release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.release-token.outputs.token || secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          # The github-publish plugin creates this release during the version job, as a draft.
+          # Only a missing release is an error: that means the plugin-enabled build or
+          # on_post_release did not happen, and creating a second release here would race it.
+          # An already-published release is a legitimate retry, so it falls through to the upload.
+          # The failure carries gh's own message, so an auth problem is never reported as a
+          # missing release.
+          if state=$(gh release view "$TAG" --json isDraft --jq 'if .isDraft then "draft" else "published" end' 2>&1); then
+            case "$state" in
+              draft|published) echo "release $TAG is $state; uploading assets" ;;
+              *)
+                echo "::error::Unexpected release state for $TAG: '$state'."
+                exit 1
+                ;;
+            esac
+          else
+            echo "::error::Could not read the release for $TAG: $state"
+            echo "::error::If it does not exist, the github-publish plugin never created its draft in the version job: check that the plugin-enabled build was installed and that on_post_release succeeded."
+            exit 1
+          fi
+          gh release upload "$TAG" dist/* --clobber
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ steps.release-token.outputs.token || secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          state=$(gh release view "$TAG" --json isDraft --jq 'if .isDraft then "draft" else "published" end')
+          case "$state" in
+            published)
+              # A retry after a successful run: the Homebrew and Scoop steps below must still be
+              # able to run, so publishing again is a no-op rather than a failure.
+              echo "release $TAG is already published; nothing to promote"
+              exit 0
+              ;;
+            draft) ;;
+            *)
+              echo "::error::Refusing to promote $TAG: expected a draft, got '$state'."
+              exit 1
+              ;;
+          esac
+          # Every artefact exists by now: the platform archives, SHA256SUMS, the cosign bundle
+          # and the notes. A failed build never reaches this step, so a draft cannot become
+          # public without them.
+          gh release edit "$TAG" \
+            --draft=false \
+            --title "Release $TAG" \
+            --notes-file RELEASE_NOTES.md
+          gh release view "$TAG" --json isDraft,tagName --jq 'if .isDraft then error("release is still a draft after publishing") else "published \(.tagName)" end'
 
       - name: Generate distribution bot token
         id: bot-token

@@ -4,16 +4,27 @@ All notable changes to this project are documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com).
 
 ## v0.17.0 — 2026-11-12
+
 ### ✨ Features
 - **render**: add group_by_section so a heading is emitted once in [#242](https://github.com/cutver/cutver/pull/242) ([ac421fd](https://github.com/cutver/cutver/commit/ac421fdea7fad1d804ea5e50b6534d0221fc2848)) by @Row0902
+- **release**: redesign the release entry for the way people read it now in [#239](https://github.com/cutver/cutver/pull/239) ([0e17737](https://github.com/cutver/cutver/commit/0e17737cccc4c6f802d53f7403671d75842f09c8)) by @Row0902
 - **plugin**: hand the rendered release entry to on_post_release plugins in [#235](https://github.com/cutver/cutver/pull/235) ([6cb2b3e](https://github.com/cutver/cutver/commit/6cb2b3e7f5296a44b867e4545666197a2faa2edd)) by @Row0902
 
 ### 🐛 Fixes
+- **release**: pin the plugin to the version the releasing binary speaks in [#241](https://github.com/cutver/cutver/pull/241) ([c9c4d17](https://github.com/cutver/cutver/commit/c9c4d17ff94f1fc16ce3e7b3012e6f69b428a726)) by @Row0902
+- **release**: name the compare link and stop emitting build noise in [#238](https://github.com/cutver/cutver/pull/238) ([35a16f8](https://github.com/cutver/cutver/commit/35a16f8de5a1b6ab31d0d81fd2222ee1ef6e1fed)) by @Row0902
 - **changelog**: keep release-scoped commits that carry content in [#237](https://github.com/cutver/cutver/pull/237) ([935fb51](https://github.com/cutver/cutver/commit/935fb516baa74b1a00c6cc53aa48662832f6ea93)) by @Row0902
 - **changelog**: restore the v0.16.0 entry the release filter erased in [#234](https://github.com/cutver/cutver/pull/234) ([1e2f0cb](https://github.com/cutver/cutver/commit/1e2f0cb17b8da3826db785b0f163f705fd9d1bc4)) by @Row0902
+- **release**: attribute the plugin's release to cutver-release[bot] in [#232](https://github.com/cutver/cutver/pull/232) ([6704936](https://github.com/cutver/cutver/commit/670493641c5d71c4aa8cda89d8a663213b9447d9)) by @Row0902
+
+### 🛠️ Maintenance
+- **release**: publish the crate again, and record why 0.16.0 never did in [#244](https://github.com/cutver/cutver/pull/244) ([b6ad841](https://github.com/cutver/cutver/commit/b6ad841727154d461670ed443481bc7e1898500b)) by @Row0902
+- **release**: add a tag-scoped workflow to publish the crate in [#243](https://github.com/cutver/cutver/pull/243) ([42784bd](https://github.com/cutver/cutver/commit/42784bdfa41c91b691766f7695a5688beb20957f)) by @Row0902
+- **release**: gate the bump on formatting and name the release in [#240](https://github.com/cutver/cutver/pull/240) ([e733514](https://github.com/cutver/cutver/commit/e733514dcfbb7bc1fab42f30cbf8ba0523999957)) by @Row0902
+- **release**: pin the github-publish plugin to v0.2.1 in [#236](https://github.com/cutver/cutver/pull/236) ([67f0913](https://github.com/cutver/cutver/commit/67f0913aec9a3edd66d908ee7b252d7e8942a153)) by @Row0902
 
 ### 👥 Contributors
-@Row0902
+@cutver-release[bot] · @Row0902
 
 [Compare v0.16.0...v0.17.0](https://github.com/cutver/cutver/compare/v0.16.0...v0.17.0)
 ## [v0.16.0] - 2026-11-12

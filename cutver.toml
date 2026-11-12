@@ -62,8 +62,8 @@ default_timeout = 300
 # the plugin-enabled variant (the `cutver-plugins-*` archive) when releasing.
 [plugins.github-publish]
 runtime = "wasm"
-source = "github-publish-0.1.2.wasm"
-hash = "5f44775e7b6f14a0b7cc57c19a3c694b5f3c177971f797e1a61177bcc0ae5b23"
+source = "github-publish-0.2.0.wasm"
+hash = "5ec9b1e1bf89ef3f89185d875ac5b3c99eb793ebefd050f8b60059102ff75881"
 capabilities = ["lifecycle.v1"]
 events = ["on_pre_bump", "on_post_release"]
 

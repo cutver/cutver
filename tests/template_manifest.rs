@@ -149,3 +149,52 @@ template = "src/absent.jinja"
         "the error must name the missing template: {message}"
     );
 }
+
+/// S3: `doctor` detects drift by re-rendering, never by reverse-parsing the generated file.
+#[test]
+fn doctor_reports_drift_when_the_sink_no_longer_matches_its_template() {
+    let guard = FixtureGuard::new("sink-doctor");
+    let fixture = guard.fixture();
+    write_fixture(fixture);
+    init_git_repo(fixture);
+    initial_commit(fixture);
+    run_git_ok(&fixture.dir, &["tag", "v1.0.0"]);
+    commit(fixture, "feat: add a sink");
+
+    let cfg = config::load("cutver.toml").unwrap();
+    bump_run(&cfg, Bump::Minor, false, &[]).expect("bump should succeed");
+    let generated = fixture.read("src/version.ts");
+
+    // Consistent right after generation: nothing to report.
+    let drifts = cutver::bump::doctor(&cfg).expect("doctor should succeed");
+    assert!(
+        !drifts.iter().any(|d| d.path.ends_with("src/version.ts")),
+        "a freshly generated sink must not drift: {drifts:?}"
+    );
+
+    // Hand-edit the generated file: the render no longer matches it.
+    fixture.write("src/version.ts", &generated.replace("1.1.0", "9.9.9"));
+    let drifts = cutver::bump::doctor(&cfg).expect("doctor should succeed");
+    assert!(
+        drifts.iter().any(|d| d.path.ends_with("src/version.ts")),
+        "an edited sink must be reported as drift: {drifts:?}"
+    );
+}
+
+/// S3: a sink has no version to read, so `doctor` must not fail trying to find one.
+#[test]
+fn doctor_never_reads_a_version_out_of_a_sink() {
+    let guard = FixtureGuard::new("sink-doctor-missing");
+    let fixture = guard.fixture();
+    write_fixture(fixture);
+    init_git_repo(fixture);
+    initial_commit(fixture);
+
+    // The sink target does not exist yet: a version-reading check would fail here.
+    let cfg = config::load("cutver.toml").unwrap();
+    let drifts = cutver::bump::doctor(&cfg).expect("doctor must not fail on an ungenerated sink");
+    assert!(
+        drifts.iter().any(|d| d.path.ends_with("src/version.ts")),
+        "a sink that was never generated is drift: {drifts:?}"
+    );
+}

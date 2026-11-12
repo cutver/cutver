@@ -92,7 +92,61 @@ pub fn format_commit_line(ctx: &CommitContext, include_scope: bool) -> String {
     line
 }
 
+/// True when `description` is a bare version token such as `v1.2.0`, `2026.11.12`,
+/// `2026.11`, `1.2.3-rc.1`, `2.0.0+build.5` or `v1.0.0_rc1`, optionally followed by marker
+/// groups such as `[skip ci]`, `[SKIP CI]`, `[bump: minor]` or `(hotfix)`.
+///
+/// Cutver's protocol carries the version as a plain string, so a versioning plugin may
+/// produce any scheme; this therefore tests the *shape* of a version, never SemVer. A single
+/// token without a version separator (`step1`, `http2`) is prose, not a version.
+pub(super) fn is_bare_version(description: &str) -> bool {
+    let trimmed = description.trim();
+    let (token, tail) = match trimmed.split_once(char::is_whitespace) {
+        Some((token, tail)) => (token, tail),
+        None => (trimmed, ""),
+    };
+
+    is_marker_tail(tail) && is_version_shaped(token.strip_prefix(['v', 'V']).unwrap_or(token))
+}
+
+/// True when `tail` is empty or only `[...]`/`(...)` marker groups separated by whitespace.
+fn is_marker_tail(tail: &str) -> bool {
+    let mut rest = tail.trim_start();
+    while !rest.is_empty() {
+        let closer = match rest.as_bytes()[0] {
+            b'[' => ']',
+            b'(' => ')',
+            _ => return false,
+        };
+        let Some(offset) = rest[1..].find(closer) else {
+            return false;
+        };
+        rest = rest[1 + offset + 1..].trim_start();
+    }
+
+    true
+}
+
+/// True when `token` (already stripped of its optional `v`) looks like a version under any scheme.
+fn is_version_shaped(token: &str) -> bool {
+    const SEPARATORS: [char; 5] = ['.', '+', '-', '_', '~'];
+
+    if token.is_empty() || !token.chars().any(|ch| ch.is_ascii_digit()) {
+        return false;
+    }
+
+    if !token.chars().all(|ch| ch.is_alphanumeric() || SEPARATORS.contains(&ch)) {
+        return false;
+    }
+
+    token.chars().any(|ch| SEPARATORS.contains(&ch)) || token.chars().all(|ch| ch.is_ascii_digit())
+}
+
 /// Filter commits based on release commit patterns and ignored scopes.
+///
+/// A commit is self-referential only when it is a `chore` whose scope is `release` **and**
+/// whose description is nothing but a version token: the release commit Cutver itself writes.
+/// `fix(release)`, `feat(release)` and `chore(release)` commits carrying content stay.
 pub fn filter_commits(
     commits: &[ConventionalCommit],
     ignore_release_commits: bool,
@@ -101,29 +155,14 @@ pub fn filter_commits(
     commits
         .iter()
         .filter(|c| {
-            if ignore_release_commits {
-                if c.commit_type.eq_ignore_ascii_case("chore") && c.scope.as_deref() == Some("release") {
-                    return false;
-                }
-
-                if let Some(scope) = &c.scope
-                    && scope.eq_ignore_ascii_case("release")
-                {
-                    return false;
-                }
-
-                let desc = c.description.trim();
-                let lower_desc = desc.to_ascii_lowercase();
-                if lower_desc.starts_with("release:") || lower_desc.starts_with("release ") {
-                    return false;
-                }
-
-                if let Some(rest) = desc.strip_prefix(['v', 'V']) {
-                    let rest = rest.trim_start();
-                    if rest.starts_with(|ch: char| ch.is_ascii_digit()) {
-                        return false;
-                    }
-                }
+            if ignore_release_commits
+                && c.commit_type.eq_ignore_ascii_case("chore")
+                && c.scope
+                    .as_deref()
+                    .is_some_and(|scope| scope.eq_ignore_ascii_case("release"))
+                && is_bare_version(&c.description)
+            {
+                return false;
             }
 
             if !ignore_scopes.is_empty()

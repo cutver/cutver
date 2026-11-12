@@ -19,7 +19,7 @@ Cutver resolves one version, one changelog and one tag per repository. In a mono
 
 The crux behind all five: there is no package identity. `Config.manifest` is a flat `Vec<Manifest>` (`src/config/types.rs:54`) and `Manifest { path, primary, kind }` (`src/config/types.rs:162-167`) has no id, name or group; validation rejects duplicate paths and a missing current source (`src/config/validation.rs:36-47`).
 
-Prior art sets the honesty frame: the dependency cascade is **not** unsolved in general — Nx ships "Update dependents", Changesets keeps interdependent packages in sync, and cargo-release offers `--dependent-version` (RFC §3). It is unsolved *for cutver*, where each ecosystem is a new manifest editor (`src/manifest.rs:49-111`). Per-package release units are therefore a scope-and-demand question, not an impossibility.
+Prior art sets the honesty frame: the dependency cascade is **not** unsolved in general — Nx ships "Update dependents", Changesets keeps interdependent packages in sync, and cargo-release offers `--dependent-version` (RFC §3). It is unsolved *for cutver*, where each ecosystem is a new manifest editor (`src/manifest/dispatch.rs:11-73`). Per-package release units are therefore a scope-and-demand question, not an impossibility.
 
 ## Decision
 

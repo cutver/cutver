@@ -1,8 +1,13 @@
-use crate::atomic;
-use std::io;
-use thiserror::Error;
+//! Changelog reading, extraction, rendering and writing.
+//!
+//! A pure facade, per Contract Pillar IV.4. Every other file under `changelog/` is a focused
+//! submodule: [`error`] owns the failure vocabulary, [`context`] assembles the release context,
+//! [`extract`] reads entries back out, [`render`] produces the body, [`sections`] groups it per
+//! package, and [`update`] writes it. This file declares and re-exports; it carries no
+//! implementation.
 
 mod context;
+mod error;
 mod extract;
 mod render;
 mod sections;
@@ -13,6 +18,7 @@ pub use context::{
     assemble_release_context, build_context, build_context_auto, build_context_with_filter, build_context_with_raw,
     build_context_with_raw_and_filter, enrich_commit_context, filter_commits, parse_repo_forge,
 };
+pub use error::{ChangelogError, Error};
 pub use extract::{extract_latest, extract_version, list_versions, read_latest, read_version};
 pub use render::{
     create_environment, interpolate_string, render_body, render_body_with_context, render_body_with_plugin,
@@ -20,39 +26,3 @@ pub use render::{
 };
 pub use sections::{PackageSection, render_body_with_packages, supports_package_sections};
 pub use update::{compute_update, format_date, update, update_with_options};
-
-pub type ChangelogError = Error;
-
-#[derive(Debug, Error)]
-pub enum Error {
-    #[error("failed to read changelog '{path}': {source}")]
-    Read {
-        path: String,
-        #[source]
-        source: io::Error,
-    },
-    #[error("failed to write changelog '{path}': {source}")]
-    Write {
-        path: String,
-        #[source]
-        source: atomic::Error,
-    },
-    #[error("no release section found in changelog '{path}'")]
-    NoReleaseSection { path: String },
-    #[error("version '{version}' not found in changelog '{path}'")]
-    VersionNotFound { version: String, path: String },
-    #[error("failed to render changelog template: {detail}")]
-    TemplateRender { detail: String },
-    #[error("failed to read template file '{path}': {source}")]
-    TemplateFileRead {
-        path: String,
-        #[source]
-        source: io::Error,
-    },
-    #[error("plugin error: {0}")]
-    Plugin(#[from] crate::plugin::PluginError),
-    #[error("plugin manager is required to format changelog with format = \"plugin\"")]
-    PluginManagerRequired,
-    #[error("invalid plugin name '{0}': {1}")]
-    InvalidPluginName(String, crate::plugin::types::PluginNameError),
-}

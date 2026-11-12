@@ -18,23 +18,6 @@ fn tmp_id(prefix: &str) -> String {
     format!("{}-{}-{}", prefix, std::process::id(), n)
 }
 
-pub fn init_test_repo(dir: impl AsRef<Path>) {
-    let dir = dir.as_ref();
-    let run = |args: &[&str]| {
-        let status = Command::new("git")
-            .current_dir(dir)
-            .args(args)
-            .status()
-            .expect("failed to execute git");
-        assert!(status.success(), "git command failed: {:?}", args);
-    };
-    run(&["init"]);
-    run(&["config", "user.email", "test@example.com"]);
-    run(&["config", "user.name", "Test User"]);
-    run(&["config", "commit.gpgsign", "false"]);
-    run(&["config", "tag.gpgsign", "false"]);
-}
-
 fn tmp_repo() -> PathBuf {
     let dir = std::env::temp_dir().join(tmp_id("cutver-git"));
     let _ = fs::remove_dir_all(&dir);

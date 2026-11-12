@@ -109,7 +109,7 @@ and the user-facing surface in
 
 ## Declarative Surface & Manifests
 
-[Implemented] Configuration walks upward to find `cutver.toml` or accepts `-c <path>` (`src/config/discovery.rs`). Manifest editing dispatches across `cargo-package`, `json`, `pyproject`, `gradle`, `regex`, and `plugin` via `manifest::editor_for` (`src/manifest.rs:49-109`). Specification keys, surgical-diff limits, and lockfile allowlists are owned by the [Configuration Reference](../reference/configuration.md) and [Manifest Editors](../reference/manifests.md).
+[Implemented] Configuration walks upward to find `cutver.toml` or accepts `-c <path>` (`src/config/discovery.rs`). Manifest editing dispatches across `cargo-package`, `json`, `pyproject`, `gradle`, `regex`, and `plugin` via `manifest::editor_for` (`src/manifest/dispatch.rs:11-73`). Specification keys, surgical-diff limits, and lockfile allowlists are owned by the [Configuration Reference](../reference/configuration.md) and [Manifest Editors](../reference/manifests.md).
 
 ## Evolution Roadmap
 

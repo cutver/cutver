@@ -1,0 +1,69 @@
+name: Publish cutver
+
+# The release workflow publishes the crate as a side effect of a bump — the `[publish]` block in
+# cutver.toml. That covers a NEW version only: a tag released while publication was paused has no
+# path back into the registry, and a crates.io version cannot be unpublished. This workflow is
+# that path, and it is deliberately manual: tag-scoped, version-confirmed, and refusing anything
+# the registry already holds.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to publish, for example v0.16.0"
+        required: true
+        type: string
+      confirm:
+        description: "Type the version that tag declares, without the leading v"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish cutver ${{ inputs.tag }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the tag
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Read the version the tag declares
+        id: version
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -1)
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+          echo "tag ${{ inputs.tag }} declares $version"
+
+      - name: Refuse a confirmation that does not match the tag
+        env:
+          DECLARED: ${{ steps.version.outputs.value }}
+          CONFIRMED: ${{ inputs.confirm }}
+        run: |
+          if [ "$DECLARED" != "$CONFIRMED" ]; then
+            echo "::error::confirmation '$CONFIRMED' does not match the version '$DECLARED' declared by this tag"
+            exit 1
+          fi
+
+      - name: Refuse an already published version
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          # A crate version cannot be unpublished, so a second attempt has to fail before the
+          # upload, with a message that names the version already taken.
+          if curl -fsS "https://crates.io/api/v1/crates/cutver/$VERSION" -o /dev/null 2>/dev/null; then
+            echo "::error::cutver $VERSION is already published and cannot be replaced."
+            exit 1
+          fi
+
+      - name: Verify the package
+        run: cargo publish --dry-run --locked
+
+      - name: Publish
+        run: cargo publish --locked
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}

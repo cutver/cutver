@@ -32,10 +32,15 @@ require_branch = "main"
 floating_major_tag = true
 
 [hooks]
-# `--workspace` covers the `cutver-pdk` member, which a release also republishes.
+# `--workspace` also compiles the `cutver-pdk` member, so a change that breaks the wire
+# contract fails this gate instead of shipping. That member is versioned independently and
+# published on its own schedule (`cargo publish -p cutver-pdk`); a CLI release never
+# republishes it, because its version tracks the wire contract and not the binary.
 post_bump = "cargo check --workspace --features plugins"
 
 [publish]
+# Publishes the root package only. `cutver-pdk` is a separate crates.io package with its own
+# version, and bumping the CLI is not evidence that its API changed.
 push = true
 commands = ["cargo publish"]
 default_timeout = 300

@@ -157,3 +157,43 @@ kind = "cargo-package"
     run_init(Some(td.path.clone()), true, false, false).unwrap();
     assert_eq!(td.read("cutver.toml"), initial_cfg);
 }
+
+/// The template `cutver init` writes and the one this repository releases with must stay the same
+/// file. They were byte-identical before this test existed, and nothing stopped them from drifting:
+/// an improvement to one would silently skip the other.
+#[test]
+fn shipped_release_template_matches_the_repository_one() {
+    let shipped = crate::init::scaffold::DEFAULT_RELEASE_TEMPLATE;
+    let in_repo = include_str!("../../../.github/templates/cutver/RELEASE.md");
+    assert_eq!(
+        shipped.trim(),
+        in_repo.trim(),
+        "DEFAULT_RELEASE_TEMPLATE and .github/templates/cutver/RELEASE.md have drifted apart"
+    );
+}
+
+/// A scaffolded project without the template uses the built-in renderer, which omits first-time
+/// contributors unless asked. With the template, the option would be inert, so it must not appear.
+#[test]
+fn new_contributors_is_enabled_only_for_the_builtin_renderer() {
+    let with_template = TestDir::new("scaffold-tpl");
+    with_template.write("Cargo.toml", "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n");
+    run_init(Some(with_template.path.clone()), false, false, false).unwrap();
+    assert!(
+        !with_template.read("cutver.toml").contains("new_contributors"),
+        "the template renders contributors itself, so the key would be inert"
+    );
+
+    let without_template = TestDir::new("scaffold-no-tpl");
+    without_template.write("Cargo.toml", "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n");
+    run_init(Some(without_template.path.clone()), false, false, true).unwrap();
+    let config = without_template.read("cutver.toml");
+    assert!(
+        config.contains("new_contributors = true"),
+        "the built-in renderer needs the key to surface first-time contributors: {config}"
+    );
+    assert!(
+        config.contains("kind = \"template\""),
+        "the template sink shape must be discoverable from the scaffold: {config}"
+    );
+}

@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use semver::Version;
 
-use crate::bump::exec::changelog::{ChangelogPlanParams, apply_changelog, prepare_changelog};
+use crate::bump::exec::changelog::{ChangelogPlanParams, apply_changelog, assemble_scope, prepare_changelog};
 use crate::bump::exec::command::{is_known_lockfile, run_publish_command};
 use crate::bump::exec::manifest::{apply, compute, current_source};
 use crate::bump::exec::transaction::MutationTransaction;
@@ -66,7 +66,6 @@ pub fn run_with_first_release(
     run_plugin_pre_bump(&plugin_manager, repo, &current, &next, bump_level, &tag, dry_run)?;
     let summary_pre_bump = run_pre_bump_hook(config, &interp_ctx, dry_run)?;
 
-    let computed = compute(config, &next, Some(&plugin_manager))?;
     let cl_params = ChangelogPlanParams {
         config,
         repo,
@@ -77,7 +76,17 @@ pub fn run_with_first_release(
         dry_run,
         first_release,
         plugin_manager: Some(&plugin_manager),
+        scope: None,
     };
+    // The release scope is assembled before manifests are computed, so a template sink renders
+    // with the same context the changelog will use. A dry run renders nothing.
+    let scope = if dry_run {
+        None
+    } else {
+        Some(assemble_scope(&cl_params)?)
+    };
+    let computed = compute(config, &next, scope.as_ref().map(|s| &s.context), Some(&plugin_manager))?;
+    let cl_params = ChangelogPlanParams { scope, ..cl_params };
     let changelog_plan = prepare_changelog(cl_params)?;
     let mut transaction = MutationTransaction::new(repo);
     let (touched, mut paths_to_stage) = apply(&computed, &next, dry_run, &mut transaction)?;

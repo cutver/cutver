@@ -57,6 +57,10 @@ impl TemplateEditor {
 }
 
 impl ManifestEditor for TemplateEditor {
+    fn as_template(&self) -> Option<&TemplateEditor> {
+        Some(self)
+    }
+
     /// A template sink generates its file from the version; it never supplies one.
     fn read_version(&self, _content: &str) -> Result<Version, Error> {
         Err(Error::TemplateSinkHasNoVersion {

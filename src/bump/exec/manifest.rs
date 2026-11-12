@@ -7,6 +7,7 @@ use crate::atomic;
 use crate::bump::exec::command::read;
 use crate::bump::exec::transaction::MutationTransaction;
 use crate::bump::{Change, Error, Touched};
+use crate::changelog;
 use crate::config::Config;
 use crate::manifest;
 use crate::plugin::PluginManager;
@@ -70,12 +71,18 @@ pub(crate) fn read_manifest(
 pub(crate) fn compute(
     config: &Config,
     next: &Version,
+    context: Option<&changelog::ReleaseContext>,
     plugin_manager: Option<&Arc<PluginManager>>,
 ) -> Result<Vec<Change>, Error> {
     config
         .manifest
         .par_iter()
         .map(|m| {
+            // A template sink generates its whole file from the release context: it has no version
+            // to read and no in-place edit to make, so it never goes through `read_manifest`.
+            if matches!(m.kind, crate::config::ManifestKind::Template { .. }) {
+                return compute_template_sink(m, next, context, plugin_manager);
+            }
             let (editor, content, old) = read_manifest(m, plugin_manager)?;
             let new = editor.write_version(&content, next).map_err(|e| Error::Manifest {
                 path: m.path.to_string(),
@@ -91,6 +98,52 @@ pub(crate) fn compute(
             })
         })
         .collect()
+}
+
+/// Renders one `kind = "template"` sink into a [`Change`] without reading a version from it.
+///
+/// `old` carries `next`: a sink has no version of its own, so the summary reports the version it was
+/// generated for, and `changed` is what tells the pipeline whether a write is needed. A target that
+/// does not exist yet is generated from scratch, with `original` empty so a rollback restores an
+/// empty file rather than deleting what was never there.
+fn compute_template_sink(
+    m: &crate::config::Manifest,
+    next: &Version,
+    context: Option<&changelog::ReleaseContext>,
+    plugin_manager: Option<&Arc<PluginManager>>,
+) -> Result<Change, Error> {
+    let path = m.path.to_string();
+    let editor = manifest::editor_for_with_manager(m, plugin_manager).map_err(|e| Error::Manifest {
+        path: path.clone(),
+        source: e,
+    })?;
+    let Some(template_editor) = editor.as_template() else {
+        return Err(Error::Manifest {
+            path,
+            source: manifest::Error::TemplateNeedsReleaseContext {
+                path: m.path.to_string(),
+            },
+        });
+    };
+    let context = context.ok_or_else(|| Error::Manifest {
+        path: path.clone(),
+        source: manifest::Error::TemplateNeedsReleaseContext {
+            path: m.path.to_string(),
+        },
+    })?;
+    let new = template_editor.render(context).map_err(|e| Error::Manifest {
+        path: path.clone(),
+        source: e,
+    })?;
+    let original = std::fs::read_to_string(m.path.as_str()).unwrap_or_default();
+    let changed = original != new;
+    Ok(Change {
+        path,
+        old: next.clone(),
+        original,
+        new,
+        changed,
+    })
 }
 
 pub(crate) fn apply(

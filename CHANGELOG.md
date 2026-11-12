@@ -3,6 +3,101 @@
 All notable changes to this project are documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com).
 
+## [v0.14.0] - 2026-11-12
+### 🚀 Features & Enhancements
+- **manifest**: kind = "template" for AST-safe source generation in [#224](https://github.com/cutver/cutver/pull/224) ([517f556](https://github.com/cutver/cutver/commit/517f5567faf6b07d3842f310657e5b453241da91)) by @Row0902
+- **changelog**: render context-derived sections such as first-time contributors in [#215](https://github.com/cutver/cutver/pull/215) ([8ef1a88](https://github.com/cutver/cutver/commit/8ef1a88fd26b601166f264fc050028f80749dac5)) by @Row0902
+- **plugin**: add restore, update, search, info and preserve subtables in [#209](https://github.com/cutver/cutver/pull/209) ([864c918](https://github.com/cutver/cutver/commit/864c918f42b826b23aa8175f0fa1b77a7dc5ad85)) by @Row0902
+- **changelog**: render one section per declared package ([feaf057](https://github.com/cutver/cutver/commit/feaf057657c12669a9ed02b2bc2b19c9e3e13a58)) by @Row0902
+- **git**: select commits per declared package path ([92e702f](https://github.com/cutver/cutver/commit/92e702f18cd1640098fbdf2831b6a0e4cd59aac6)) by @Row0902
+- **config**: add an optional package identity to manifest entries ([97b8102](https://github.com/cutver/cutver/commit/97b810249d476aa5a4c4aed36b0b81e48555ac2b)) by @Row0902
+- **skills**: add the docs-voice claim-sweep skill ([e5d6179](https://github.com/cutver/cutver/commit/e5d6179adc9795624efc6ea5bd0513aa0e6275a9)) by @Row0902
+
+### 🔄 Code Refactoring
+- make the manifest, changelog and git module roots pure facades in [#223](https://github.com/cutver/cutver/pull/223) ([ad3d4d9](https://github.com/cutver/cutver/commit/ad3d4d9069507677b79455143d82214de3d20025)) by @Row0902
+- **manifest**: replace the legacy src/manifest/mod.rs with a sibling module in [#221](https://github.com/cutver/cutver/pull/221) ([59278f0](https://github.com/cutver/cutver/commit/59278f0b7ffe8dc57b162c78240b84a3e094d499)) by @Row0902
+- **git**: decompose log.rs into a facade over focused submodules in [#219](https://github.com/cutver/cutver/pull/219) ([6187651](https://github.com/cutver/cutver/commit/6187651d8fc52904b69a9a532c5f2c1b2de943d1)) by @Row0902
+- **changelog**: remove duplicated render, filter and heading paths in [#218](https://github.com/cutver/cutver/pull/218) ([de1739e](https://github.com/cutver/cutver/commit/de1739e553ec5cb832ea705f15b0d1c3c4c8b311)) by @Row0902
+- **plugin**: bring manager.rs production code back under the Pillar V.4 target in [#210](https://github.com/cutver/cutver/pull/210) ([032577a](https://github.com/cutver/cutver/commit/032577a8fb54783a1a58320e73b33d2c53ceb841)) by @Row0902
+
+### 🐛 Bug Fixes
+- **bump**: remove cli::BumpLevel dependency from domain layer in [#217](https://github.com/cutver/cutver/pull/217) ([91d22da](https://github.com/cutver/cutver/commit/91d22dad6b1abda28d8e9993abaf780ea82db1d8)) by @Row0902
+- **changelog**: insert a blank line between header and new entry in [#216](https://github.com/cutver/cutver/pull/216) ([807bb4e](https://github.com/cutver/cutver/commit/807bb4eaf3b29240b72ec2c9d91a614ef3033bf4)) by @Row0902
+- **cli**: align --help strings for --first-release and plugin add --dry-run with behavior in [#214](https://github.com/cutver/cutver/pull/214) ([93a8d08](https://github.com/cutver/cutver/commit/93a8d081439bb0abca0981f8b38d67b6c6ebd07c)) by @Row0902
+- **ci**: validate PR type labels against defined set in [#213](https://github.com/cutver/cutver/pull/213) ([d775ff5](https://github.com/cutver/cutver/commit/d775ff53a2ad670fe433cfaff35491e31a9c9637)) by @Row0902
+- **hooks**: execute pre_bump hook before manifest mutations in [#211](https://github.com/cutver/cutver/pull/211) ([589f888](https://github.com/cutver/cutver/commit/589f888a0161d6ad70366087067bf7443e05c1e4)) by @Row0902
+- **pipeline**: execute publish push before running on_post_release plugins in [#207](https://github.com/cutver/cutver/pull/207) ([5e38935](https://github.com/cutver/cutver/commit/5e38935431260ccfa7a29b38e8599ae30fa8c732)) by @Row0902
+- **git**: gate the symlink test on unix and keep the guard diagnostic canonical ([5b38a33](https://github.com/cutver/cutver/commit/5b38a33a4b1befada1167b0f7e861229fbe65566)) by @Row0902
+- **git**: normalize declared paths against the repository on every platform ([ad2ba2a](https://github.com/cutver/cutver/commit/ad2ba2a128b7eca1c41b5ce27c11d1b6862a02b5)) by @Row0902
+- **git**: anchor package pathspecs and never drop range commits ([c86a3c2](https://github.com/cutver/cutver/commit/c86a3c2d4f098a0c64a6870bc46fa018955e10d3)) by @Row0902
+- **git**: place a mixed commit only in its package, never twice ([86c2a66](https://github.com/cutver/cutver/commit/86c2a666c604162e0672543660fef4e9526d20e3)) by @Row0902
+- **git**: keep merge commits in per-package selection ([a526bd2](https://github.com/cutver/cutver/commit/a526bd261718f9d666fafc5c841afb95eaa5f72b)) by @Row0902
+- **config**: name the offending table when an unknown nested table is empty ([377f0fa](https://github.com/cutver/cutver/commit/377f0fae00e4dbe424454a9d20c388cbcfa9b94b)) by @Row0902
+- **config**: reject unknown cutver.toml keys with a hard error ([b2a37a2](https://github.com/cutver/cutver/commit/b2a37a238f92c588107f6172c40be1ef54ef729c)) by @Row0902
+- **odd**: scope the feature to unknown keys only ([30526c3](https://github.com/cutver/cutver/commit/30526c3be2f397fae3f929782356c0fb989bec06)) by @Row0902
+- **odd**: open the unknown-config-keys feature ([86ea7e0](https://github.com/cutver/cutver/commit/86ea7e0e3d718ecfc5d2e79d916790c3e5014429)) by @Row0902
+- **container**: keep `latest` on the lean image ([2018391](https://github.com/cutver/cutver/commit/2018391b1fd1902efe401089a4a8aef4bf6675e1)) by @Row0902
+
+### 📚 Documentation
+- **internals**: bring references.md and design.md within Pillar IV.5 line budget in [#212](https://github.com/cutver/cutver/pull/212) ([4d9f526](https://github.com/cutver/cutver/commit/4d9f5263a8257abbb5a118e142b13307bff94436)) by @Row0902
+- update plugin showcase gallery asset with github-publish ([a4195c0](https://github.com/cutver/cutver/commit/a4195c0ea63b2c00c7aa9e3bbd7e586f576c8dbd)) by @Row0902
+- **readme**: standardize on modern client-id for create-github-app-token action ([33a6781](https://github.com/cutver/cutver/commit/33a678101a35efaf4b630f2d24ccf281d9294923)) by @Row0902
+- **readme**: align release workflow snippet with CUTVER_APP_ID secret ([98b6b0c](https://github.com/cutver/cutver/commit/98b6b0c6d70f4b71cc7060e7f5b2e83dc84a7580)) by @Row0902
+- **readme**: add official brand identity, accessibility metadata, accordions, and FAQ ([48b333d](https://github.com/cutver/cutver/commit/48b333dd71ceb10781064ca3190d6eb6197a2fd7)) by @Row0902
+- **readme**: replace ASCII architecture diagram with adaptive SVG diagrams ([c51bee6](https://github.com/cutver/cutver/commit/c51bee6815f57f51b8ef692876beb1a7e963f163)) by @Row0902
+- **readme**: simplify gallery lead text and focus alt-text strictly on cutver output ([6d79c91](https://github.com/cutver/cutver/commit/6d79c914d99faaf9480baae0ebdffc3c4dc999e5)) by @Row0902
+- **readme**: add visual gallery with modern terminal showcases and refine language ([4fc9ae2](https://github.com/cutver/cutver/commit/4fc9ae2e5afc0bf3fde38613f47825a3fc0a9078)) by @Row0902
+- **readme**: redesign with cognitive architecture, official insignia, and interactive sections ([46854b9](https://github.com/cutver/cutver/commit/46854b955ff8516b607ae78c1a2760739da8eb9c)) by @Row0902
+- **odd**: drop T6 and reclassify its finding as a review false positive ([f8bea88](https://github.com/cutver/cutver/commit/f8bea889e05604e71d5a4db8e673306dea7f9234)) by @Row0902
+- **adr**: mark ADR-0002 implemented and correct the roadmap row ([6bf7076](https://github.com/cutver/cutver/commit/6bf70769482bf39a12c1ffe4a449f5d206dd307f)) by @Row0902
+- **odd**: track workspace package identity with a changelog rendering baseline ([e514511](https://github.com/cutver/cutver/commit/e5145110b3e423b8822d6ecd0c3e7a873e1b4774)) by @Row0902
+- point the roadmap and the monorepo guide at the decision log ([0a5e90b](https://github.com/cutver/cutver/commit/0a5e90be8dc4e0538c6513a6e48cec7e854398e0)) by @Row0902
+- **adr**: open the decision log with ADR-0001 and ADR-0002 ([6fb0e8d](https://github.com/cutver/cutver/commit/6fb0e8d0c656a7f6504aeee8168c6d5b9cecdf97)) by @Row0902
+- **rfc**: align both RFCs with the rfc-authoring skill ([a0aab17](https://github.com/cutver/cutver/commit/a0aab1733126adb6a6e98d51ef07af8d6d2a94b0)) by @Row0902
+- **guides**: point the monorepo guide at the decision record ([d0f8070](https://github.com/cutver/cutver/commit/d0f8070b372c2ee2a3af6ffbbbf59c4aa7a86bc9)) by @Row0902
+- **rfc**: record the workspace releases decision ([f219183](https://github.com/cutver/cutver/commit/f219183d4deb10655a8275abd68329bdef7031be)) by @Row0902
+- **rfc**: propose per-package release units for monorepos ([8e4da10](https://github.com/cutver/cutver/commit/8e4da1078f5c07d1d34974f576311d6ef7962fff)) by @Row0902
+- **odd**: open the workspace support RFC feature ([95be9b2](https://github.com/cutver/cutver/commit/95be9b21861fd0389f6df1167af90abd4953f883)) by @Row0902
+- **config**: scope the accepted-key claim and bring the reference under the ceiling ([65ad33a](https://github.com/cutver/cutver/commit/65ad33a6c279a2df6bc103e5da8e1444a5e13108)) by @Row0902
+- **internals**: repair the design document citations and split the doctor row ([fe8b920](https://github.com/cutver/cutver/commit/fe8b9206d10919ac862e9ba7483f8176f056551d)) by @Row0902
+- **odd**: record the design evolution evidence and the roadmap classifications ([99b1827](https://github.com/cutver/cutver/commit/99b182729e7fd1640d103d7861c6eec89dcdb9aa)) by @Row0902
+- **internals**: evolve the design document with explicit capability status ([184e5d3](https://github.com/cutver/cutver/commit/184e5d383836b87548a22332c9da59fd61e7b1f7)) by @Row0902
+- **odd**: open the design document evolution feature ([7fff633](https://github.com/cutver/cutver/commit/7fff6332f9f804f09bbe9c130428dcab58c12d59)) by @Row0902
+- **odd**: record the round 5 findings, the verification and the residual ([5f7ca5e](https://github.com/cutver/cutver/commit/5f7ca5e7d241594fa5e0d2e16c6f63cffcbcf6df)) by @Row0902
+- correct the pyproject table key and scope the legacy reference title ([6f0581b](https://github.com/cutver/cutver/commit/6f0581bc374146baf0ea58b9cc5600021a0320e4)) by @Row0902
+- scope the versioning strategy claim to its one implemented value ([ec08155](https://github.com/cutver/cutver/commit/ec08155ac7a05cd65e1a46f5ebd47fa640f08e93)) by @Row0902
+- **odd**: record the round 4 findings ([9e77b4e](https://github.com/cutver/cutver/commit/9e77b4ec85bdfb7ba58f907c2ecf8205b8839bd0)) by @Row0902
+- correct the documented defaults and fill the reference gaps ([7c6d215](https://github.com/cutver/cutver/commit/7c6d2158876098a0eb8a778f0c4cae78b161de9c)) by @Row0902
+- **odd**: record the round 3 findings and the method change ([84c311d](https://github.com/cutver/cutver/commit/84c311d161e567551549d2cc20aa5480d360e7d8)) by @Row0902
+- document the real workspace behaviour and the plugin manifest kind ([dd39702](https://github.com/cutver/cutver/commit/dd3970270be9599615370068c29ba83c859eef59)) by @Row0902
+- **odd**: record the round 2 findings and their evidence ([e826a1b](https://github.com/cutver/cutver/commit/e826a1b1d63a3d26747723f84b5bedea84ad88ea)) by @Row0902
+- scope the last two repeats of already-fixed claims ([a82bd0e](https://github.com/cutver/cutver/commit/a82bd0ed0c97354baf10b4d5cf2725269f9a0bb5)) by @Row0902
+- correct the integration guides and the remaining overstatements ([1b9a6e3](https://github.com/cutver/cutver/commit/1b9a6e317c5e5d1d357ce915d8dc1b32b81b41b7)) by @Row0902
+- **odd**: record the claim fixes and the cli help follow-up ([5287074](https://github.com/cutver/cutver/commit/5287074ff4484cc0a23cbde910a513219477d0c0)) by @Row0902
+- scope the dry-run, staging and format-preservation claims to the code ([89c6546](https://github.com/cutver/cutver/commit/89c65461afbf7bc09e3fe197668ddcb752819829)) by @Row0902
+- **bump**: drop the mix.lock staging claim the code does not honour ([9c5b8c0](https://github.com/cutver/cutver/commit/9c5b8c05d9ecf98d74ff61b70bad5ec34324da6c)) by @Row0902
+- **odd**: open the documentation claim-accuracy closure feature ([f9dd3d2](https://github.com/cutver/cutver/commit/f9dd3d2f4897caaec124794c7d7f13a1d87bd78e)) by @Row0902
+- **internals**: two core principles claimed more than the code does ([8f35fc0](https://github.com/cutver/cutver/commit/8f35fc09929ee5e07f2b7058f1afe3035f821344)) by @Row0902
+- **readme**: the Gradle and regex editors can touch more than the version ([0aa792b](https://github.com/cutver/cutver/commit/0aa792b43289bb6d8c12dccd5db76a0bb65abf1b)) by @Row0902
+- scope the documented guarantees to what the code does ([8e3be1f](https://github.com/cutver/cutver/commit/8e3be1f2341ebf0b3617325c6de14983c2d1f9e1)) by @Row0902
+- fix the overstatements the verification found ([52eda4d](https://github.com/cutver/cutver/commit/52eda4d1c2d03d5d071c381a8d8a82872087c290)) by @Row0902
+- document the plugin dispatch switch and the optional hash ([c0d65c8](https://github.com/cutver/cutver/commit/c0d65c82a6ec1a69e6a326501be86db0ca21d6af)) by @Row0902
+- **readme**: lead with the microkernel and first-class plugins ([1e9fd75](https://github.com/cutver/cutver/commit/1e9fd758f09fc6d7136e0dcd88e6f4d30ffa4b14)) by @Row0902
+
+### 📦 Assets
+- **avatar**: optimize avatar with full-bleed background and generous safe-area padding ([422a204](https://github.com/cutver/cutver/commit/422a204b760b6f5ff3ccc2b2a9cc693e9c34b7d9)) by @Row0902
+- add official GitHub Open Graph social preview card (1280x640) ([ce6770d](https://github.com/cutver/cutver/commit/ce6770d5a97cde440ccd1daad1254a9db3eca329)) by @Row0902
+- add high-resolution PNG renders for avatar, brand marks, and architecture ([9b08836](https://github.com/cutver/cutver/commit/9b08836d966c5cef120522f45945bb32b6a4686c)) by @Row0902
+
+### 🛠️ Maintenance & Dependencies
+- require exactly one type label on every pull request ([d31c6c8](https://github.com/cutver/cutver/commit/d31c6c8d1a13c8001dff39f15230e2936bfe0ac2)) by @Row0902
+
+### 👥 Contributors
+- @Row0902
+
+
+---
+**Full Changelog**: https://github.com/cutver/cutver/compare/v0.13.0...v0.14.0 • *CI Build #20*
 ## [v0.13.0] - 2026-10-11
 ### 📚 Documentation
 - **odd**: record slice 5 as delivered and close the task list ([e9afa4a](https://github.com/cutver/cutver/commit/e9afa4ad48c6d69f1b16d9f4f034229a17d35c4f)) by @Row0902

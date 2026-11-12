@@ -32,24 +32,20 @@ fn declared_plugin() -> PluginConfig {
         .unwrap_or_else(|| panic!("cutver.toml must declare [plugins.{PLUGIN}]"))
 }
 
-/// The `source` the host resolves must be the file the workflow downloads, into the directory the
-/// host resolves from `$HOME`. A mismatch fails the digest gate on a different file, or misses it.
+/// The workflow must not repeat what `cutver.toml` already declares. A second copy of the
+/// artifact name drifted the moment the pin moved, and the release then looked for a file nobody
+/// wrote. `cutver plugin restore` reads `source` and `hash` from the configuration, writes into
+/// the cache root the host resolves, and verifies the digest as it downloads.
 #[test]
-fn workflow_downloads_the_declared_source_into_the_cache_root() {
-    let source = declared_plugin().source.expect("a wasm plugin must declare `source`");
-    assert!(source.ends_with(".wasm"), "expected a wasm artifact, got `{source}`");
-
-    let stem = source.trim_end_matches(".wasm");
-    let (_, version) = stem.rsplit_once('-').expect("source must embed its version");
-
+fn workflow_restores_the_declared_plugins_instead_of_pinning_them_again() {
     let workflow = repo_text(".github/workflows/release.yml");
     assert!(
-        workflow.contains(&format!("{PLUGIN}-v{version}")),
-        "release.yml must fetch the release asset `{PLUGIN}-v{version}`, the version `source` names"
+        workflow.contains("cutver plugin restore"),
+        "release.yml must hydrate the plugin cache with `cutver plugin restore`"
     );
     assert!(
-        workflow.contains(&format!("\"$HOME/.cache/cutver/plugins/{source}\"")),
-        "release.yml must write $source into the cache root the host resolves from $HOME"
+        !workflow.contains(&format!("{PLUGIN}-v")),
+        "release.yml must not name a plugin version of its own: cutver.toml owns the pin"
     );
 }
 

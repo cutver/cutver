@@ -50,6 +50,17 @@ pub enum Error {
         source: crate::atomic::Error,
         rollback: String,
     },
+    #[error("pre_bump hook '{command}' failed with status {status}")]
+    PreBumpHookFailed {
+        command: String,
+        status: std::process::ExitStatus,
+    },
+    #[error("failed to run pre_bump hook '{command}': {source}")]
+    PreBumpHookSpawn {
+        command: String,
+        #[source]
+        source: io::Error,
+    },
     #[error("post_bump hook '{command}' failed with status {status}")]
     PostBumpHookFailed {
         command: String,
@@ -121,6 +132,7 @@ pub struct Summary {
     pub tag: String,
     pub tag_skipped: bool,
     pub floating_tag: Option<String>,
+    pub pre_bump: Option<String>,
     pub post_bump: Option<String>,
     pub warnings: Vec<String>,
     pub publish_push: bool,

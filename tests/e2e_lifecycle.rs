@@ -56,6 +56,100 @@ post_bump = "touch post_bump_ran.txt"
 }
 
 #[test]
+fn pre_bump_runs_in_dry_run_and_real_bump() {
+    assert!(git_available());
+    let guard = FixtureGuard::new("pre-bump-runs");
+    let fixture = guard.fixture();
+    let toml = r#"[version]
+current_source = "package.json"
+
+[[manifest]]
+path = "package.json"
+kind = "json"
+field = "version"
+
+[[manifest]]
+path = "Cargo.toml"
+kind = "cargo-package"
+
+[changelog]
+path = "CHANGELOG.md"
+
+[git]
+require_clean_tree = false
+
+[hooks]
+pre_bump = "touch pre_bump_ran.txt"
+"#;
+    fixture.write("package.json", PACKAGE_JSON);
+    fixture.write("Cargo.toml", CARGO_TOML);
+    fixture.write("CHANGELOG.md", CHANGELOG_MD);
+    fixture.write("cutver.toml", toml);
+    init_git_repo(fixture);
+    initial_commit(fixture);
+
+    let cfg = config::load("cutver.toml").unwrap();
+
+    // Dry run: summary records pre_bump, command NOT executed
+    let dry_summary = bump_run(&cfg, Bump::Minor, true, &[]).unwrap();
+    assert!(dry_summary.dry_run);
+    assert_eq!(dry_summary.pre_bump.as_deref(), Some("touch pre_bump_ran.txt"));
+    assert!(!fixture.dir.join("pre_bump_ran.txt").exists());
+
+    // Real run: pre_bump executes and file is created
+    let real_summary = bump_run(&cfg, Bump::Minor, false, &[]).unwrap();
+    assert!(!real_summary.dry_run);
+    assert_eq!(real_summary.pre_bump.as_deref(), Some("touch pre_bump_ran.txt"));
+    assert!(fixture.dir.join("pre_bump_ran.txt").exists());
+}
+
+#[test]
+fn pre_bump_failure_aborts_before_any_mutation() {
+    assert!(git_available());
+    let guard = FixtureGuard::new("pre-bump-fail");
+    let fixture = guard.fixture();
+    let toml = r#"[version]
+current_source = "package.json"
+
+[[manifest]]
+path = "package.json"
+kind = "json"
+field = "version"
+
+[[manifest]]
+path = "Cargo.toml"
+kind = "cargo-package"
+
+[changelog]
+path = "CHANGELOG.md"
+
+[git]
+require_clean_tree = true
+
+[hooks]
+pre_bump = "exit 1"
+"#;
+    fixture.write("package.json", PACKAGE_JSON);
+    fixture.write("Cargo.toml", CARGO_TOML);
+    fixture.write("CHANGELOG.md", CHANGELOG_MD);
+    fixture.write("cutver.toml", toml);
+    init_git_repo(fixture);
+    initial_commit(fixture);
+
+    let cfg = config::load("cutver.toml").unwrap();
+    let res = bump_run(&cfg, Bump::Minor, false, &[]);
+    assert!(res.is_err(), "expected bump to fail due to pre_bump exit 1");
+
+    // Manifests never touched (remain 1.2.3)
+    assert!(fixture.read("package.json").contains("\"version\": \"1.2.3\""));
+    assert!(fixture.read("Cargo.toml").contains("version = \"1.2.3\""));
+    assert!(!fixture.read("CHANGELOG.md").contains("1.3.0"));
+
+    // No commit or tag created
+    assert_eq!(commit_count(fixture), 1);
+}
+
+#[test]
 fn post_bump_modifies_file_and_file_is_staged_and_committed() {
     assert!(git_available());
     let guard = FixtureGuard::new("post-bump-modify");

@@ -245,6 +245,7 @@ mod tests {
             tag: "v0.9.0".into(),
             tag_skipped: false,
             floating_tag: None,
+            pre_bump: None,
             post_bump: None,
             warnings: Vec::new(),
             publish_push: true,

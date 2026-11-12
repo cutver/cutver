@@ -64,6 +64,7 @@ pub fn run_with_first_release(
     }
 
     run_plugin_pre_bump(&plugin_manager, repo, &current, &next, bump_level, &tag, dry_run)?;
+    let summary_pre_bump = run_pre_bump_hook(config, &interp_ctx, dry_run)?;
 
     let computed = compute(config, &next, Some(&plugin_manager))?;
     let cl_params = ChangelogPlanParams {
@@ -115,6 +116,7 @@ pub fn run_with_first_release(
         tag,
         tag_skipped,
         floating_tag,
+        pre_bump: summary_pre_bump,
         post_bump: summary_post_bump,
         warnings: changelog_plan.warnings,
         publish_push: config.publish.push,
@@ -267,6 +269,34 @@ fn check_tag_collisions(repo: &Path, tag: &str, publish_push: bool) -> Result<()
         });
     }
     Ok(())
+}
+
+fn run_pre_bump_hook(
+    config: &Config,
+    interp_ctx: &changelog::InterpolationContext,
+    dry_run: bool,
+) -> Result<Option<String>, Error> {
+    let Some(raw_pre_bump) = &config.hooks.pre_bump else {
+        return Ok(None);
+    };
+    let cmd = format_command(raw_pre_bump, interp_ctx)?;
+    if dry_run {
+        return Ok(Some(cmd));
+    }
+    let (shell, flag) = if cfg!(windows) { ("cmd", "/C") } else { ("sh", "-c") };
+    let status = std::process::Command::new(shell)
+        .arg(flag)
+        .arg(&cmd)
+        .current_dir(&config.root_dir)
+        .status()
+        .map_err(|e| Error::PreBumpHookSpawn {
+            command: cmd.clone(),
+            source: e,
+        })?;
+    if !status.success() {
+        return Err(Error::PreBumpHookFailed { command: cmd, status });
+    }
+    Ok(Some(cmd))
 }
 
 fn run_post_bump_hook(

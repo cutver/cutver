@@ -30,10 +30,12 @@ pub struct PackageCommits {
 /// Path-filtered commit selection for a whole workspace.
 ///
 /// Chosen over a `HashMap<String, Vec<RawCommit>>` because the renderer must preserve
-/// **declaration order** (S5) and must see a declared package with zero commits as an empty
-/// section rather than a missing key (S6): an ordered `Vec` with one entry per declared package
-/// expresses both, while the name is carried in [`PackageCommits`] so ordering and identity never
-/// depend on a positional side channel.
+/// **declaration order** (S5) and must be able to tell that a declared package selected zero
+/// commits, rather than being unable to distinguish "no commits" from "missing key" (S6). An
+/// entry with an empty `commits` slice is exactly that: the package exists and owns nothing in
+/// this range, so the renderer omits its heading instead of emitting an empty section. The name
+/// is carried in [`PackageCommits`] so ordering and identity never depend on a positional side
+/// channel.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PackageCommitSelection {
     /// One entry per declared package, in declaration order.
@@ -116,11 +118,33 @@ impl AnchoredPathspec {
 /// A failing `git log` surfaces as an error instead of an empty section or a fall-through into the
 /// unowned remainder (S15, Contract Pillar III.4). This differs from [`raw_commits_between`],
 /// whose documented `from_tag: None` suppression is preserved for its own callers.
+///
+/// The range itself is selected once, by the caller. [`raw_commits_between`] walks the plain range
+/// with no pathspec, so git applies no path-based history simplification; each package query is
+/// path-limited and therefore pushes `--full-history` (see [`package_query_args`]) to keep a merge
+/// that brought a package change into the mainline. That difference is why the two queries exist
+/// at all, and why the plain range is the caller's to reuse rather than something this function
+/// re-derives when it already has it.
 pub fn commits_by_package(
     repo: impl AsRef<Path>,
     from_tag: Option<&str>,
     to_ref: &str,
     packages: &[(&str, &Path)],
+) -> Result<PackageCommitSelection, Error> {
+    commits_by_package_with_range(repo, from_tag, to_ref, packages, None)
+}
+
+/// [`commits_by_package`] when the plain range is already in hand.
+///
+/// Passing `range` consumes the caller's selection instead of running a second `git log` over the
+/// same range, so the changelog pipeline has one source of truth for the release range and a
+/// caller that narrows or reorders it is not silently overridden.
+pub fn commits_by_package_with_range(
+    repo: impl AsRef<Path>,
+    from_tag: Option<&str>,
+    to_ref: &str,
+    packages: &[(&str, &Path)],
+    range: Option<&[RawCommit]>,
 ) -> Result<PackageCommitSelection, Error> {
     let repo = repo.as_ref();
     let dirs: Vec<AnchoredPathspec> = packages
@@ -141,8 +165,14 @@ pub fn commits_by_package(
         .iter()
         .flat_map(|p| p.commits.iter().map(|c| c.hash.as_str()))
         .collect();
-    let range = run_log_checked(repo, &range_args(from_tag, to_ref))?;
-    let unowned = range.into_iter().filter(|c| !owned.contains(c.hash.as_str())).collect();
+    let owned_range = match range {
+        Some(commits) => commits.to_vec(),
+        None => run_log_checked(repo, &range_args(from_tag, to_ref))?,
+    };
+    let unowned = owned_range
+        .into_iter()
+        .filter(|c| !owned.contains(c.hash.as_str()))
+        .collect();
 
     Ok(PackageCommitSelection {
         packages: selected,

@@ -809,6 +809,37 @@ fn messages(commits: &[RawCommit]) -> Vec<String> {
     commits.iter().map(|c| c.message.clone()).collect()
 }
 
+/// S: one code path selects the release range. When the caller already holds it, the package
+/// branch must derive the unowned remainder from that selection instead of querying git again, so
+/// a caller that narrows or reorders the range is not silently overridden.
+#[test]
+fn commits_by_package_consumes_a_caller_supplied_range() {
+    let dir = package_repo();
+    let paths = declared_paths();
+    let pairs = package_pairs(&["a"], &paths);
+
+    let supplied = vec![RawCommit {
+        hash: "0000000000000000000000000000000000000000".to_string(),
+        short_hash: "0000000".to_string(),
+        author_name: "Caller".to_string(),
+        author_email: "caller@example.com".to_string(),
+        message: "caller supplied".to_string(),
+    }];
+    let selection =
+        super::log::commits_by_package_with_range(dir.path(), Some("v1.0.0"), "HEAD", &pairs, Some(&supplied)).unwrap();
+
+    // The package selection is unchanged; only the remainder comes from the caller's slice.
+    let queried = super::log::commits_by_package(dir.path(), Some("v1.0.0"), "HEAD", &pairs).unwrap();
+    assert_eq!(
+        messages(&selection.packages[0].commits),
+        messages(&queried.packages[0].commits)
+    );
+    assert_eq!(messages(&selection.unowned), vec!["caller supplied"]);
+
+    // Without a supplied range the remainder is queried, exactly as before.
+    assert_eq!(messages(&queried.unowned), vec!["unowned", "b1"]);
+}
+
 #[test]
 fn commits_by_package_splits_nested_and_sibling_commits() {
     let dir = package_repo();

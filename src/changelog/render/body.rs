@@ -1,6 +1,6 @@
 use super::template::render_template;
 use crate::changelog::Error;
-use crate::changelog::context::ReleaseContext;
+use crate::changelog::context::{ReleaseContext, filter_commits};
 use crate::config::Changelog;
 use crate::conventional::ConventionalCommit;
 use crate::plugin::PluginManager;
@@ -140,12 +140,23 @@ pub fn render_body_with_context(
     render_body(config, commits, Some(context))
 }
 
+/// Heading level of a root changelog section: `### Features` in the flat layout, and
+/// `### <package>`, `### Other changes`, `### New Contributors` in the grouped one.
+pub(crate) const SECTION_HEADING_LEVEL: usize = 3;
+
+/// Heading level of the conventional category buckets in the flat, no-package layout.
+pub(crate) const FLAT_CATEGORY_HEADING_LEVEL: usize = SECTION_HEADING_LEVEL;
+
+/// Heading level of the conventional category buckets nested under a package section.
+pub(crate) const PACKAGE_CATEGORY_HEADING_LEVEL: usize = SECTION_HEADING_LEVEL + 1;
+
 pub(crate) fn render_conventional(
     config: &Changelog,
     commits: &[ConventionalCommit],
     context: Option<&ReleaseContext>,
 ) -> String {
-    let mut body = render_categorised(config, commits, 3);
+    let filtered = filter_commits(commits, config.ignore_release_commits, &config.ignore_scopes);
+    let mut body = render_categorised(config, &filtered, FLAT_CATEGORY_HEADING_LEVEL);
     if config.new_contributors
         && let Some(new_contrib_section) = context.and_then(|ctx| render_new_contributors(&ctx.first_time_contributors))
     {
@@ -174,7 +185,11 @@ pub(crate) fn render_new_contributors(first_time_contributors: &[String]) -> Opt
         .iter()
         .map(|name| format_contributor_bullet(name))
         .collect();
-    Some(format!("### New Contributors\n{}", items.join("\n")))
+    Some(format!(
+        "{} New Contributors\n{}",
+        "#".repeat(SECTION_HEADING_LEVEL),
+        items.join("\n")
+    ))
 }
 
 /// Renders one changelog item line, shared by the flat and the per-package renderers.
@@ -187,12 +202,9 @@ pub(crate) fn render_item(commit: &ConventionalCommit, include_scopes: bool) -> 
 
 /// Render the conventional category buckets at the given markdown heading level.
 ///
-/// Level 3 is the flat, no-package output; package sections nest the same buckets one level
-/// deeper beneath `### <package>` (S3).
+/// `commits` must already be filtered: the caller filters once, at the point where it decides
+/// whether a section exists at all, so grouping only changes the grouping (S14).
 pub(crate) fn render_categorised(config: &Changelog, commits: &[ConventionalCommit], level: usize) -> String {
-    let filtered_commits =
-        crate::changelog::context::filter_commits(commits, config.ignore_release_commits, &config.ignore_scopes);
-    let commits = &filtered_commits;
     let heading = "#".repeat(level);
 
     struct Category {

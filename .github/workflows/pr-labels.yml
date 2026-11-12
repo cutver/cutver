@@ -1,8 +1,11 @@
 name: PR labels
 
+# `opened` is deliberately absent. A pull request is born with no labels, so
+# checking it at open time made every new PR red until someone labelled it; the
+# check now speaks only on the events that can change the answer.
 on:
   pull_request:
-    types: [opened, reopened, labeled, unlabeled, synchronize]
+    types: [reopened, labeled, unlabeled, synchronize]
 
 permissions:
   contents: read

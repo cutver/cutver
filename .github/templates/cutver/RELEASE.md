@@ -45,8 +45,8 @@
 {% endfor %}
 {%- endif %}
 
----
 {%- if compare_url %}
-**Full Changelog**: {{ compare_url }}
+
+---
+[Compare the full changelog]({{ compare_url }})
 {%- endif %}
-{%- if env("GITHUB_RUN_NUMBER") %} • *CI Build #{{ env("GITHUB_RUN_NUMBER") }}*{%- endif %}

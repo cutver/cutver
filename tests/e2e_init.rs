@@ -270,7 +270,14 @@ fn init_default_scaffolds_rich_template() {
     assert!(template_content.contains("Features & Enhancements"));
     assert!(template_content.contains("Bug Fixes"));
     assert!(template_content.contains("Contributors"));
-    assert!(template_content.contains("**Full Changelog**: {{ compare_url }}"));
+    assert!(
+        template_content.contains("[Compare the full changelog]({{ compare_url }})"),
+        "the compare link must carry anchor text, not a bare URL"
+    );
+    assert!(
+        !template_content.contains("GITHUB_RUN_NUMBER"),
+        "release notes must not leak CI build identifiers"
+    );
 
     let config_content = fixture.read("cutver.toml");
     assert!(config_content.contains("template_file = \".github/templates/cutver/RELEASE.md\""));

@@ -67,6 +67,14 @@ fn fresh_init_creates_files_and_config() {
 
     let template = td.read(".github/templates/cutver/RELEASE.md");
     assert!(template.contains("## [{{ tag }}] - {{ date }}"));
+    assert!(
+        template.contains("[Compare the full changelog]({{ compare_url }})"),
+        "the compare link must carry anchor text, not a bare URL"
+    );
+    assert!(
+        !template.contains("GITHUB_RUN_NUMBER"),
+        "release notes must not leak CI build identifiers"
+    );
 }
 
 #[test]

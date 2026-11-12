@@ -121,8 +121,9 @@ fn build_manifest(wasm_bytes: &[u8], permissions: &PermissionsConfig, timeout_se
     }
 
     for path_str in &permissions.filesystem {
-        let path = PathBuf::from(path_str);
-        manifest = manifest.with_allowed_path(path_str.clone(), path);
+        let host = std::fs::canonicalize(path_str).unwrap_or_else(|_| PathBuf::from(path_str));
+        let host_name = host.to_string_lossy().into_owned();
+        manifest = manifest.with_allowed_path(host_name, guest_name(path_str));
     }
 
     for env_var in &permissions.env {
@@ -135,6 +136,16 @@ fn build_manifest(wasm_bytes: &[u8], permissions: &PermissionsConfig, timeout_se
     }
 
     manifest
+}
+
+/// Returns the guest-visible mount name for a granted directory.
+///
+/// Extism reads the manifest key as the host directory and the value as the name the guest
+/// sees, so the two cannot be the same string. The key is canonicalized at the driver, because
+/// that is the directory the sandbox really opens; the guest keeps the declared absolute path
+/// with forward slashes, which is the one the lifecycle payload advertises as `root_dir`.
+fn guest_name(host_path: &str) -> String {
+    host_path.replace('\\', "/")
 }
 
 /// Instantiates an Extism Plugin from a Manifest.

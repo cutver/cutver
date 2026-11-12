@@ -14,6 +14,15 @@ pub enum ConfigError {
     Parse(#[from] toml::de::Error),
     #[error("failed to parse config document: {0}")]
     DocumentParse(#[from] toml_edit::TomlError),
+    #[error(
+        "plugin '{plugin}' grants filesystem entry '{grant}', which resolves to '{resolved}' — outside the workspace root '{root}'.\n  A sandboxed plugin may only reach the workspace: declare a path inside it, or drop the grant."
+    )]
+    GrantOutsideWorkspace {
+        plugin: String,
+        grant: String,
+        resolved: String,
+        root: String,
+    },
     #[error("manifest path must not be empty")]
     EmptyManifestPath,
     #[error("duplicate manifest path: {0}")]

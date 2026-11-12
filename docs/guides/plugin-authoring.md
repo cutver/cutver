@@ -115,6 +115,27 @@ permissions.env = ["MY_TOKEN"]
 `runtime` is `wasm` or `process`. `permissions` accepts `network`, `env` and `filesystem`, mapped by
 the host to the sandbox's allowed hosts, config keys and allowed paths
 (`src/plugin/driver/wasm.rs:116`). A missing grant is a denied capability at runtime, not a warning.
+
+### Which path a guest sees
+
+A `filesystem` entry is resolved against the workspace root and mounted under the same absolute
+path the lifecycle payload advertises as `root_dir`, forward-slashed on every platform. A guest
+reaches a declared directory by joining that `root_dir`:
+
+```rust
+let config = std::fs::read(format!("{}/cutver.toml", payload.root_dir))?;
+```
+
+> **Gotcha**: the mount name is that absolute path — not `/`, and not the entry as you wrote it.
+> `filesystem = ["."]` mounts the workspace root itself, so a relative read only works prefixed
+> with `root_dir`. Anything outside the declared entries fails with `EPERM` (`os error 63`),
+> which is a denial of the capability, not a missing file.
+>
+> The name is the path you declared, not the directory it finally resolves to: a granted
+> directory reached through a symlink is still mounted as `<root_dir>/<your entry>`, so a plugin
+> never has to resolve host symlinks itself. And a grant whose real directory lands outside the
+> workspace is refused at load time — a sandbox reaches the workspace, nothing else.
+
 ## 6. Publish, then register
 
 The install-time gate compares the bytes it downloaded with the digest in the registry, before the

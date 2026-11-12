@@ -33,8 +33,55 @@ pub fn load(path: impl AsRef<Path>) -> Result<Config, ConfigError> {
     if let Some(ref mut p) = config.changelog.template_file {
         *p = resolve(&config.root_dir, p);
     }
+    resolve_plugin_filesystem(&mut config)?;
     validate(&config)?;
     Ok(config)
+}
+
+/// Resolves declared plugin filesystem grants the way every other configured path is
+/// resolved: against the workspace root, forward-slashed, without the Windows verbatim
+/// prefix. A plugin then mounts the workspace at the one path the lifecycle payload
+/// advertises as `root_dir`, instead of at whatever directory the process was launched
+/// from. A grant whose real directory falls outside the workspace is rejected here, before
+/// anything is mounted.
+fn resolve_plugin_filesystem(config: &mut Config) -> Result<(), ConfigError> {
+    let root_dir = config.root_dir.clone();
+    for (name, plugin) in &mut config.plugins {
+        let mut resolved = Vec::with_capacity(plugin.permissions.filesystem.len());
+        for entry in &plugin.permissions.filesystem {
+            let guest = resolve_grant(&root_dir, entry).map_err(|real| ConfigError::GrantOutsideWorkspace {
+                plugin: name.to_string(),
+                grant: entry.clone(),
+                resolved: real.to_string_lossy().replace('\\', "/"),
+                root: root_dir.to_string_lossy().replace('\\', "/"),
+            })?;
+            resolved.push(guest);
+        }
+        plugin.permissions.filesystem = resolved;
+    }
+    Ok(())
+}
+
+/// Resolves one grant to the absolute path the configuration declares, with `.`/`..` removed
+/// lexically so the guest name matches the `root_dir` the payload advertises even when the
+/// directory is reached through a symlink. The host directory is canonicalized later, at the
+/// driver, where following symlinks is the correct behaviour — so the containment check here
+/// compares the real directory, and returns it when the grant escapes the workspace.
+fn resolve_grant(root_dir: &Path, entry: &str) -> Result<String, PathBuf> {
+    let declared = Path::new(entry);
+    let absolute = if declared.is_absolute() {
+        strip_verbatim_prefix(declared.to_path_buf())
+    } else {
+        root_dir.join(declared)
+    };
+    let resolved = crate::plugin::cache::lexical_normalize(&absolute);
+    let Ok(real) = canonicalize(&resolved) else {
+        return Ok(resolved.to_string_lossy().replace('\\', "/"));
+    };
+    if real.starts_with(root_dir) {
+        return Ok(resolved.to_string_lossy().replace('\\', "/"));
+    }
+    Err(real)
 }
 
 // In `src/config/discovery.rs`: Remove checking for `release.toml` in `discover()`. Only check for `cutver.toml`.
@@ -116,6 +163,35 @@ mod tests {
 
     fn write(d: &Path, n: &str, t: &str) {
         fs::write(d.join(n), t).unwrap();
+    }
+
+    /// A grant is a capability, not a hint: `..` walks out of the workspace, so the real
+    /// directory is outside the root the sandbox promises and the load must fail closed
+    /// instead of mounting a parent directory.
+    #[test]
+    fn test_plugin_filesystem_grant_outside_the_workspace_fails_closed() {
+        let root = tmp("grant-containment");
+        write(
+            &root,
+            "Cargo.toml",
+            "[package]\nname = \"probe\"\nversion = \"0.1.0\"\n",
+        );
+        write(
+            &root,
+            "cutver.toml",
+            "[project]\nname = \"probe\"\n\n[[manifest]]\npath = \"Cargo.toml\"\nkind = \"cargo-package\"\n\n\
+             [plugins.probe]\nruntime = \"wasm\"\nsource = \"probe.wasm\"\ncapabilities = [\"changelog.v1\"]\n\n\
+             [plugins.probe.permissions]\nfilesystem = [\"..\"]\n",
+        );
+
+        match load(root.join("cutver.toml")) {
+            Err(ConfigError::GrantOutsideWorkspace { plugin, grant, .. }) => {
+                assert_eq!(plugin, "probe");
+                assert_eq!(grant, "..");
+            }
+            other => panic!("a grant that escapes the workspace must fail closed, got {other:?}"),
+        }
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]

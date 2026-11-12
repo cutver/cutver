@@ -108,7 +108,7 @@ pub fn read_path(
 
 /// Lexically resolves `.` and `..` without touching the filesystem, so
 /// containment can be checked before any deletion.
-fn lexical_normalize(path: &Path) -> PathBuf {
+pub(crate) fn lexical_normalize(path: &Path) -> PathBuf {
     let mut resolved = PathBuf::new();
     for component in path.components() {
         match component {

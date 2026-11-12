@@ -4,12 +4,19 @@ All notable changes to this project are documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com).
 
 ## [v0.16.0] - 2026-11-12
+### 🚀 Features & Enhancements
+- **plugin**: let the github-publish plugin own the release and publish its draft in [#230](https://github.com/cutver/cutver/pull/230) ([10c851e](https://github.com/cutver/cutver/commit/10c851e))
+- **plugin**: load the github-publish plugin in the release workflow and add a dry-run rehearsal in [#229](https://github.com/cutver/cutver/pull/229) ([28c0d3d](https://github.com/cutver/cutver/commit/28c0d3d))
+
+### 🛠️ Maintenance & Dependencies
+- **release**: pause crates.io publication until the GitHub path is proven in [#231](https://github.com/cutver/cutver/pull/231) ([54d34c0](https://github.com/cutver/cutver/commit/54d34c0))
+
 ### 👥 Contributors
 - @Row0902
 
 
 ---
-**Full Changelog**: https://github.com/cutver/cutver/compare/v0.15.0...v0.16.0 • *CI Build #24*
+**Full Changelog**: https://github.com/cutver/cutver/compare/v0.15.0...v0.16.0
 ## [v0.15.0] - 2026-11-12
 ### 🚀 Features & Enhancements
 - **init**: teach the scaffold the template sink and first-time contributors in [#228](https://github.com/cutver/cutver/pull/228) ([7785834](https://github.com/cutver/cutver/commit/7785834c9d417b01f764b62eb97aa6842db4ade8)) by @Row0902

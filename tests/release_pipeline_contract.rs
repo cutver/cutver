@@ -141,11 +141,19 @@ fn publish_guard_distinguishes_draft_published_and_missing() {
     for needle in [
         "if .isDraft then \"draft\" else \"published\" end",
         "draft|published) echo",
-        "if [ \"$state\" = \"published\" ]",
-        "No release found for $TAG",
+        "published)",
+        "draft) ;;",
+        "Could not read the release for $TAG",
+        "Unexpected release state for $TAG",
+        "Refusing to promote $TAG",
     ] {
         assert!(workflow.contains(needle), "release.yml must keep `{needle}`");
     }
+    // An auth failure must surface gh's own message, never a fabricated "no release" verdict.
+    assert!(
+        workflow.contains("--json isDraft --jq 'if .isDraft then \"draft\" else \"published\" end' 2>&1"),
+        "the state read must capture stderr so a 401 is diagnosable"
+    );
     assert!(
         !workflow.contains("grep -qx true"),
         "a byte-exact match on `.isDraft` blocks the release on trailing whitespace"

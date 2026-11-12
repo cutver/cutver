@@ -65,14 +65,12 @@ default_timeout = 300
 # the plugin-enabled variant (the `cutver-plugins-*` archive) when releasing.
 [plugins.github-publish]
 runtime = "wasm"
-# Pinned to 0.1.2 for this release on purpose. The bump is cut by the last published binary:
-# `cutver/setup` resolves `latest` inside the version job, where the tag being released does not
-# exist yet. v0.16.0 predates `PostReleasePayload.notes` — its wire contract has no such field —
-# so a fail-closed plugin would abort with `MissingReleaseNotes` before creating anything. 0.1.2
-# still extracts the entry from `CHANGELOG.md`, which the 0.16.0 host does write with the current
-# template. Re-pin 0.2.1 once 0.17.0 exists: from then on the releasing binary sends `notes`.
-source = "github-publish-0.1.2.wasm"
-hash = "5f44775e7b6f14a0b7cc57c19a3c694b5f3c177971f797e1a61177bcc0ae5b23"
+# 0.2.1 publishes the entry Cutver renders, verbatim, and fails closed when the host sends
+# none. It is valid from here on: a release is cut by the previously published binary, and 0.17.0
+# is the first that carries `PostReleasePayload.notes`. v0.16.0 has no such field, which is why
+# 0.17.0 itself had to run with 0.1.2.
+source = "github-publish-0.2.1.wasm"
+hash = "0a38c934200f833a35cae3a53c03c403566f42f4abc58a744a7b2d8a09874a9b"
 capabilities = ["lifecycle.v1"]
 events = ["on_pre_bump", "on_post_release"]
 

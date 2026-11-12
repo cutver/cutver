@@ -150,3 +150,25 @@ impl From<crate::semver_bump::Bump> for BumpLevel {
         }
     }
 }
+
+impl From<BumpLevel> for crate::bump::BumpLevel {
+    fn from(level: BumpLevel) -> Self {
+        match level {
+            BumpLevel::Patch => crate::bump::BumpLevel::Patch,
+            BumpLevel::Minor => crate::bump::BumpLevel::Minor,
+            BumpLevel::Major => crate::bump::BumpLevel::Major,
+            BumpLevel::Auto => crate::bump::BumpLevel::Auto,
+        }
+    }
+}
+
+impl From<crate::bump::BumpLevel> for BumpLevel {
+    fn from(level: crate::bump::BumpLevel) -> Self {
+        match level {
+            crate::bump::BumpLevel::Patch => BumpLevel::Patch,
+            crate::bump::BumpLevel::Minor => BumpLevel::Minor,
+            crate::bump::BumpLevel::Major => BumpLevel::Major,
+            crate::bump::BumpLevel::Auto => BumpLevel::Auto,
+        }
+    }
+}

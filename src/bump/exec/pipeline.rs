@@ -7,9 +7,9 @@ use crate::bump::exec::changelog::{ChangelogPlanParams, apply_changelog, prepare
 use crate::bump::exec::command::{is_known_lockfile, run_publish_command};
 use crate::bump::exec::manifest::{apply, compute, current_source};
 use crate::bump::exec::transaction::MutationTransaction;
+use crate::bump::types::BumpLevel;
 use crate::bump::{Error, Summary};
 use crate::changelog;
-use crate::cli::BumpLevel;
 use crate::config::Config;
 use crate::conventional;
 use crate::git;

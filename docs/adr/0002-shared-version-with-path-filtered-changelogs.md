@@ -62,8 +62,8 @@ The null case reopens if the identity-plus-changelog slice proves not worth its 
 
 ## Traceability
 
-- Proposal: [docs/rfcs/0002-workspace-releases.md](../rfcs/0002-workspace-releases.md)
+- Proposal: [RFC 0002: Workspace Releases](../rfcs/0002-workspace-releases.md)
 - Sibling decision: [ADR-0001: Adopt the dual-runtime plugin microkernel](../adr/0001-dual-runtime-plugin-microkernel.md), proposed by [RFC 0001](../rfcs/0001-wasm-plugin-architecture.md).
-- Roadmap rows: [docs/internals/design.md:174-177](../internals/design.md)
-- Guide: [docs/guides/monorepos.md:11](../guides/monorepos.md)
+- Roadmap rows: [Evolution Roadmap in Design Document](../internals/design.md#evolution-roadmap)
+- Guide: [Monorepo Release Strategies Guide](../guides/monorepos.md)
 - No issue or pull request number is recorded for this decision.

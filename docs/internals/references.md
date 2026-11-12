@@ -1,424 +1,112 @@
 # Cutver Technical Reference
 
-This document provides a long-form technical specification for `cutver`, including configuration schema (`cutver.toml`), manifest editors, CLI commands, lifecycle hooks, preflight process handling, and safety guarantees. The [modular reference pages](../reference/configuration.md) are the canonical version of this material.
+> Outcome first: `cutver` provides a unified, deterministic release toolchain. This document serves as the high-level technical reference and index connecting user-facing configuration, manifest behaviors, and internal pipeline execution.
+
+Detailed guides and specifications are partitioned into focused modular documents under `docs/`:
+
+| Domain | Canonical Reference | Focus |
+| :--- | :--- | :--- |
+| **Configuration** | [Configuration Reference](../reference/configuration.md) | Complete `cutver.toml` schema and table options |
+| **Manifests** | [Manifest Editors](../reference/manifests.md) | Format-specific editing and AST preservation rules |
+| **CLI Commands** | [CLI Command Reference](../reference/cli.md) | Command arguments, options, and subcommand usage |
+| **Templates** | [Release Notes & Changelog Templates](../templates/release-notes.md) | Template variables, commit objects, and filters |
+| **Plugins** | [Plugins Reference](../reference/plugins.md) | Capability specifications and runtime management |
+| **Architecture** | [Architecture & Design Decisions](design.md) | Design principles, roadmap, and core decisions |
+| **Pipeline** | [Pipeline Execution & Atomic Guarantees](pipeline.md) | Two-phase execution, rollback, and process trees |
 
 ---
 
-## Configuration File (`cutver.toml`)
+## Configuration Discovery Algorithm
 
-`cutver` is configured declaratively via a `cutver.toml` that discovery walks up to find from the working directory.
+When invoked without an explicit `-c / --config` argument, `cutver` locates its configuration dynamically:
 
-### Discovery Algorithm
-
-1. When invoked without `-c / --config`, `cutver` begins at the current working directory and traverses upwards through parent directories.
-2. At each directory, it checks for `cutver.toml`.
-3. Traversal halts immediately upon encountering a Git repository boundary (`.git` directory or `.git` submodule file).
-4. All paths declared in the configuration resolve **relative to the directory containing `cutver.toml`**, allowing `cutver` to be invoked safely from any nested subdirectory.
+1. Begins traversal at the current working directory.
+2. Traverses upward through parent directories looking for `cutver.toml`.
+3. Stops traversal immediately upon reaching a Git repository boundary (`.git` directory or submodule file).
+4. All relative paths defined inside `cutver.toml` resolve relative to the configuration file's own directory.
 
 ---
 
-## Configuration Schema
+## Primary Manifest Deduction
 
-```toml
-# cutver.toml — Complete Schema Specification
+`cutver` synchronizes multiple manifests from a single source of truth:
 
-# [version] is optional. By convention, the first declared manifest is the primary source of truth.
-[version]
-current_source = "Cargo.toml"     # Optional override: explicit path to primary manifest
-
-# Declare one or more manifests to synchronize
-[[manifest]]
-path = "Cargo.toml"
-kind = "cargo-package"
-primary = true                    # Optional: explicitly marks this manifest as source of truth
-
-[[manifest]]
-path = "package.json"
-kind = "json"
-field = "version"                 # Dotted path to version field (e.g., "version" or "app.version")
-
-[[manifest]]
-path = "pyproject.toml"
-kind = "pyproject"                # PEP 621 (uv, Hatch, PDM, Flit, Maturin, setuptools) & Poetry
-# table = "project"               # Optional override: "project" (default), "tool.poetry", or custom table
-
-[[manifest]]
-path = "android/app/build.gradle.kts"
-kind = "gradle"
-version_name_field = "versionName" # String field updated to new SemVer (required)
-version_code_field = "versionCode" # Integer field incremented on each bump (required)
-
-[[manifest]]
-path = "version.txt"
-kind = "regex"
-pattern = 'release/v\d+\.\d+\.\d+'
-replacement = 'release/{{version}}'
-
-# Preflight verification pipeline
-[preflight]
-tests = "cargo test"
-lint = { command = "cargo clippy -- -D warnings", timeout = 180 }
-default_timeout = 600             # Global timeout in seconds for steps without an explicit timeout
-
-# Changelog management
-[changelog]
-path = "CHANGELOG.md"
-format = "keep-a-changelog"       # Keep-a-Changelog standard format
-mode = "conventional"             # "conventional" (parses git commits) or "template"
-entry_template = "Maintenance and updates." # Fallback when mode="template" or no commits found
-template = """                    # Optional: inline MiniJinja template string
-## Release {{ version }} ({{ date }})
-{{ all_changes }}
-"""
-# template_file = ".github/templates/cutver/RELEASE.md" # Optional: path to template file relative to cutver.toml
-full_template = false             # Optional: true to let template control heading without prepending default ## [version]
-header_template = "## [{{ tag }}] - {{ date }}" # Optional: custom MiniJinja template evaluated for the release heading
-include_scopes = true             # Prefix entries with **scope**: (default: true)
-fallback_entry = "Maintenance and updates." # Fallback bullet entry when no commits match
-ignore_release_commits = true     # Exclude self-referential release commits (default: true)
-ignore_scopes = ["internal"]      # Exclude commits matching specified scopes (default: [])
-
-# Git automation and safety guards
-[git]
-tag_prefix = "v"                  # Tag prefix (e.g., "v" -> "v1.2.0")
-floating_major_tag = true         # Automatically create, update, and push floating major tags (e.g., "v1") (default: false)
-commit_message = "chore(release): v{version}"
-require_clean_tree = true         # Fail-safe: refuses to run if uncommitted changes exist
-require_branch = "main"           # Optional: ensures release is only cut from specified branch
-
-# Lifecycle hooks
-[hooks]
-post_bump = "cargo check --workspace" # Command run immediately after manifest edits, before git staging
-
-# Remote publishing automation
-[publish]
-push = true                       # Runs "git push origin <branch> --tags" after commit and tag
-commands = [                      # Commands executed post-tag/post-push
-  "echo 'Published v{version}'"
-]
-```
+1. **Explicit Primary**: Any manifest entry declaring `primary = true` serves as the primary version source.
+2. **Explicit Current Source**: `[version] current_source = "path/to/manifest"` explicitly overrides the version reader path.
+3. **Implicit Convention**: If neither `primary = true` nor `current_source` is declared, the **first manifest entry** in `cutver.toml` is used as the primary manifest by convention.
+4. **Validation Guard**: Multiple manifests marked with `primary = true` or conflicting `current_source` definitions result in an immediate configuration validation error.
 
 ---
 
-## Manifest Editors (`kind`)
+## Manifest Editor Capabilities
 
-For the AST and byte-span editors the diff is the version and nothing else; the Gradle editor also increments `versionCode`, and the regex editor replaces every match, so those two can touch more than one line.
+`cutver` selects format-specific editors based on the declared `kind` to preserve file formatting, comments, and structure:
 
-| Kind | Target File | Editor Mechanism | Formatting Preservation |
+| Kind | Target | Editor Engine | Preservation Scope |
 | :--- | :--- | :--- | :--- |
-| `cargo-package` | `Cargo.toml` | `toml_edit` AST | Preserves comments, ordering, formatting, and tables. |
-| `pyproject` | `pyproject.toml` | `toml_edit` AST | Native PEP 621 (`[project] version`) and Poetry (`[tool.poetry] version`). Preserves comments, whitespace, and tables. |
-| `json` | `*.json` | Custom byte-span scanner | Replaces **only** the string slice of the version value. Preserves key order, exact indentation, and newlines; input must be strict JSON, so a comment-bearing JSONC file fails to parse. |
-| `gradle` | `build.gradle`, `*.gradle.kts` | Regex byte replacement | Updates `versionName` string and increments `versionCode` integer without altering Gradle DSL structure. |
-| `regex` | Any arbitrary text file | Regular expression capture | Replaces match with `replacement`, substituting `{{version}}` with the target SemVer string. |
-| `plugin` | Any `manifest.v1` target file | Installed `manifest.v1` plugin | Delegates reads and writes to the plugin; requires a plugin-enabled build. |
-
-### Manifest Deductions and Conventions
-
-- **Primary Manifest**: The source of truth for the project's current version.
-  - If `primary = true` is declared on a manifest, that manifest is used.
-  - If no manifest has `primary = true` and `[version] current_source` is omitted, the **first declared manifest** is used by convention.
-  - Multiple `primary = true` entries or conflicting `current_source` declarations result in a configuration validation error.
+| `cargo-package` | `Cargo.toml` | `toml_edit` AST | Preserves table structure, comments, whitespace, and key order. |
+| `pyproject` | `pyproject.toml` | `toml_edit` AST | Supports PEP 621 (`[project]`) and Poetry (`[tool.poetry]`). |
+| `json` | `*.json` | Custom byte-span scanner | Replaces exact version slice; preserves whitespace and key order. |
+| `gradle` | `build.gradle(.kts)` | Regex byte replacement | Updates `versionName` string and increments `versionCode` integer. |
+| `regex` | Arbitrary text | Regex pattern match | Replaces match with configured `replacement`, substituting `{{version}}`. |
+| `plugin` | Dynamic files | `manifest.v1` plugin | Delegates read/write operations to an installed microkernel plugin. |
 
 ---
 
-## Conventional Commits & Auto Bump
+## Conventional Commit Bump Rules
 
-`cutver bump auto` analyzes Git commit history from the latest tag matching `tag_prefix` up to `HEAD`:
+When `cutver bump auto` runs, it scans commit history from the latest tag matching `tag_prefix` up to `HEAD`:
 
-- **Major Bump (`X.0.0`)**: Triggered if any commit contains `!` after the type/scope (e.g., `feat!: ...`) or a `BREAKING CHANGE:` footer.
-- **Minor Bump (`0.X.0`)**: Triggered if any commit type is `feat`.
+- **Major Bump (`X.0.0`)**: Triggered if any commit contains a breaking change marker (`!` after type/scope, e.g. `feat!: ...`) or a `BREAKING CHANGE:` footer.
+- **Minor Bump (`0.X.0`)**: Triggered if any commit has type `feat`.
 - **Patch Bump (`0.0.X`)**: Default fallback for `fix`, `perf`, `refactor`, `chore`, `docs`, `test`, or non-conventional commits.
 
-### Conventional Changelog Formatting
+### Commit Filtering
 
-When `mode = "conventional"` is configured in `[changelog]`, release notes in `CHANGELOG.md` are automatically categorized into Keep-a-Changelog sections:
+By default, self-referential release commits are excluded so they do not pollute changelog categories:
 
-```markdown
-## [v1.3.0] - 2026-09-20
+- **`ignore_release_commits = true`** (default): Excludes commits like `chore(release): v1.2.0`, commits with scope `release`, and prefix descriptions matching release patterns.
+- **`ignore_scopes = ["internal", "wip"]`** (default: `[]`): Excludes commits matching specified scopes case-insensitively.
 
-### ⚠️ Breaking Changes
-- **core**: change initialization signature
-
-### Features
-- **cli**: add auto bump command deduction (#23)
-
-### Bug Fixes
-- **git**: unstage index on rollback failure (#11)
-
-### Performance Improvements
-- **scan**: optimize byte-span JSON reader
-
-### Refactoring
-- deduplicate test setup helpers (#16)
-```
-
-### Filtering Release and Scoped Commits
-
-By default, self-referential release commits (such as `chore(release): v1.2.0`, `chore: release: 1.0.0`, or commits scoped with `release`) are automatically filtered out so they do not clutter changelog categories:
-
-- `ignore_release_commits = true` (default): Excludes `chore(release): ...` commits, commits with scope `release`, and commits with release prefix descriptions.
-- `ignore_scopes = ["internal", "wip"]` (default: `[]`): Excludes any conventional commit whose scope matches one of the listed scopes (case-insensitively).
-
-Filtered commits do not appear under conventional sections (e.g. `### Maintenance`) or in the template context `commits` list.
+Filtered commits are excluded from both Keep-a-Changelog sections and the template context `commits` list.
 
 ---
 
-## Dynamic Changelog & Release Notes Templating
+## Release Notes & Template Engine
 
-`cutver` supports expressive, dynamic release notes and changelog templating. Templates can be defined inline via `[changelog] template`, loaded from an external file via `[changelog] template_file`, or supplied on the command line via `--template <PATH>`.
+Release notes can be generated using built-in Keep-a-Changelog categorisation or custom MiniJinja templates:
 
-Auto-escaping is disabled so Markdown characters (`*`, `<`, `>`, `&`, `#`) are never HTML-escaped.
+- **Template Context**: Templates receive a rich `ReleaseContext` containing `version`, `tag`, `date`, `compare_url`, pre-formatted category strings (`features`, `fixes`, `breaking`, `maintenance`), and structured `commits` lists.
+- **Header Control**: Setting `full_template = true` or beginning a template with `# ` or `## ` bypasses the default heading prefix, granting templates full output ownership.
+- **Auto-Escaping Disabled**: Markdown syntax characters (`*`, `<`, `>`, `&`) are never HTML-escaped.
 
-### Available Template Variables
-
-Every template receives a rich `ReleaseContext` containing metadata, pre-formatted conventional categories, commit objects, and contributors:
-
-| Variable | Type | Description | Example |
-| :--- | :--- | :--- | :--- |
-| `version` | `string` | Target SemVer version without prefix | `"1.3.0"` |
-| `previous_version` | `string \| null` | Previous release version if known | `"1.2.0"` |
-| `tag` | `string` | Target Git tag including configured prefix | `"v1.3.0"` |
-| `previous_tag` | `string \| null` | Previous Git tag if known | `"v1.2.0"` |
-| `date` | `string` | Release date formatted as ISO 8601 `YYYY-MM-DD` | `"2026-03-30"` |
-| `compare_url` | `string \| null` | Remote Git compare diff URL between tags | `"https://github.com/org/repo/compare/v1.2.0...v1.3.0"` |
-| `repository` | `string \| null` | Normalized remote repository URL | `"https://github.com/org/repo"` |
-| `features` | `string` | Pre-formatted bullet items for `feat` commits | `"- **api**: add v2 endpoint"` |
-| `fixes` | `string` | Pre-formatted bullet items for `fix` commits | `"- resolve crash on startup"` |
-| `breaking` | `string` | Pre-formatted bullet items for breaking changes | `"- alter config signature"` |
-| `perf` | `string` | Pre-formatted bullet items for `perf` commits | `"- optimize parser throughput"` |
-| `refactor` | `string` | Pre-formatted bullet items for `refactor` commits | `"- simplify state machine"` |
-| `docs` | `string` | Pre-formatted bullet items for `docs` commits | `"- update usage guide"` |
-| `maintenance` | `string` | Pre-formatted bullet items for `chore`/`build`/`ci`/`test` | `"- bump dependencies"` |
-| `other` | `string` | Pre-formatted bullet items for other types | `"- misc updates"` |
-| `all_changes` | `string` | Complete Keep-a-Changelog block with standard headers | `See example below` |
-| `commits` | `list` | List of enriched commit objects | `[{ "type": "feat", "scope": "api", "author": "Alice", "pr_url": "...", ... }]` |
-| `contributors` | `list<string>` | Unique Git author names who committed in this release | `["Alice", "Bob"]` |
-
-#### Enriched `commit` Fields
-
-Each object in `commits` provides rich Git and forge metadata:
-
-| Field | Type | Description |
-| :--- | :--- | :--- |
-| `commit.type` / `commit.commit_type` | `string` | Conventional commit type (e.g. `"feat"`, `"fix"`) |
-| `commit.scope` | `string \| null` | Conventional commit scope (e.g. `"cli"`) |
-| `commit.description` | `string` | Commit description summary |
-| `commit.clean_description` | `string` | Commit description stripped of redundant trailing `(#123)` PR references |
-| `commit.is_breaking` | `bool` | True if breaking change |
-| `commit.hash` | `string \| null` | Full 40-character commit SHA |
-| `commit.short_hash` | `string \| null` | Abbreviated 7-character commit SHA |
-| `commit.author` | `string \| null` | Author name or resolved GitHub handle via mailmap |
-| `commit.author_email` | `string \| null` | Author email address |
-| `commit.pr_number` | `integer \| null` | Pull request / merge request number |
-| `commit.pr_url` | `string \| null` | Direct link to PR on GitHub or GitLab |
-| `commit.issue_numbers` | `list<integer>` | Issue numbers referenced (e.g. `fixes #123`) |
-| `commit.commit_url` | `string \| null` | Direct link to commit on GitHub or GitLab |
-
-### Full Templates & Header Configuration
-
-- **`full_template`**: When set to `true` (or when the template content begins with `# ` or `## `), `cutver` treats the template as generating the complete release section including its heading, bypassing the default `## [{version}] - {date}` heading prefix.
-- **`header_template`**: Custom template string used to format the release heading (e.g. `"## Release candidate {{ tag }} (v{{ version }})"`), evaluated with `version`, `tag`, and `date`.
-
-### Template Invariants
-
-- **Arbitrary Template Files**: `template_file` accepts any user-defined filename or path (e.g. `templates/notes.j2`, `release.liquid`, `ci/format.tmpl`). Filenames and extensions are never restricted or hardcoded. If relative, paths resolve relative to `config.root_dir` (the directory containing `cutver.toml`).
-- **Backward Compatibility**: If neither `template` nor `template_file` is specified, `cutver` retains standard Keep-a-Changelog conventional rendering.
-
-### Example Template
-
-```jinja
-🚀 Release {{ tag }} ({{ date }})
-
-{% if compare_url %}
-**Full Changelog**: {{ compare_url }}
-{% endif %}
-
-{% if breaking %}
-### ⚠️ Breaking Changes
-{{ breaking }}
-{% endif %}
-
-{% if features %}
-### Features
-{{ features }}
-{% endif %}
-
-{% if fixes %}
-### Bug Fixes
-{{ fixes }}
-{% endif %}
-
-{% if contributors %}
-### Contributors
-{% for author in contributors -%}
-- @{{ author }}
-{% endfor %}
-{% endif %}
-```
+Detailed template variables and examples are documented in [Release Notes & Changelog Templates](../templates/release-notes.md).
 
 ---
 
-## Floating Major Tags (`floating_major_tag`)
+## Standard CLI Exit Codes
 
-For ecosystems like GitHub Actions, Docker images, and Go libraries, projects maintain a floating major tag (e.g. `v1`, `v2`) pointing to the latest release within that major version:
+`cutver` subcommands adhere to consistent exit code conventions:
 
-```toml
-[git]
-tag_prefix = "v"
-floating_major_tag = true # default: false
-```
+| Exit Code | Meaning | Commands |
+| :---: | :--- | :--- |
+| `0` | Successful execution | All commands |
+| `1` | Configuration error, file read failure, preflight check failure, or unparseable input | All commands |
+| `2` | Version drift or changelog drift detected | `cutver doctor` |
 
-When `floating_major_tag = true`:
-1. **Tag Filtering in `git::latest_tag`**: Floating tags matching `^[vV]?[0-9]+$` are ignored when resolving the previous release tag, so commit distance and conventional bumping resolve from a version tag rather than from the floating major tag. Other tags stay eligible: a two-part or non-SemVer tag can be selected when it is the latest non-floating one.
-2. **Drift Immunity in `cutver doctor`**: `cutver doctor --check-changelog` automatically ignores floating major tags so they don't produce false changelog drift warnings when git tags are compared against `CHANGELOG.md`.
-3. **Automated Lifecycle**: During `cutver bump`, `cutver` creates or force-updates the local floating tag `vX` pointing to the release commit. If `publish.push = true`, the floating tag is pushed with a force refspec (`+refs/tags/vX:refs/tags/vX`) alongside the release tag.
-
----
-
-## Preflight Process Execution & Timeouts
-
-1. Preflight commands execute in strict declaration order before any file is touched on disk.
-2. If any preflight command returns a non-zero exit status, execution terminates immediately (fail-fast).
-3. **Timeout Handling**:
-   - **Unix (Linux & macOS)**: Commands run inside a distinct process group (`setpgid`). If a command exceeds its timeout, `SIGKILL` is sent to `-pgid`, terminating the command and any spawned child processes to prevent orphaned background tasks.
-   - **Windows**: Commands are executed under `taskkill /F /T /PID <pid>` to terminate the entire process tree.
+- **Exit Code 0**: Operation completed successfully without warnings or unhandled conditions.
+- **Exit Code 1**: Recoverable operational failure (syntax error in `cutver.toml`, missing manifest path, preflight step failure, or uncommitted Git working tree).
+- **Exit Code 2**: Specialized diagnostic failure emitted exclusively by `cutver doctor` when manifest versions differ or git tags diverge from `CHANGELOG.md`.
 
 ---
 
-## Lifecycle Hooks (`post_bump`) & Lockfile Staging
+## Atomic Safety & Process Guarantees
 
-The `[hooks] post_bump` command runs after manifests and changelog have been updated on disk, but **before** `git stage` and `git commit`.
+File modifications and process execution follow fail-fast atomic guarantees:
 
-### Automatic Lockfile Detection
+- Manifests are modified only after all preflight steps succeed.
+- Updates use same-directory temporary files and atomic filesystem replacement (`rename`).
+- Timeouts enforce complete process tree termination (`SIGKILL` to `-pgid` on Unix, `taskkill` on Windows).
+- Failure before commit triggers best-effort RAII rollback and Git index unstaging.
 
-To prevent accidental staging of unrelated files, `cutver` strictly filters files modified by `post_bump`. Only known lockfile paths are staged:
-
-- `Cargo.lock`
-- `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, `bun.lock`, `bun.lockb`
-- `gradle.lockfile`
-- `poetry.lock`, `Pipfile.lock`, `uv.lock`, `pdm.lock`
-- `composer.lock`
-
-Untracked files and arbitrary unstaged source modifications are ignored and left untouched in your working directory.
-
----
-
-## CLI Command Reference
-
-### `cutver init`
-
-Scans project files, detects package manifests, determines the primary source of truth, scaffolds `.github/templates/cutver/RELEASE.md` by default, and scaffolds or updates `cutver.toml` along with a starter `CHANGELOG.md`.
-
-```bash
-cutver init [OPTIONS]
-```
-
-#### Options
-- `-u, --update`: Updates an existing `cutver.toml` by discovering and appending newly added manifests while preserving all existing custom configuration (preflights, git settings, publish hooks, etc.).
-- `-f, --force`: Overwrites `cutver.toml` (and default template) if already present.
-- `-p, --path <DIR>`: Explicit directory to inspect and initialize (defaults to current working directory).
-- `--no-template`, `-nt`: Skips scaffolding `.github/templates/cutver/RELEASE.md` and omits `template_file` from `cutver.toml`.
-
-#### Exit Codes
-- `0`: Successfully initialized or updated `cutver.toml`.
-- `1`: Configuration file already exists (without `--update` or `--force`), or an I/O error occurred.
-
----
-
-### `cutver bump [LEVEL]`
-
-Executes the release pipeline.
-
-```bash
-cutver bump [patch|minor|major|auto] [OPTIONS]
-```
-
-#### Arguments
-- `[LEVEL]`: The SemVer bump level to apply (`patch`, `minor`, `major`, or `auto`). Defaults to `auto`.
-
-#### Options
-- `--first-release`, `--fr`, `-fr`: Performs an initial/first release without incrementing the manifest version. Collects initial commits into changelog, commits (even if manifests didn't change), and creates the initial release tag.
-- `--dry-run`: Runs the full pipeline in simulation mode. Validates config, tests preflight, calculates version bumps, and displays the execution summary without writing any files, creating commits, or pushing tags.
-- `--skip-preflight <STEP>`: Bypasses one or more named preflight checks (can be specified multiple times, e.g., `--skip-preflight tests --skip-preflight lint`).
-- `-c, --config <PATH>`: Explicit path to `cutver.toml`.
-
----
-
-### `cutver doctor`
-
-Validates configuration syntax, verifies that all declared manifest files exist and are readable, and checks for **version drift** across manifests.
-
-```bash
-cutver doctor [OPTIONS]
-```
-
-#### Options
-- `--check-changelog`: Also validates that CHANGELOG.md is consistent with Git release tags.
-- `-c, --config <PATH>`: Explicit path to `cutver.toml`.
-
-#### Exit Codes
-- `0`: Success. Configuration is valid and all manifests are in sync.
-- `1`: Configuration error, file read failure, or unparseable manifest.
-- `2`: Version drift detected across declared manifests or changelog drift detected with Git tags.
-
----
-
-### `cutver changelog latest`
-
-Extracts the latest release notes from the configured changelog file directly to `stdout`. Automatically skips `[Unreleased]` sections and terminates at the next release boundary.
-
-```bash
-cutver changelog latest [OPTIONS]
-```
-
-#### Options
-- `-H, --include-header`: Includes the release title header (e.g. `## [0.3.1] - 2026-09-20`) in the output (default: emits only the markdown body, ideal for `--notes`).
-- `-p, --path <PATH>`: Explicit path to the changelog file (bypasses configuration discovery).
-- `-c, --config <PATH>`: Explicit path to `cutver.toml`.
-- `--template <PATH>`: Optional path to an arbitrary template file to format the output.
-
-#### Exit Codes
-- `0`: Success. Emitted release notes to `stdout`.
-- `1`: File read error, missing changelog, or no release section found.
-
----
-
-### `cutver changelog show <VERSION>`
-
-Extracts release notes for any historical or specific version from the configured changelog file directly to `stdout`. Leading `v` is flexible: querying `0.2.0` matches `[v0.2.0]` and querying `v0.2.0` matches `[0.2.0]`. Automatically terminates extraction at the next release boundary.
-
-```bash
-cutver changelog show <VERSION> [OPTIONS]
-```
-
-#### Arguments
-- `<VERSION>`: The historical or target version to extract (e.g. `0.2.0` or `v0.2.0`).
-
-#### Options
-- `-H, --include-header`: Includes the release title header (e.g. `## [0.2.0] - 2026-09-19`) in the output (default: emits only the markdown body, ideal for `--notes`).
-- `-p, --path <PATH>`: Explicit path to the changelog file (bypasses configuration discovery).
-- `-c, --config <PATH>`: Explicit path to `cutver.toml`.
-- `--template <PATH>`: Optional path to an arbitrary template file to format the output.
-
-#### Exit Codes
-- `0`: Success. Emitted release notes to `stdout`.
-- `1`: File read error, missing changelog, or version not found in changelog.
-
----
-
-## Two-Phase Atomic Architecture & Safety
-
-1. **Guard Phase**: Asserts `git` tree is clean and matches `require_branch`. Validates that the target release tag does not already exist locally or remotely.
-2. **Preflight Phase**: Executes verification steps; aborts cleanly on error or timeout.
-3. **Phase 1 (Compute)**: In-memory evaluation. All new manifest contents and changelog entries are calculated in memory. No disk mutation occurs.
-4. **Phase 2 (Apply)**: Atomic write. Files are written to unique temporary files (`.{name}.cutver-tmp-{pid}-{seq}`), flushed with `fsync` (`sync_all()`), and renamed over the target files.
-5. **Rollback Guarantee**: If a disk write, hook execution, or git command fails **before the release
-   commit**, best-effort rollback restores the workspace:
-   - Previously modified manifests are restored to their original in-memory snapshots.
-   - Any staged Git index changes made by `cutver` are unstaged (`git reset HEAD`).
-   - Temporary files are unlinked via RAII guard cleanup.
-
-   The guarantee ends at `transaction.commit()`: the release commit, the tag and the publish come after
-   it, and a failure there is reported rather than rolled back. The restore itself is best-effort — a
-   restore failure cannot be propagated out of the drop guard.
+Full implementation details and limitations are specified in [Pipeline Execution & Atomic Guarantees](pipeline.md).

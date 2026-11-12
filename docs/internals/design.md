@@ -68,24 +68,7 @@ crates.io and GitHub on the day of creation.
 
 ## Module Layout
 
-```text
-src/
-├── main.rs          # thin entry: parse args, run, exit with the returned code
-├── lib.rs           # module roots; the library surface
-├── atomic.rs        # same-directory atomic file replace
-├── bump/            # pipeline orchestration, types
-│   └── exec/{pipeline,transaction,manifest,changelog,command,doctor}.rs
-├── cli/             # clap derive args (args/), runners (runner/), styling, tree/open/link
-├── config/          # cutver.toml discovery, path, types, validation, preflight steps
-├── conventional/    # Conventional Commits parser and bump deduction
-├── changelog/       # context (assemble/parse), extract (parser/io), render (body/template), update
-├── git/             # clean-tree/branch checks, commit, log, tags, remote, push
-├── init/            # discovery + scaffold (config_gen/runner/templates)
-├── manifest/        # ManifestEditor trait + json, json_scan, cargo_toml, pyproject, gradle, regex, plugin
-├── plugin/          # cache, dto, manager, driver/{wasm,process}, registry, install, manage, error
-├── preflight.rs     # fail-fast command runner with timeouts
-└── semver_bump.rs   # patch/minor/major over the `semver` crate
-```
+[Implemented] Crate responsibilities divide cleanly across isolated functional domains: `bump` orchestrates the two-phase pipeline, `manifest` houses AST and byte editors, `changelog` handles rendering and extraction, `plugin` encapsulates the WASM microkernel, `git` enforces safety guards, and `config` discovers declarative settings. The full directory layout is specified in [Pipeline Execution & Atomic Guarantees](pipeline.md#source-module-layout).
 
 ## Plugin Engine
 
@@ -122,37 +105,11 @@ and the user-facing surface in
 
 ## CLI Surface
 
-```text
-cutver [-c <PATH>] bump <patch|minor|major|auto> [--first-release] [--dry-run] [--skip-preflight <step>...]
-cutver [-c <PATH>] doctor [--check-changelog]
-cutver [-c <PATH>] changelog <latest|show|open> [...]
-cutver [-c <PATH>] open [<target>] [--print-url] [--browser <cmd>]
-cutver [-c <PATH>] init [--update] [--force] [--path <dir>] [--no-template]
-cutver [-c <PATH>] plugin <add|list|remove> [...]        # plugin-enabled builds only
-```
+[Implemented] The command-line surface exposes `bump`, `doctor`, `changelog`, `open`, `init`, and `plugin` (hidden without the `plugins` feature, `src/cli/args/commands.rs:73-74`). Global `-c` / `--config` overrides configuration discovery. Flag-level syntax, arguments, and exit codes live authoritatively in the [CLI Command Reference](../reference/cli.md).
 
-`-c` / `--config` is a global flag (`src/cli/args/commands.rs:8-11`);
-`changelog` has `latest`, `show`, and `open` subcommands
-(`src/cli/args/commands.rs:83-130`); `plugin` is hidden unless the feature is
-on (`src/cli/args/commands.rs:73-74`). Flag-level detail and exit codes live in
-the [CLI reference](../reference/cli.md).
+## Declarative Surface & Manifests
 
-## Configuration: `cutver.toml`
-
-[Implemented] `cutver.toml` is discovered by walking up from the current
-directory, stopping at a repository boundary, or supplied with `-c <path>`;
-paths inside it resolve relative to its own directory (`src/config/discovery.rs`).
-The keys are owned by the [configuration reference](../reference/configuration.md):
-`[version]`, `[[manifest]]`, `[preflight]`, `[changelog]`, `[git]`, `[hooks]`,
-`[publish]`, `[plugins.<name>]`. This document does not restate them, so a key
-table cannot drift.
-
-## Manifest Kinds
-
-[Implemented] `cargo-package`, `json`, `pyproject`, `gradle`, `regex`, and
-`plugin`, dispatched by `manifest::editor_for` (`src/manifest/mod.rs:49-109`).
-The per-kind guarantees, the surgical-diff limits, and the staged-lockfile
-allowlist are owned by the [manifest reference](../reference/manifests.md).
+[Implemented] Configuration walks upward to find `cutver.toml` or accepts `-c <path>` (`src/config/discovery.rs`). Manifest editing dispatches across `cargo-package`, `json`, `pyproject`, `gradle`, `regex`, and `plugin` via `manifest::editor_for` (`src/manifest/mod.rs:49-109`). Specification keys, surgical-diff limits, and lockfile allowlists are owned by the [Configuration Reference](../reference/configuration.md) and [Manifest Editors](../reference/manifests.md).
 
 ## Evolution Roadmap
 

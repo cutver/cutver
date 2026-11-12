@@ -511,3 +511,48 @@ fn test_format_contributor_bullet() {
     assert_eq!(format_contributor_bullet("Jane Doe"), "- Jane Doe");
     assert_eq!(format_contributor_bullet("  Alice  "), "- @Alice");
 }
+
+#[test]
+fn default_release_template_renders_markdown_only() {
+    use crate::init::scaffold::templates::DEFAULT_RELEASE_TEMPLATE;
+
+    let commits = vec![
+        ConventionalCommit::parse("feat(plugin): hand the entry to plugins").unwrap(),
+        ConventionalCommit::parse("fix(api): stop dropping scoped commits").unwrap(),
+        ConventionalCommit::parse("chore(deps): bump serde").unwrap(),
+        ConventionalCommit::parse("refactor(core): split the filter\n\nBREAKING CHANGE: shape changed").unwrap(),
+    ];
+    let ctx = build_context(
+        "0.17.0",
+        Some("0.16.0"),
+        "v0.17.0",
+        Some("v0.16.0"),
+        "2026-11-12",
+        Some("https://example.test".to_string()),
+        &commits,
+        vec!["ana".to_string()],
+        false,
+        "1.99",
+    );
+
+    let out = render_template(DEFAULT_RELEASE_TEMPLATE, &ctx).expect("the default template must render");
+    println!("---RENDER---\n{out}\n---END---");
+
+    assert!(out.contains("## v0.17.0 — 2026-11-12"));
+    assert!(out.contains("### ✨ Features"));
+    assert!(out.contains("### 🐛 Fixes"));
+    assert!(out.contains("### 🧰 Maintenance"));
+    assert!(out.contains("> [!WARNING]"));
+    assert!(
+        out.contains("[Compare v0.16.0...v0.17.0](https://example.test/compare/v0.16.0...v0.17.0)"),
+        "the compare link must carry anchor text: {out}"
+    );
+    assert!(
+        !out.contains('<'),
+        "the default template must stay markdown-only: {out}"
+    );
+    assert!(
+        !out.to_lowercase().contains("cutver"),
+        "the default template must not brand the tool: {out}"
+    );
+}

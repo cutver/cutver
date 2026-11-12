@@ -66,9 +66,9 @@ fn fresh_init_creates_files_and_config() {
     assert!(changelog.contains("## [Unreleased]"));
 
     let template = td.read(".github/templates/cutver/RELEASE.md");
-    assert!(template.contains("## [{{ tag }}] - {{ date }}"));
+    assert!(template.contains("## {{ tag }} — {{ date }}"));
     assert!(
-        template.contains("[Compare the full changelog]({{ compare_url }})"),
+        template.contains("]({{ compare_url }})") && !template.contains("**: {{ compare_url }}"),
         "the compare link must carry anchor text, not a bare URL"
     );
     assert!(

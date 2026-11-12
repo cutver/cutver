@@ -588,3 +588,50 @@ fn group_by_type_orders_sections_canonically() {
 
     assert_eq!(out.trim(), "feat,fix,docs,chore,build,");
 }
+
+#[test]
+fn group_by_section_merges_every_maintenance_type_into_one_heading() {
+    let commits = vec![
+        ConventionalCommit::parse("revert(cli): undo the rename").unwrap(),
+        ConventionalCommit::parse("test(parser): cover the empty entry").unwrap(),
+        ConventionalCommit::parse("build(cargo): pin the toolchain").unwrap(),
+        ConventionalCommit::parse("chore(deps): bump serde").unwrap(),
+        ConventionalCommit::parse("style(fmt): normalise imports").unwrap(),
+        ConventionalCommit::parse("ci(release): rehearse the canary").unwrap(),
+        ConventionalCommit::parse("feat(api): add the widget endpoint").unwrap(),
+        ConventionalCommit::parse("fix(cli): stop dropping scoped commits").unwrap(),
+    ];
+    let ctx = build_context(
+        "0.3.0",
+        None,
+        "v0.3.0",
+        None,
+        "2026-11-12",
+        None,
+        &commits,
+        vec![],
+        false,
+        "1.99",
+    );
+
+    let out = render_template(
+        "{% for section, cs in commits | group_by_section %}{{ section }}({{ cs | length }});{% endfor %}",
+        &ctx,
+    )
+    .unwrap();
+
+    assert_eq!(
+        out.matches("Maintenance(").count(),
+        1,
+        "six maintenance types must produce one heading: {out}"
+    );
+    assert!(out.contains("Maintenance(6)"), "{out}");
+    assert!(
+        out.starts_with("✨ Features(1)"),
+        "canonical order starts with features: {out}"
+    );
+    assert!(
+        out.find("Features").unwrap() < out.find("Fixes").unwrap(),
+        "features precede fixes: {out}"
+    );
+}

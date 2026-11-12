@@ -3,6 +3,19 @@
 All notable changes to this project are documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com).
 
+## v0.17.0 — 2026-11-12
+### ✨ Features
+- **render**: add group_by_section so a heading is emitted once in [#242](https://github.com/cutver/cutver/pull/242) ([ac421fd](https://github.com/cutver/cutver/commit/ac421fdea7fad1d804ea5e50b6534d0221fc2848)) by @Row0902
+- **plugin**: hand the rendered release entry to on_post_release plugins in [#235](https://github.com/cutver/cutver/pull/235) ([6cb2b3e](https://github.com/cutver/cutver/commit/6cb2b3e7f5296a44b867e4545666197a2faa2edd)) by @Row0902
+
+### 🐛 Fixes
+- **changelog**: keep release-scoped commits that carry content in [#237](https://github.com/cutver/cutver/pull/237) ([935fb51](https://github.com/cutver/cutver/commit/935fb516baa74b1a00c6cc53aa48662832f6ea93)) by @Row0902
+- **changelog**: restore the v0.16.0 entry the release filter erased in [#234](https://github.com/cutver/cutver/pull/234) ([1e2f0cb](https://github.com/cutver/cutver/commit/1e2f0cb17b8da3826db785b0f163f705fd9d1bc4)) by @Row0902
+
+### 👥 Contributors
+@Row0902
+
+[Compare v0.16.0...v0.17.0](https://github.com/cutver/cutver/compare/v0.16.0...v0.17.0)
 ## [v0.16.0] - 2026-11-12
 ### 🚀 Features & Enhancements
 - **plugin**: let the github-publish plugin own the release and publish its draft in [#230](https://github.com/cutver/cutver/pull/230) ([10c851e](https://github.com/cutver/cutver/commit/10c851e))

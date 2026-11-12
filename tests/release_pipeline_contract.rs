@@ -16,7 +16,10 @@ const PLUGIN: &str = "github-publish";
 
 fn repo_text(relative: &str) -> String {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(relative);
-    std::fs::read_to_string(&path).unwrap_or_else(|err| panic!("failed to read {}: {err}", path.display()))
+    let raw = std::fs::read_to_string(&path).unwrap_or_else(|err| panic!("failed to read {}: {err}", path.display()));
+    // Git checks these files out with CRLF on Windows. Line endings are a checkout setting, not
+    // content, so every assertion in this file compares normalised text.
+    raw.replace("\r\n", "\n")
 }
 
 fn declared_plugin() -> PluginConfig {

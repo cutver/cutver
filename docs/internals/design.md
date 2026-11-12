@@ -45,7 +45,7 @@ crates.io and GitHub on the day of creation.
    configuration lives in `cutver.toml` (`src/config/types.rs`) and the CLI
    stays terse. *Deterministic*: identical Git states yield identical SemVer
    bumps (`src/conventional/deduce.rs`) and manifest diffs
-   (`src/manifest/mod.rs`); the changelog entry is stamped with the date it was
+   (`src/manifest.rs`); the changelog entry is stamped with the date it was
    cut, so that part also depends on the day. *Organic*: the tool scales from a
    single-file crate to a polyglot repository through the same manifest
    adapters.
@@ -109,7 +109,7 @@ and the user-facing surface in
 
 ## Declarative Surface & Manifests
 
-[Implemented] Configuration walks upward to find `cutver.toml` or accepts `-c <path>` (`src/config/discovery.rs`). Manifest editing dispatches across `cargo-package`, `json`, `pyproject`, `gradle`, `regex`, and `plugin` via `manifest::editor_for` (`src/manifest/mod.rs:49-109`). Specification keys, surgical-diff limits, and lockfile allowlists are owned by the [Configuration Reference](../reference/configuration.md) and [Manifest Editors](../reference/manifests.md).
+[Implemented] Configuration walks upward to find `cutver.toml` or accepts `-c <path>` (`src/config/discovery.rs`). Manifest editing dispatches across `cargo-package`, `json`, `pyproject`, `gradle`, `regex`, and `plugin` via `manifest::editor_for` (`src/manifest.rs:49-109`). Specification keys, surgical-diff limits, and lockfile allowlists are owned by the [Configuration Reference](../reference/configuration.md) and [Manifest Editors](../reference/manifests.md).
 
 ## Evolution Roadmap
 

@@ -24,7 +24,7 @@ contract, without turning `cutver` into an interpreter host that runs untrusted
 code with the user's full authority.
 
 - **Per-ecosystem drift.** Manifest editing is a `match` over kinds
-  (`src/manifest/mod.rs:49`); every new format is another core arm.
+  (`src/manifest.rs:49`); every new format is another core arm.
 - **Ordering.** `on_pre_bump` runs at `src/bump/exec/pipeline.rs:66`, before the
   `MutationTransaction` is created at `:81`; `on_post_bump` at `:85` and
   `on_post_release` at `:100` must observe, not mutate, the release.
@@ -105,7 +105,7 @@ Implementations, all present in this tree:
   (`src/plugin/registry/entry.rs:70,90-97`).
 - **Manifest dispatch.** `PluginManifestEditor` routes `read`/`write` through
   the manager (`src/manifest/plugin.rs:25-56`), reachable from the kind dispatch
-  at `src/manifest/mod.rs:49`.
+  at `src/manifest.rs:49`.
 - **Lifecycle dispatch order.** `on_pre_bump` may reject and abort before any
   write (`src/bump/exec/pipeline.rs:66`); `on_post_bump` fires after mutation,
   before staging (`:85`); `on_post_release` fires after the tag (`:100`).

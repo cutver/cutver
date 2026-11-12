@@ -18,11 +18,31 @@ jobs:
           LABELS: ${{ toJSON(github.event.pull_request.labels) }}
         run: |
           set -eu
-          count=$(printf '%s' "$LABELS" | jq '[.[] | select(.name | startswith("type:"))] | length')
+          valid="type:feat, type:fix, type:docs, type:refactor, type:perf, type:test, type:build, type:ci, type:chore, type:style, type:revert"
+          valid_labels="type:feat type:fix type:docs type:refactor type:perf type:test type:build type:ci type:chore type:style type:revert"
+          type_labels=$(printf '%s' "$LABELS" | jq -r '.[].name | select(startswith("type:"))')
+
+          count=0
+          if [ -n "$type_labels" ]; then
+            while IFS= read -r label; do
+              [ -z "$label" ] && continue
+              count=$((count + 1))
+              case " $valid_labels " in
+                *" $label "*) ;;
+                *)
+                  printf "Unknown type label '%s'.\n" "$label" >&2
+                  printf 'Available: %s.\n' "$valid" >&2
+                  exit 1
+                  ;;
+              esac
+            done <<< "$type_labels"
+          fi
+
           if [ "$count" -eq 1 ]; then
-            printf 'One type label present.\n'
+            printf 'One valid type label present: %s\n' "$type_labels"
             exit 0
           fi
+
           printf 'This pull request must carry exactly one type:* label; found %s.\n' "$count" >&2
-          printf 'Available: type:feat, type:fix, type:docs, type:refactor, type:perf, type:test, type:build, type:ci, type:chore, type:style, type:revert.\n' >&2
+          printf 'Available: %s.\n' "$valid" >&2
           exit 1

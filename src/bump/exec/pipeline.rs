@@ -80,11 +80,9 @@ pub fn run_with_first_release(
     };
     // The release scope is assembled before manifests are computed, so a template sink renders
     // with the same context the changelog will use. A dry run renders nothing.
-    let scope = if dry_run {
-        None
-    } else {
-        Some(assemble_scope(&cl_params)?)
-    };
+    // Assembled on a dry run too: a template sink renders its preview from the same context, and
+    // skipping assembly made `bump --dry-run` fail for any configuration that declares a sink.
+    let scope = Some(assemble_scope(&cl_params)?);
     let computed = compute(config, &next, scope.as_ref().map(|s| &s.context), Some(&plugin_manager))?;
     let cl_params = ChangelogPlanParams { scope, ..cl_params };
     let changelog_plan = prepare_changelog(cl_params)?;

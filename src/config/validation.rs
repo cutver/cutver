@@ -83,14 +83,37 @@ pub(crate) fn validate(config: &Config) -> Result<(), ConfigError> {
         if let ManifestKind::Template {
             template: Some(template),
         } = &m.kind
-            && ManifestPath::parse(template.clone()).is_ok_and(|p| p == m.path)
         {
-            return Err(ConfigError::TemplateRendersOverItself {
+            let parsed = validate_template_path(template).ok_or_else(|| ConfigError::TemplatePathInvalid {
                 path: m.path.to_string(),
-            });
+                template: template.clone(),
+            })?;
+            if parsed == m.path {
+                return Err(ConfigError::TemplateRendersOverItself {
+                    path: m.path.to_string(),
+                });
+            }
         }
     }
     Ok(())
+}
+
+/// Accepts only a repository-relative template path.
+///
+/// `ManifestPath::parse` normalises separators but accepts absolute paths and `..` components, so a
+/// `template` value could point outside the repository and have its contents rendered into the
+/// target. The template is read, never written, so the confinement has to be explicit here.
+fn validate_template_path(template: &str) -> Option<ManifestPath> {
+    if template.trim().is_empty() {
+        return None;
+    }
+    if template.starts_with('/') || template.starts_with('\\') || template.contains(":") {
+        return None;
+    }
+    if template.split(['/', '\\']).any(|component| component == "..") {
+        return None;
+    }
+    ManifestPath::parse(template).ok()
 }
 
 /// Accepted top-level keys of `cutver.toml`.
@@ -230,18 +253,46 @@ fn check_manifests(item: &Item) -> Result<(), ConfigError> {
         Item::ArrayOfTables(manifests) => {
             for manifest in manifests.iter() {
                 check_table_unknown(manifest, MANIFEST_KEYS, "manifest")?;
+                reject_template_key_on_other_kind(
+                    manifest.get("kind").and_then(Item::as_str),
+                    manifest.get("template").and_then(Item::as_str),
+                    manifest.get("path").and_then(Item::as_str),
+                )?;
             }
         }
         Item::Value(Value::Array(manifests)) => {
             for value in manifests.iter() {
                 if let Value::InlineTable(t) = value {
                     check_inline_unknown(t, MANIFEST_KEYS, "manifest")?;
+                    reject_template_key_on_other_kind(
+                        t.get("kind").and_then(Value::as_str),
+                        t.get("template").and_then(Value::as_str),
+                        t.get("path").and_then(Value::as_str),
+                    )?;
                 }
             }
         }
         _ => {}
     }
     Ok(())
+}
+
+/// Rejects a `template` key on a manifest whose `kind` is not `template`.
+///
+/// `MANIFEST_KEYS` is the union of every kind's keys, so without this check the key would parse
+/// and then be silently ignored: an explicit configuration option that does nothing is worse than
+/// one that fails closed.
+fn reject_template_key_on_other_kind(
+    kind: Option<&str>,
+    template: Option<&str>,
+    path: Option<&str>,
+) -> Result<(), ConfigError> {
+    if template.is_none() || kind == Some("template") {
+        return Ok(());
+    }
+    Err(ConfigError::TemplateKeyOnOtherKind {
+        path: path.unwrap_or("(unnamed)").to_string(),
+    })
 }
 
 fn check_plugins(item: &Item) -> Result<(), ConfigError> {
@@ -417,6 +468,48 @@ mod tests {
         assert!(matches!(
             load_str(all_sinks),
             Err(ConfigError::TemplateAsCurrentSource { .. })
+        ));
+    }
+
+    /// R1-001: the template is read, never written, so its path must stay inside the repository.
+    #[test]
+    fn template_kind_rejects_a_path_that_escapes_the_repository() {
+        let source = "[version]
+current_source = \"src.toml\"
+
+[[manifest]]
+path = \"src.toml\"
+kind = \"cargo-package\"
+
+";
+        for escape in ["/etc/passwd", "../secret", "C:/secret", "a/../../b"] {
+            let toml = format!(
+                "{source}[[manifest]]
+path = \"out.h\"
+kind = \"template\"
+template = \"{escape}\""
+            );
+            assert!(
+                matches!(load_str(&toml), Err(ConfigError::TemplatePathInvalid { .. })),
+                "template path {escape:?} was accepted"
+            );
+        }
+    }
+
+    /// R3-001: the key only means something for the template kind, so another kind must not
+    /// accept it and silently ignore it.
+    #[test]
+    fn template_key_on_another_kind_is_rejected() {
+        let toml = "[version]
+current_source = \"a\"
+
+[[manifest]]
+path = \"a\"
+kind = \"cargo-package\"
+template = \"a.jinja\"";
+        assert!(matches!(
+            load_str(toml),
+            Err(ConfigError::TemplateKeyOnOtherKind { .. })
         ));
     }
 

@@ -48,6 +48,14 @@ pub enum ConfigError {
         "manifest '{path}' uses kind = \"template\" as the version source: a template sink generates from the version, it cannot supply it"
     )]
     TemplateAsCurrentSource { path: String },
+    #[error(
+        "manifest '{path}' sets template = \"{template}\": a template path must be repository-relative, without a drive, a leading separator or '..'"
+    )]
+    TemplatePathInvalid { path: String, template: String },
+    #[error(
+        "the 'template' key only applies to kind = \"template\"; manifest '{path}' declares it on another kind, where it would be ignored"
+    )]
+    TemplateKeyOnOtherKind { path: String },
     #[error("unknown configuration key '{key}' in [{table}] table in cutver.toml")]
     UnknownKey { table: String, key: String },
     #[error("unknown table [{table}] in cutver.toml")]

@@ -198,3 +198,27 @@ fn doctor_never_reads_a_version_out_of_a_sink() {
         "a sink that was never generated is drift: {drifts:?}"
     );
 }
+
+/// R3-002 / R4-001: a sink must not break the preview path. `bump --dry-run` renders the sink from
+/// the same release scope it uses for a real run, and writes nothing.
+#[test]
+fn dry_run_previews_a_sink_without_writing_it() {
+    let guard = FixtureGuard::new("sink-dry-run");
+    let fixture = guard.fixture();
+    write_fixture(fixture);
+    init_git_repo(fixture);
+    initial_commit(fixture);
+    commit(fixture, "feat: dry run a sink");
+
+    let cfg = config::load("cutver.toml").unwrap();
+    bump_run(&cfg, Bump::Minor, true, &[]).expect("a dry run must preview a template sink, not fail");
+
+    assert!(
+        !std::path::Path::new(&fixture.dir).join("src/version.ts").exists(),
+        "a dry run must not create the generated file"
+    );
+    assert!(
+        fixture.read("Cargo.toml").contains("version = \"1.0.0\""),
+        "a dry run must not bump the version source"
+    );
+}

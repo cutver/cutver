@@ -335,6 +335,12 @@ fn test_dispatch_roundtrip_with_echo_driver() {
         tag_name: "v1.1.0".to_string(),
         commit_sha: "abcdef".to_string(),
         dry_run: false,
+        notes: Some(
+            "## [v1.1.0] - 2026-11-12
+### Features
+- a thing"
+                .to_string(),
+        ),
     };
     assert!(manager.dispatch_post_release(&name, &post_rel_payload).is_ok());
 }

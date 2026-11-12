@@ -978,3 +978,73 @@ events = ["on_pre_bump", "on_post_bump", "on_post_release"]
     assert_eq!(commit_count(fixture), 2);
     assert!(tag_exists(fixture, "v1.3.0"));
 }
+
+/// The `on_post_release` payload carries the entry the host rendered, so a publishing plugin never
+/// has to re-derive notes from the changelog. This is the half of that contract the host owns.
+#[test]
+fn post_release_payload_carries_the_rendered_entry() {
+    let guard = FixtureGuard::new("lifecycle-notes");
+    let fixture = guard.fixture();
+
+    let script = fixture.dir.join("capture.sh");
+    fixture.write(
+        "capture.sh",
+        "#!/bin/sh\nINPUT=$(cat)\ncase \"$INPUT\" in\n  *'\"on_post_release\"'*) printf '%s' \"$INPUT\" > post-release.json ;;\n  *'\"on_pre_bump\"'*) echo '{\"allow\": true}' ;;\nesac\n",
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let perms = std::fs::Permissions::from_mode(0o755);
+        std::fs::set_permissions(&script, perms).unwrap();
+    }
+    let script_path = script.to_string_lossy().replace('\\', "/");
+
+    let toml = format!(
+        r#"[version]
+current_source = "package.json"
+
+[[manifest]]
+path = "package.json"
+kind = "json"
+field = "version"
+
+[changelog]
+path = "CHANGELOG.md"
+
+[git]
+require_clean_tree = true
+
+[plugins.capture]
+runtime = "process"
+command = "{script_path}"
+capabilities = ["lifecycle.v1"]
+events = ["on_pre_bump", "on_post_release"]
+"#
+    );
+    fixture.write("package.json", PACKAGE_JSON);
+    fixture.write("CHANGELOG.md", CHANGELOG_MD);
+    fixture.write("cutver.toml", &toml);
+    init_git_repo(fixture);
+    initial_commit(fixture);
+    run_git_ok(&fixture.dir, &["tag", "v1.2.0"]);
+    fixture.write("src.txt", "change");
+    run_git_ok(&fixture.dir, &["add", "."]);
+    run_git_ok(&fixture.dir, &["commit", "-m", "feat: a new capability"]);
+
+    let cfg = config::load("cutver.toml").unwrap();
+    bump_run(&cfg, Bump::Minor, false, &[]).expect("bump should succeed");
+
+    let payload = fixture.read("post-release.json");
+    assert!(
+        payload.contains("\"notes\""),
+        "the payload must carry the rendered entry: {payload}"
+    );
+    assert!(
+        payload.contains("## [v1.3.0]"),
+        "the entry must arrive heading-included, as the host rendered it: {payload}"
+    );
+    assert!(
+        payload.contains("a new capability"),
+        "the entry must contain the release content: {payload}"
+    );
+}

@@ -3,6 +3,21 @@
 All notable changes to this project are documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com).
 
+## [v0.15.0] - 2026-11-12
+### 🚀 Features & Enhancements
+- **init**: teach the scaffold the template sink and first-time contributors in [#228](https://github.com/cutver/cutver/pull/228) ([7785834](https://github.com/cutver/cutver/commit/7785834c9d417b01f764b62eb97aa6842db4ade8)) by @Row0902
+
+### 📚 Documentation
+- **cli**: list every plugin subcommand the binary ships in [#227](https://github.com/cutver/cutver/pull/227) ([dcb4794](https://github.com/cutver/cutver/commit/dcb47944d89d792f2d79bbc4fe14c418c3e7699a)) by @Row0902
+- **config**: state how cutver-pdk is versioned and published in [#226](https://github.com/cutver/cutver/pull/226) ([1d1e5b2](https://github.com/cutver/cutver/commit/1d1e5b2db6c9477ff0471e539aec675fa48cbe9f)) by @Row0902
+- **guides**: add a public plugin authoring guide in [#225](https://github.com/cutver/cutver/pull/225) ([e67b636](https://github.com/cutver/cutver/commit/e67b6362d13f2485196987394bf08a0f30a32c1e)) by @Row0902
+
+### 👥 Contributors
+- @Row0902
+
+
+---
+**Full Changelog**: https://github.com/cutver/cutver/compare/v0.14.0...v0.15.0 • *CI Build #21*
 ## [v0.14.0] - 2026-11-12
 ### 🚀 Features & Enhancements
 - **manifest**: kind = "template" for AST-safe source generation in [#224](https://github.com/cutver/cutver/pull/224) ([517f556](https://github.com/cutver/cutver/commit/517f5567faf6b07d3842f310657e5b453241da91)) by @Row0902

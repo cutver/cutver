@@ -24,7 +24,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com).
 - **release**: pin the github-publish plugin to v0.2.1 in [#236](https://github.com/cutver/cutver/pull/236) ([67f0913](https://github.com/cutver/cutver/commit/67f0913aec9a3edd66d908ee7b252d7e8942a153)) by @Row0902
 
 ### 👥 Contributors
-@cutver-release[bot] · @Row0902
+@Row0902
 
 [Compare v0.16.0...v0.17.0](https://github.com/cutver/cutver/compare/v0.16.0...v0.17.0)
 ## [v0.16.0] - 2026-11-12

@@ -52,8 +52,8 @@ default_timeout = 300
 # replaces softprops/action-gh-release. `on_post_release` creates the release as a draft, so a
 # failed build cannot leave a public release without assets.
 #
-# A lean build cannot load this: `bump` fails closed with PluginManagerRequired. Run the
-# plugin-enabled variant (the `cutver-plugins-*` archive) when releasing.
+# A lean build cannot load this: `bump` fails closed with `PluginError::WasmNotSupported`. Run
+# the plugin-enabled variant (the `cutver-plugins-*` archive) when releasing.
 [plugins.github-publish]
 runtime = "wasm"
 source = "github-publish-0.1.2.wasm"
@@ -64,7 +64,13 @@ events = ["on_pre_bump", "on_post_release"]
 [plugins.github-publish.permissions]
 network = ["api.github.com", "uploads.github.com"]
 env = ["GITHUB_TOKEN", "GITHUB_REPOSITORY"]
+# Grants the whole workspace tree, wider than the two files the plugin reads. Kept to match the
+# configuration cutver/sandbox validates rather than guessing at a narrower set.
 filesystem = ["."]
 
 [plugins.github-publish.config]
 repository = "cutver/cutver"
+# Required, and its default is false. Without it the plugin publishes a public, asset-less
+# release during the version job, before the binaries are built: the exact failure the draft
+# exists to prevent. The publish job uploads the assets and publishes it afterwards.
+draft = true

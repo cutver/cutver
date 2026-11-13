@@ -3,6 +3,26 @@
 All notable changes to this project are documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com).
 
+## v0.18.0 — 2026-11-13
+
+### ✨ Features
+- **release**: bot-free contributors, section grouping and a plugin-owned title in [#247](https://github.com/cutver/cutver/pull/247) ([8533a99](https://github.com/cutver/cutver/commit/8533a9976a552571b307391806894aea4f266616)) by @Row0902
+
+### 🐛 Fixes
+- **release**: pin the plugin the published binary can actually run in [#253](https://github.com/cutver/cutver/pull/253) ([368fea4](https://github.com/cutver/cutver/commit/368fea4cf4a09e0e3b4730a7683338ce7f46ebcc)) by @Row0902
+- **plugin**: mount declared filesystem grants where the guest looks for them in [#252](https://github.com/cutver/cutver/pull/252) ([8243740](https://github.com/cutver/cutver/commit/82437407186b72b2c569239956cf5b42acc24f49)) by @Row0902
+- **ci**: stop the type-label gate from failing on opened in [#250](https://github.com/cutver/cutver/pull/250) ([ff04085](https://github.com/cutver/cutver/commit/ff040856157e3c9017eed93ea94b2c638a538f04)) by @Row0902
+- **release**: stop the promotion from replacing the body the plugin published in [#249](https://github.com/cutver/cutver/pull/249) ([83a5789](https://github.com/cutver/cutver/commit/83a5789341c2729f353ed15a380ccbb4b2153a34)) by @Row0902
+- **changelog**: drop the bot from the v0.17.0 contributor line in [#248](https://github.com/cutver/cutver/pull/248) ([80992f3](https://github.com/cutver/cutver/commit/80992f33a2204fef76173ff9a984c43b6aa16aa3)) by @Row0902
+- **changelog**: restore the entries the 0.16.0 renderer filtered from v0.17.0 in [#245](https://github.com/cutver/cutver/pull/245) ([90b9ca4](https://github.com/cutver/cutver/commit/90b9ca49be611d670983e395bbae090ca54c613d)) by @Row0902
+
+### 🛠️ Maintenance
+- **release**: pin github-publish 0.2.1 now that the releasing binary sends notes in [#246](https://github.com/cutver/cutver/pull/246) ([f2f7d97](https://github.com/cutver/cutver/commit/f2f7d9733ef7bad54875137d842d56951d2a921f)) by @Row0902
+
+### 👥 Contributors
+@Row0902
+
+[Compare v0.17.0...v0.18.0](https://github.com/cutver/cutver/compare/v0.17.0...v0.18.0)
 ## v0.17.0 — 2026-11-12
 
 ### ✨ Features

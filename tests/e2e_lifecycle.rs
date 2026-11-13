@@ -447,7 +447,7 @@ commands = ["echo published {version} > published.txt"]
     assert!(dry_summary.publish_push);
     assert_eq!(
         dry_summary.publish_push_command.as_deref(),
-        Some("git push origin main --tags")
+        Some("git push origin refs/heads/main && git push origin refs/tags/v1.3.0")
     );
     assert_eq!(
         dry_summary.publish_commands,
@@ -522,7 +522,10 @@ push = true
     assert!(dry_summary.publish_push);
     assert_eq!(
         dry_summary.publish_push_command.as_deref(),
-        Some("git push origin +refs/tags/v1:refs/tags/v1 && git push origin main --tags")
+        Some(
+            "git push origin refs/heads/main && git push origin refs/tags/v1.3.0 && \
+             git push origin +refs/tags/v1:refs/tags/v1"
+        )
     );
 
     // Real run: both v1.3.0 and v1 pushed to remote
@@ -580,7 +583,7 @@ push = true
     let dry_summary = bump_run(&cfg, Bump::Minor, true, &[]).unwrap();
     assert_eq!(
         dry_summary.publish_push_command.as_deref(),
-        Some("git push origin release-branch --tags")
+        Some("git push origin refs/heads/release-branch && git push origin refs/tags/v1.3.0")
     );
 
     // Real run pushes release-branch and tag to remote

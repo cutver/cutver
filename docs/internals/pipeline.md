@@ -69,13 +69,43 @@ Arbitrary untracked files and unstaged edits outside declared manifests and the 
 
 ---
 
+## Publish Ordering
+
+`publish.push = true` sends three pushes in dependency order, one ref each:
+
+1. `git push origin refs/heads/<branch>`
+2. `git push origin refs/tags/<release tag>`
+3. `git push origin +refs/tags/<floating major tag>`, only when `[git] floating_major_tag = true`
+
+No push carries `--tags`, and the floating-major-tag refspec is the only forced ref
+(`branch_push_args`, `tag_push_args` and `tag_force_push_args` in `src/git/ops.rs`). A batched
+`push --tags` put the branch and every local tag in one receive-pack transaction, so one rejected
+tag rolled the branch update back with it: issue #263 left `main` unmoved, the release tag
+uncreated and the floating `v0` tag orphaned on a commit that never reached `main`.
+
+A rejected push returns `git::Error::PushRef`, naming the refspec and the step that stopped, so the
+remote state after an abort is predictable:
+
+| Rejected step | Remote and local state |
+| :--- | :--- |
+| Branch | nothing pushed; the floating tag did not move; no publish command ran |
+| Release tag | the branch moved; the floating tag did not move; no publish command ran |
+| Floating major tag | branch and release tag published; no publish command ran |
+
+> [!NOTE]
+> A detached HEAD cannot name a branch. The push then aborts with
+> `git::Error::PushBranchUnresolved` before anything is sent; set `[git] require_branch` to name the
+> released branch explicitly.
+
+---
+
 ## Floating Major Tags Mechanics
 
 When `floating_major_tag = true` is enabled in `[git]`:
 
 1. **Tag Filtering**: Floating tags matching `^[vV]?[0-9]+$` are ignored during `git::latest_tag` queries. Commit distance and SemVer bumping always calculate against full release version tags rather than floating major tags.
 2. **Drift Immunity**: `cutver doctor --check-changelog` filters out floating major tags to avoid false changelog drift warnings.
-3. **Atomic Tag Update**: Creates or force-updates the local floating tag `vX` pointing to the release commit. If `publish.push = true`, the floating tag is pushed with a force refspec (`+refs/tags/vX:refs/tags/vX`).
+3. **Ordered Tag Update**: Force-updates the local floating tag `vX` to the release commit after the branch and release tag pushes succeeded, then pushes it with a force refspec (`+refs/tags/vX:refs/tags/vX`) when `publish.push = true`. That refspec is the only forced ref in the pipeline.
 
 ---
 

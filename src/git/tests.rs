@@ -4,7 +4,8 @@ use std::process::Command;
 
 use super::log::{commits_since, list_authors_since, raw_commits_since, resolve_author};
 use super::ops::{
-    commit, commit_ext, commit_message, is_floating_major_tag, push, push_tag_force, stage, tag, update_floating_tag,
+    branch_push_args, commit, commit_ext, commit_message, is_floating_major_tag, push, push_tag, push_tag_force, stage,
+    tag, tag_force_push_args, tag_push_args, update_floating_tag,
 };
 use super::remote::normalize_repo_url;
 use super::status::{current_branch, is_clean, parse_branch, rev_parse, status_files};
@@ -42,6 +43,17 @@ fn tmp_repo() -> PathBuf {
     git(&dir, &["add", "x"]);
     git(&dir, &["commit", "-m", "i", "-q"]);
     dir
+}
+
+fn git_stdout(repo: &Path, args: &[&str]) -> String {
+    let out = Command::new("git").current_dir(repo).args(args).output().unwrap();
+    assert!(
+        out.status.success(),
+        "git {} failed: {}",
+        args.join(" "),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8_lossy(&out.stdout).into_owned()
 }
 
 fn git(repo: &PathBuf, args: &[&str]) {
@@ -208,55 +220,53 @@ fn current_branch_resolves_and_detects_detached_head() {
 }
 
 #[test]
-#[cfg_attr(not(unix), ignore)]
 fn push_dry_run_formatting() {
     let dir = tmp_repo();
     let branch = current_branch(&dir).unwrap();
 
+    // One push names one ref: the argv carries `refs/heads/<branch>` and never `--tags`, so a
+    // rejected tag cannot roll a branch update back with it (issue #263).
     assert_eq!(
-        push(&dir, Some("main"), true, true).unwrap(),
-        Some("git push origin main --tags".into())
+        push(&dir, Some("main"), true).unwrap(),
+        Some("git push origin refs/heads/main".into())
     );
     assert_eq!(
-        push(&dir, None, true, true).unwrap(),
-        Some(format!("git push origin {branch} --tags"))
-    );
-    assert_eq!(
-        push(&dir, Some("main"), false, true).unwrap(),
-        Some("git push origin main".into())
-    );
-    assert_eq!(
-        push(&dir, None, false, true).unwrap(),
-        Some(format!("git push origin {branch}"))
+        push(&dir, None, true).unwrap(),
+        Some(format!("git push origin refs/heads/{branch}"))
     );
 
-    // Detached HEAD falls back to HEAD
+    // A detached HEAD cannot name a branch, so the push aborts instead of inventing `HEAD`, which
+    // git rejects with 'fatal: You are not currently on a branch'.
     git(&dir, &["checkout", "--detach", "HEAD", "-q"]);
-    assert_eq!(
-        push(&dir, None, true, true).unwrap(),
-        Some("git push origin HEAD --tags".into())
+    let err = push(&dir, None, true).unwrap_err();
+    assert!(
+        matches!(err, Error::PushBranchUnresolved { .. }),
+        "unexpected error: {err}"
     );
+    // An explicit branch needs no resolution and is still reported.
     assert_eq!(
-        push(&dir, None, false, true).unwrap(),
-        Some("git push origin HEAD".into())
-    );
-}
-
-#[test]
-fn push_dry_run_non_git_repo_falls_back_to_head() {
-    assert_eq!(
-        push(Path::new("/nonexistent-dir-cutver"), None, true, true).unwrap(),
-        Some("git push origin HEAD --tags".into())
-    );
-    assert_eq!(
-        push(Path::new("/nonexistent-dir-cutver"), Some("main"), true, true).unwrap(),
-        Some("git push origin main --tags".into())
+        push(&dir, Some("main"), true).unwrap(),
+        Some("git push origin refs/heads/main".into())
     );
 }
 
 #[test]
-#[cfg_attr(not(unix), ignore)]
-fn push_executes_to_remote() {
+fn push_without_a_resolvable_branch_errors() {
+    // A directory that is not a repository has no branch to name. Falling back to `HEAD` produced
+    // a refspec git rejects later in the release; the push now fails here with the reason.
+    let err = push(Path::new("/nonexistent-dir-cutver"), None, true).unwrap_err();
+    assert!(
+        matches!(err, Error::PushBranchUnresolved { .. }),
+        "unexpected error: {err}"
+    );
+    assert_eq!(
+        push(Path::new("/nonexistent-dir-cutver"), Some("main"), true).unwrap(),
+        Some("git push origin refs/heads/main".into())
+    );
+}
+
+#[test]
+fn push_executes_to_remote_without_publishing_local_tags() {
     let dir = tmp_repo();
     let remote = std::env::temp_dir().join(tmp_id("cutver-git-remote"));
     let _ = fs::remove_dir_all(&remote);
@@ -272,24 +282,43 @@ fn push_executes_to_remote() {
     git(&dir, &["remote", "add", "origin", remote.to_str().unwrap()]);
     git(&dir, &["tag", "v1.0.0"]);
 
-    assert_eq!(push(&dir, None, true, false).unwrap(), None);
-
-    let out = Command::new("git")
-        .current_dir(&remote)
-        .args(["tag", "-l", "v1.0.0"])
-        .output()
-        .unwrap();
-    assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "v1.0.0");
-
+    // The branch push sends exactly the branch: a local tag stays local.
+    assert_eq!(push(&dir, None, false).unwrap(), None);
+    assert_eq!(
+        git_stdout(&remote, &["tag", "-l", "v1.0.0"]).trim(),
+        "",
+        "the branch push must not publish tags it was not asked to send"
+    );
     let branch = current_branch(&dir).unwrap();
-    let out_branch = Command::new("git")
-        .current_dir(&remote)
-        .args(["branch", "-l", &branch])
-        .output()
-        .unwrap();
-    assert!(String::from_utf8_lossy(&out_branch.stdout).contains(&branch));
+    assert!(git_stdout(&remote, &["branch", "-l", &branch]).contains(&branch));
+
+    // The release tag has its own call, and it names exactly one ref.
+    assert_eq!(push_tag(&dir, "v1.0.0", false).unwrap(), None);
+    assert_eq!(git_stdout(&remote, &["tag", "-l", "v1.0.0"]).trim(), "v1.0.0");
 
     let _ = fs::remove_dir_all(&remote);
+}
+
+#[test]
+fn push_argv_names_exactly_one_ref_and_forces_only_the_floating_tag() {
+    assert_eq!(branch_push_args("main"), vec!["push", "origin", "refs/heads/main"]);
+    assert_eq!(tag_push_args("v1.2.3"), vec!["push", "origin", "refs/tags/v1.2.3"]);
+    assert_eq!(
+        tag_force_push_args("v1"),
+        vec!["push", "origin", "+refs/tags/v1:refs/tags/v1"]
+    );
+
+    // Nothing here may publish refs it was not asked to send, and only the floating-tag refspec
+    // may force (Pillar II.2).
+    for argv in [branch_push_args("main"), tag_push_args("v1.2.3")] {
+        for forbidden in ["--tags", "--all", "--mirror"] {
+            assert!(
+                !argv.iter().any(|arg| arg == forbidden),
+                "{argv:?} contains {forbidden}"
+            );
+        }
+        assert!(!argv.iter().any(|arg| arg.starts_with('+')), "{argv:?} forces a ref");
+    }
 }
 
 #[test]

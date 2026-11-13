@@ -69,9 +69,37 @@ Arbitrary untracked files and unstaged edits outside declared manifests and the 
 
 ---
 
+## Two-Phase Release: Prepare, Verify, Publish
+
+`cutver bump` runs the whole release in one process, tag included. A release whose artifacts must be built and smoked first is cut in two instead, because a smoke failure has to publish nothing (issue #259):
+
+> [!IMPORTANT]
+> Nothing irreversible — no tag, no tag push, no floating tag move, no `[publish]` command, no `on_post_release` dispatch — happens before the artifacts built from the release commit pass their smoke.
+
+**Prepare** — `cutver bump <level> --defer-publish`:
+
+1. Guard, preflight, in-memory compute, atomic apply, hooks, staging and the commit, all as above.
+2. `git push origin refs/heads/<branch>`, only when `[publish] push = true`. It is the only push the prepare phase makes, and it is what makes the release commit reachable by the jobs that build and smoke it.
+3. Stop. The summary tree marks the tag `[DEFERRED]` and names the `cutver publish --tag <TAG>` command that finishes the release.
+
+**Publish** — `cutver publish --tag <TAG> [--commit <SHA>] [--notes-file <PATH>] [--dry-run]`, after the caller verified the artifacts:
+
+1. Validate, before anything is written or pushed: the tag is a valid ref, it equals the version the manifests declare at `HEAD`, `--commit` (when given) is `HEAD`, and no release tag exists locally or remotely.
+2. Create the annotated tag on `HEAD`.
+3. `git push origin refs/tags/<release tag>`, only when `[publish] push = true`.
+4. Move the floating major tag onto the release commit when `[git] floating_major_tag = true`, and force-push it when `[publish] push` is enabled too.
+5. Run `[publish].commands` in declaration order.
+6. Dispatch the `on_post_release` plugins, which is what creates the draft release.
+
+Steps 2 to 6 are the code the single-process pipeline runs inline after its branch push: one implementation, two entry points. Without `--defer-publish` the tail still runs in the bump process, so the split is a choice at cut time rather than a new default.
+
+**The residual, stated plainly.** The crate is published by `[publish].commands` (step 5), while the release assets are uploaded and the draft is promoted by CI afterwards. An asset-upload failure therefore leaves a published crate version with a draft nobody can see. Nothing was lost and nothing needs re-cutting: re-run the asset upload and the promotion, which clobbers the assets and treats an already-published release as a no-op. `cutver publish` itself now fails closed on the tag it already created, and a crate version can be yanked but not withdrawn.
+
+---
+
 ## Publish Ordering
 
-`publish.push = true` sends three pushes in dependency order, one ref each:
+`publish.push = true` sends three pushes in dependency order, one ref each. The branch push belongs to the run that creates the release commit; the two tag pushes are the closing phase of a two-phase run, and the tail of the same run otherwise.
 
 1. `git push origin refs/heads/<branch>`
 2. `git push origin refs/tags/<release tag>`
@@ -117,7 +145,7 @@ src/
 ├── lib.rs           # Module declarations and public library interface
 ├── atomic.rs        # Same-directory atomic file replacement and fsync routines
 ├── bump/            # Pipeline orchestration and execution transactions
-│   └── exec/        # Submodules: pipeline, transaction, manifest, changelog, command, doctor
+│   └── exec/        # Submodules: pipeline, publish, transaction, manifest, changelog, command, guard, hooks, doctor
 ├── cli/             # Clap derive arguments, runners, and styling
 ├── config/          # cutver.toml discovery, validation, path resolution, preflights
 ├── conventional/    # Conventional Commits parser and bump deduction

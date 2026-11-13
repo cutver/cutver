@@ -138,8 +138,8 @@ Declares one target file to update. Multiple `[[manifest]]` blocks can be specif
 | `[git]` | `require_branch` | `string` | `None` | Single branch name allowed to cut releases. The type is `Option<String>` (`src/config/types.rs:257`); there is no list form. |
 | `[hooks]` | `pre_bump` | `string` | `None` | Shell command executed before manifest edits. Aborts the release cleanly on non-zero exit. |
 | `[hooks]` | `post_bump` | `string` | `None` | Shell command executed after manifest edits, before git staging. |
-| `[publish]` | `push` | `bool` | `false` | When `true`, pushes `refs/heads/<branch>`, then `refs/tags/<release tag>`, then the floating major tag (when `[git] floating_major_tag` is enabled) — one `git push origin <ref>` per ref, in that order. No push carries `--tags`, so a rejected tag cannot roll the branch update back. |
-| `[publish]` | `commands` | `list<string>` | `[]` | Shell commands executed post-tag/post-push. |
+| `[publish]` | `push` | `bool` | `false` | When `true`, pushes `refs/heads/<branch>` when the release commit is created, then `refs/tags/<release tag>`, then the floating major tag (when `[git] floating_major_tag` is enabled) — one `git push origin <ref>` per ref, in that order. A single-phase `cutver bump` sends all three in one run; `bump --defer-publish` stops after the branch push and `cutver publish` sends the two tag pushes. No push carries `--tags`, so a rejected tag cannot roll the branch update back. |
+| `[publish]` | `commands` | `list<string>` | `[]` | Shell commands executed after the release tag exists: in the closing phase (`cutver publish`) for a release cut in two phases, in the same run for a single-phase `cutver bump`. |
 | `[publish]` | `default_timeout` | `integer` | `None` | Optional timeout in seconds applied to each publish command. |
 
 ---

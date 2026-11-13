@@ -279,11 +279,13 @@ fn the_promotion_does_not_override_the_title() {
 ///
 /// The ruleset requires `CI gate` on `main` and the bump commit is created in this same job, so the
 /// push can never carry a check run: it has to authenticate as the one bypass actor, the
-/// `cutver-release` app. Scoped to the job, because a literal elsewhere in the file keeps the test
+/// `cutver-release` app. The token is mandatory, not opportunistic: an empty token or a fallback to
+/// `secrets.GITHUB_TOKEN` only moves the failure to the push, where the ruleset rejects it after the
+/// tag has already landed. Scoped to the job, because a literal elsewhere in the file keeps the test
 /// green while the mechanism is dead.
 #[test]
 fn the_version_job_checkout_persists_the_app_token_in_that_job() {
-    const LITERAL: &str = "token: ${{ steps.release-token.outputs.token || secrets.GITHUB_TOKEN }}";
+    const LITERAL: &str = "token: ${{ steps.release-token.outputs.token }}";
     let workflow = repo_text(".github/workflows/release.yml");
     let start = workflow.find("\n  version:\n").expect("the version job must exist");
     let end = workflow[start + 1..]
@@ -303,6 +305,23 @@ fn the_version_job_checkout_persists_the_app_token_in_that_job() {
         "the app token must be minted before the version job's checkout"
     );
 
+    // The minting step must not be skippable or tolerated when it fails: a soft failure leaves the
+    // token empty, which is how the push used to arrive at the ruleset unauthenticated.
+    let token_step_start = job[..token_at]
+        .rfind("\n      - ")
+        .map(|i| i + 1)
+        .expect("the token minting step must start with a step marker");
+    let token_step_rest = &job[token_step_start..];
+    let token_step = &token_step_rest[..token_step_rest.find("\n      - ").unwrap_or(token_step_rest.len())];
+    assert!(
+        token_step.contains("uses: actions/create-github-app-token"),
+        "`id: release-token` must belong to the app-token step: on any other step the output is empty and the checkout silently falls back: {token_step}"
+    );
+    assert!(
+        !token_step.contains("continue-on-error"),
+        "the token step must fail the job when the app credentials are missing, not continue: {token_step}"
+    );
+
     let after = &job[checkout_at..];
     let block = &after[..after.find("\n      - ").unwrap_or(after.len())];
     assert!(
@@ -310,7 +329,24 @@ fn the_version_job_checkout_persists_the_app_token_in_that_job() {
         "the version job's own checkout must pass `{LITERAL}`: {block}"
     );
     assert!(
+        !block.contains("secrets.GITHUB_TOKEN"),
+        "the version job's checkout must not fall back to secrets.GITHUB_TOKEN: the ruleset only lets the app push, so the fallback hides the failure until the push is rejected: {block}"
+    );
+    assert!(
         !block.contains("persist-credentials: false"),
         "`persist-credentials: false` removes the credential `git push origin main --tags` needs"
+    );
+
+    // The guard is what turns a late, confusing rejection into an early actionable error: with a
+    // guard-less step an empty token reaches the checkout and the run fails only at the push, after
+    // the commit exists and the tag has landed.
+    let guard_at = job
+        .find("name: Require the release bot token")
+        .expect("the version job must guard the app token before it builds");
+    let guard_rest = &job[guard_at..];
+    let guard = &guard_rest[..guard_rest.find("\n      - ").unwrap_or(guard_rest.len())];
+    assert!(
+        guard.contains("exit 1"),
+        "the guard must fail the job when the token is empty: {guard}"
     );
 }

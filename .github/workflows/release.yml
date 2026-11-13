@@ -36,16 +36,13 @@ jobs:
       version: ${{ steps.cutver.outputs.version }}
       notes: ${{ steps.cutver.outputs.notes-path }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
-      - name: Setup Git bot credentials
-        run: |
-          git config --global user.name "cutver-release[bot]"
-          git config --global user.email "${{ secrets.CUTVER_APP_ID || 'github-actions' }}+cutver-release[bot]@users.noreply.github.com"
-
+      # The `main` ruleset requires `CI gate`, and the bump commit is created inside this job, so no
+      # check run can exist for it when `cutver release` pushes: the push must therefore authenticate
+      # as the release app, which is the ruleset's only bypass actor. The GitHub Actions integration
+      # cannot be one — GitHub rejects it with "must be part of the ruleset source or owner
+      # organization" — so a checkout authenticated by secrets.GITHUB_TOKEN is rejected after
+      # `cargo publish` has already run. The token is minted first, and the checkout persists it.
+      #
       # The github-publish plugin creates the release, so the token it authenticates with decides
       # who the release is attributed to. secrets.GITHUB_TOKEN would publish it as
       # github-actions[bot], which is the attribution issue #166 exists to remove.
@@ -62,6 +59,17 @@ jobs:
         env:
           CUTVER_APP_ID: ${{ secrets.CUTVER_APP_ID }}
           CUTVER_APP_PRIVATE_KEY: ${{ secrets.CUTVER_APP_PRIVATE_KEY }}
+
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          token: ${{ steps.release-token.outputs.token || secrets.GITHUB_TOKEN }}
+
+      - name: Setup Git bot credentials
+        run: |
+          git config --global user.name "cutver-release[bot]"
+          git config --global user.email "${{ secrets.CUTVER_APP_ID || 'github-actions' }}+cutver-release[bot]@users.noreply.github.com"
 
       - name: Warn when the release cannot be attributed to the bot
         if: steps.release-token.outputs.token == ''

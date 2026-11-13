@@ -653,20 +653,29 @@ commands = ["sleep 5"]
         elapsed
     );
 
-    match err {
-        cutver::bump::Error::PublishCommandTimeout {
-            ref command,
-            timeout,
-            elapsed_ms,
-        } => {
-            assert_eq!(command, "sleep 5");
-            assert_eq!(timeout, 1);
-            assert!(elapsed_ms >= 1000);
-        }
-        other => panic!("expected PublishCommandTimeout, got: {:?}", other),
-    }
-
+    // The publish command runs after the commit, the tag and the pushes, so its failure is reported
+    // with the release state that already landed (#265) and the timeout stays the named cause.
     let err_str = err.to_string();
+    match &err {
+        cutver::bump::Error::PublishAfterCommit { tag, commit, source } => {
+            assert_eq!(tag, "v1.3.0");
+            assert!(!commit.is_empty(), "the failure must name the release commit");
+            let cause: &cutver::bump::Error = source;
+            match cause {
+                cutver::bump::Error::PublishCommandTimeout {
+                    command,
+                    timeout,
+                    elapsed_ms,
+                } => {
+                    assert_eq!(command, "sleep 5");
+                    assert_eq!(*timeout, 1);
+                    assert!(*elapsed_ms >= 1000);
+                }
+                other => panic!("expected PublishCommandTimeout, got: {other:?}"),
+            }
+        }
+        other => panic!("expected PublishAfterCommit, got: {other:?}"),
+    }
     assert!(
         err_str.contains("publish command 'sleep 5' timed out after"),
         "unexpected error message: {err_str}"

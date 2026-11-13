@@ -27,11 +27,34 @@ pub enum Error {
     Stage(#[source] crate::git::Error),
     #[error("commit failed: {0}")]
     Commit(#[source] crate::git::Error),
-    #[error("tag '{tag}' failed: {source}")]
+    #[error(
+        "release tag name '{tag}' is not a valid git ref (built from `[git] tag_prefix = \"{prefix}\"`): {source}\n  Where: tag naming, before any file, commit or tag is written\n  Fix: change `[git] tag_prefix` in cutver.toml so that the prefix plus the version forms a valid git ref (git forbids whitespace and control characters, `~`, `^`, `:`, `?`, `*`, `[`, `\\`, `..`, `@{{`, a leading or trailing `/`, and a trailing `.` or `.lock`). Nothing was written, staged, committed or tagged."
+    )]
+    InvalidTagName {
+        tag: String,
+        prefix: String,
+        #[source]
+        source: crate::git::TagError,
+    },
+    #[error(
+        "tag '{tag}' failed after commit {commit} was created: {source}\n  Where: tag creation, immediately after the release commit and before any push\n  Fix: the bump is already committed as {commit} and tag '{tag}' was not created; nothing was pushed. Once the cause is fixed, create the tag by hand (`git tag -a {tag} {commit}`) or undo the commit with a plain `git reset {commit}~1`, which keeps uncommitted work; do not reach for `--hard` here, it would discard changes this run never touched."
+    )]
     Tag {
         tag: String,
+        commit: String,
+        // Boxed to keep `bump::Error` inside the 128-byte `result_large_err` budget
+        // (`plugin::error::tests::plugin_error_stays_within_the_bump_result_budget`).
         #[source]
-        source: crate::git::Error,
+        source: Box<crate::git::Error>,
+    },
+    #[error(
+        "floating major tag '{tag}' failed after commit {commit} was created: {source}\n  Where: floating major tag update, which runs whether or not `[publish] push` is enabled; only the push of that tag depends on it\n  Fix: the local floating tag was not updated. Whether the branch and the release tag reached the remote depends on `[publish] push`; inspect with `git ls-remote origin` before removing anything, because a published ref stays published until you delete it. Recreate the floating tag by hand once the cause is fixed (`git tag -f -a {tag} {commit}`)."
+    )]
+    FloatingTag {
+        tag: String,
+        commit: String,
+        #[source]
+        source: Box<crate::git::Error>,
     },
     #[error("release tag {tag} already exists (points at {commit}) — resolve it before re-running")]
     TagExists { tag: String, commit: String },
@@ -72,12 +95,38 @@ pub enum Error {
         #[source]
         source: io::Error,
     },
-    #[error("publish push failed: {0}")]
-    Push(#[source] crate::git::Error),
+    #[error(
+        "publish push failed: {source}\n  Where: publish push, after commit {commit} and tag '{tag}' exist locally; the refspec that failed is named above and `git push` lists the refs that did land\n  Fix: the refs are pushed one at a time, in order (branch, release tag, floating tag), so nothing after the failed one ran. Inspect the actual remote state with `git ls-remote origin` before removing or reverting anything: a ref this run published stays published until you delete it, and a ref that existed before this run is not yours to delete. Do not re-run `cutver bump` against already-bumped files."
+    )]
+    Push {
+        commit: String,
+        tag: String,
+        #[source]
+        source: Box<crate::git::Error>,
+    },
     #[error("publish command '{command}' failed with status {status}")]
     PublishCommandFailed {
         command: String,
         status: std::process::ExitStatus,
+    },
+    #[error(
+        "a publish command failed after release {tag} at commit {commit}: {source}\n  Where: publish commands, the last step, which run whether or not `[publish] push` is enabled\n  Fix: fix the command and re-run that command alone; do not re-run `cutver bump`, which would bump again. Whether the branch and the tag are on the remote depends on `[publish] push`, so inspect with `git ls-remote origin` before deleting anything: a ref this run published stays published until you remove it, and a pre-existing ref is not yours to delete."
+    )]
+    PublishAfterCommit {
+        commit: String,
+        tag: String,
+        #[source]
+        source: Box<Error>,
+    },
+    #[error(
+        "post-release plugin '{plugin}' failed after release {tag} at commit {commit}: {source}\n  Where: lifecycle hook 'on_post_release', the last step, which runs whether or not `[publish] push` is enabled\n  Fix: whether the release is published depends on `[publish] push`; inspect with `git ls-remote origin` before removing anything, because a ref this run published stays published until you delete it. Fix the plugin and dispatch `on_post_release` by hand rather than re-running `cutver bump`."
+    )]
+    PostReleasePlugin {
+        plugin: String,
+        tag: String,
+        commit: String,
+        #[source]
+        source: Box<crate::plugin::PluginError>,
     },
     #[error("failed to run publish command '{command}': {source}")]
     PublishCommandSpawn {

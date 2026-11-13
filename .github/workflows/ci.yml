@@ -80,3 +80,32 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo publish --dry-run --locked
+
+  # The single status check the `main` ruleset requires. Requiring the eight per-matrix
+  # names directly would bind branch protection to the matrix: delete a leg and its check
+  # stays expected forever, blocking every merge; add one and it is silently unrequired.
+  # This job collapses them into one name that survives a matrix edit.
+  #
+  # `if: always()` is load-bearing. Without it a failing need skips this job, a skipped job
+  # reports no conclusion, and the ruleset waits instead of failing: the pull request is
+  # blocked by a check that is neither green nor red. The assertions compare against
+  # `success` rather than `!= failure` for the same reason — a skipped or cancelled need
+  # also reports non-success.
+  gate:
+    name: CI gate
+    if: always()
+    needs: [test, test-plugins, publish-dry-run]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every build, test, lint and package leg succeeded
+        env:
+          TEST: ${{ needs.test.result }}
+          TEST_PLUGINS: ${{ needs.test-plugins.result }}
+          PUBLISH_DRY_RUN: ${{ needs.publish-dry-run.result }}
+        run: |
+          set -eu
+          printf 'test=%s test-plugins=%s publish-dry-run=%s\n' \
+            "$TEST" "$TEST_PLUGINS" "$PUBLISH_DRY_RUN"
+          test "$TEST" = success
+          test "$TEST_PLUGINS" = success
+          test "$PUBLISH_DRY_RUN" = success

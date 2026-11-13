@@ -1,11 +1,14 @@
 name: PR labels
 
-# `opened` is deliberately absent. A pull request is born with no labels, so
-# checking it at open time made every new PR red until someone labelled it; the
-# check now speaks only on the events that can change the answer.
+# `opened` is required, not optional. This check is a required status on `main`, and a
+# required check that never reports leaves a pull request stuck in "Expected" forever:
+# unmergeable, with nothing red to explain why. A new PR is therefore red until it gets a
+# type label — a state a reviewer can see, unlike a check that silently never arrives. A
+# label applied in the same `gh pr create` rides inside the `opened` payload, so the common
+# case is green on the first run.
 on:
   pull_request:
-    types: [reopened, labeled, unlabeled, synchronize]
+    types: [opened, reopened, labeled, unlabeled, synchronize]
 
 permissions:
   contents: read

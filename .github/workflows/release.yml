@@ -71,15 +71,23 @@ jobs:
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Setup Cutver CLI
-        uses: cutver/setup@v1
+      # The release is cut by the CLI built from THIS commit, never by the previously published
+      # binary. `cutver/setup` resolves `version: latest`, so a fix in the sandbox or in the
+      # release path could only ship in a release it was unable to cut: #251 blocked 0.18.0
+      # exactly that way, and the plugin pin had to be rolled back to work around it.
+      - name: Cache the release-profile build
+        uses: Swatinem/rust-cache@v2
         with:
-          version: "latest"
-          cache: "false"
-          # The lean variant ships no plugin runtime: it hides the subcommand and fails closed on
-          # the [plugins.github-publish] declaration this repository now carries.
-          plugins: "true"
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          key: release-cli
+
+      - name: Build the CLI from this commit
+        run: cargo build --locked --release --features plugins
+
+      # `cutver/release` shells out to `cutver` through PATH, so the built binary is the one
+      # that runs. The plugin-enabled variant is required: a lean build fails closed on the
+      # [plugins.github-publish] declaration.
+      - name: Put the built CLI first on PATH
+        run: echo "$GITHUB_WORKSPACE/target/release" >> "$GITHUB_PATH"
 
       # Single source of truth: `source` and `hash` live in cutver.toml, the command writes into the
       # cache root the host resolves from $HOME, and it verifies the digest before accepting the

@@ -49,6 +49,41 @@ fn workflow_restores_the_declared_plugins_instead_of_pinning_them_again() {
     );
 }
 
+/// The release must be cut by the CLI built from the commit being released.
+///
+/// `cutver/setup` resolves `version: latest`, i.e. the previously published binary, so a defect in
+/// the sandbox or in the release path could only ship in a release it was unable to cut. #251 did
+/// exactly that: 0.17.0 could not read `cutver.toml` inside the plugin sandbox, `github-publish`
+/// 0.2.x failed closed, and 0.18.0 was blocked until the pin was rolled back to 0.1.2 by hand.
+/// These assertions fail if the workflow goes back to depending on an external binary.
+#[test]
+fn the_release_is_cut_by_the_cli_built_from_the_released_commit() {
+    let workflow = repo_text(".github/workflows/release.yml");
+
+    assert!(
+        workflow.contains("cargo build --locked --release --features plugins"),
+        "release.yml must build the plugin-enabled CLI from the checkout before releasing"
+    );
+    assert!(
+        workflow.contains("target/release") && workflow.contains("$GITHUB_PATH"),
+        "release.yml must put the built CLI on PATH, because cutver/release shells out to `cutver`"
+    );
+
+    let built = workflow.find("Build the CLI from this commit").expect("build step");
+    let on_path = workflow.find("Put the built CLI first on PATH").expect("PATH step");
+    let action = workflow.find("uses: cutver/release@v1").expect("release action step");
+    assert!(
+        built < on_path && on_path < action,
+        "the CLI must be built and exposed on PATH before the release action runs"
+    );
+    // Later jobs may install a published CLI on purpose: the smoke test proves the artifact a user
+    // downloads works. What must never happen is an installed binary *cutting* the release.
+    assert!(
+        !workflow[..action].contains("uses: cutver/setup"),
+        "no published CLI may be installed before the release step: the binary that cuts release N must be N's code"
+    );
+}
+
 /// The plugin only owns the release if it is a draft: its `draft` field defaults to false, and a
 /// non-draft release is published during the version job, before any binary is built.
 #[test]
@@ -92,7 +127,7 @@ fn declared_capability_events_and_permissions_are_the_ones_the_host_uses() {
 #[test]
 fn workflow_requests_the_plugin_build_and_forwards_dry_run() {
     let workflow = repo_text(".github/workflows/release.yml");
-    for needle in ["plugins: \"true\"", "dry_run:", "dry-run: ${{ inputs.dry_run }}"] {
+    for needle in ["--features plugins", "dry_run:", "dry-run: ${{ inputs.dry_run }}"] {
         assert!(workflow.contains(needle), "release.yml must keep `{needle}`");
     }
     for key in ["GITHUB_TOKEN:", "GITHUB_REPOSITORY:"] {

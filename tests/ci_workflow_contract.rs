@@ -2,12 +2,14 @@
 //! contexts: `CI gate` (`.github/workflows/ci.yml`) and `Exactly one type label`
 //! (`.github/workflows/pr-labels.yml`).
 //!
-//! The ruleset lives outside the repository (id 27202161, enforcement `active`,
-//! `bypass_actors: []`), so no test can exercise it. What a test can hold is the edge every context
-//! name, trigger and `needs`/`env` wire depends on, matched with the indentation the YAML actually
-//! has. `contains()` is deliberately not used: it also passes on the wrong nesting level, on a
-//! comment, and on text appended to the end of the file, which is how a text contract silently
-//! stops testing anything.
+//! The ruleset lives outside the repository (id 27202161, enforcement `active`), so no test can
+//! exercise it. Its single bypass actor is one `Integration`, the `cutver-release` app
+//! (`actor_id 5200064`, mode `always`); the GitHub Actions integration cannot be one, because
+//! GitHub rejects that with `422 ... must be part of the ruleset source or owner organization`.
+//! What a test can hold is the edge every context name, trigger and `needs`/`env` wire depends on,
+//! matched with the indentation the YAML actually has. `contains()` is deliberately not used: it
+//! also passes on the wrong nesting level, on a comment, and on text appended to the end of the
+//! file, which is how a text contract silently stops testing anything.
 //!
 //! Guards #257 (risk item 5: delivery/CI). Covers S1 (exact context), S2 (job-level `if: always()`),
 //! S3 (`needs` covers every existing job), S4 (each leg wired to its own result), S5 (unfiltered

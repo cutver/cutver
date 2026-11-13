@@ -38,13 +38,15 @@ jobs:
     steps:
       # The `main` ruleset requires `CI gate`, and the bump commit is created inside this job, so no
       # check run can exist for it when `cutver release` pushes: the push must therefore authenticate
-      # as the release app, which is the ruleset's only bypass actor. The GitHub Actions integration
-      # cannot be one — GitHub rejects it with "must be part of the ruleset source or owner
-      # organization" — so a checkout authenticated by secrets.GITHUB_TOKEN is rejected after
-      # `cargo publish` has already run. The token is minted first, and the checkout persists it.
+      # as the release app, the ruleset's only bypass actor. Without this, `git push origin main
+      # --tags` runs before the publish commands, so nothing reaches crates.io, but the tag is
+      # already pushed: a retry then fails with `release tag <tag> already exists` and needs a manual
+      # `git push --delete origin <tag>` first. The token is minted first, and the checkout persists
+      # it, so the pusher is the app instead of github-actions[bot].
       #
       # The github-publish plugin creates the release, so the token it authenticates with decides
-      # who the release is attributed to. secrets.GITHUB_TOKEN would publish it as
+      # who the release is attributed to. The bump commit is authored as cutver-release[bot] by the
+      # `git config` step below; secrets.GITHUB_TOKEN would create the release itself as
       # github-actions[bot], which is the attribution issue #166 exists to remove.
       - name: Generate release bot token
         id: release-token

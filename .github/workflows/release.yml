@@ -574,6 +574,15 @@ jobs:
           fetch-depth: 0
           token: ${{ steps.release-token.outputs.token }}
 
+      # The tag `cutver publish` creates is annotated, and this job is a fresh runner that inherits
+      # no global git config: without an identity `git tag -a` fails with "unable to auto-detect
+      # email address", after the bump push and before the release exists. Same bot identity as the
+      # version job, so the tag carries the #166 attribution instead of the runner's.
+      - name: Setup Git bot credentials
+        run: |
+          git config --global user.name "cutver-release[bot]"
+          git config --global user.email "${{ secrets.CUTVER_APP_ID || 'github-actions' }}+cutver-release[bot]@users.noreply.github.com"
+
       # Same rationale as the version job: the CLI that publishes is the one built from this
       # commit, never the previously published binary. The plugin-enabled variant is required, or
       # the closing phase fails closed on the [plugins.github-publish] declaration.

@@ -283,6 +283,60 @@ fn the_tag_the_crate_and_the_draft_are_published_after_verification() {
     );
 }
 
+/// #259/S1: the publish job runs on its own runner, so it prepares its own copy of the CLI.
+///
+/// `cutver publish` shells out to the built binary through PATH and fails closed on the
+/// `[plugins.github-publish]` declaration without the restored plugin artifacts. Moving the
+/// closing step above the PATH export or above `cutver plugin restore` used to leave every other
+/// assertion in this file green, because they are all scoped to the `version` job.
+#[test]
+fn the_closing_job_prepares_the_cli_it_runs() {
+    let workflow = repo_text(".github/workflows/release.yml");
+    let publish = job(&workflow, "publish");
+    let built = publish
+        .find("Build the CLI from the release commit")
+        .expect("the publish job must build the CLI it runs");
+    let on_path = publish
+        .find("Put the built CLI first on PATH")
+        .expect("the publish job must put the built CLI on PATH");
+    let restored = publish
+        .find("run: cutver plugin restore")
+        .expect("the publish job must hydrate the declared plugins");
+    let notes = publish
+        .find("name: release-notes")
+        .expect("the publish job must download the rendered notes");
+    let closing = publish.find("cutver publish --tag").expect("the closing phase");
+    assert!(
+        built < on_path && on_path < restored && restored < notes && notes < closing,
+        "the publish job must build the CLI, put it on PATH and restore the declared plugins before \
+         `cutver publish` runs: every step in between shells out to whatever `cutver` resolves, and \
+         `cutver publish` needs RELEASE_NOTES.md from the `release-notes` artifact"
+    );
+}
+
+/// #259/S1: `cutver publish` creates the tag with `git tag -a`, which needs an author identity.
+///
+/// The only `git config --global user.*` step lives in the `version` job, a different runner: the
+/// publish job inherits no global config, so an annotated tag there fails with `unable to
+/// auto-detect email address` — after the bump push, before the release exists. The identity is
+/// also the #166 attribution, which is why it must be the release bot's and not the runner's.
+#[test]
+fn the_tag_creating_job_configures_the_git_identity() {
+    let workflow = repo_text(".github/workflows/release.yml");
+    let publish = job(&workflow, "publish");
+    let closing = publish.find("cutver publish --tag").expect("the closing phase");
+    for needle in ["git config --global user.name", "git config --global user.email"] {
+        let at = publish
+            .find(needle)
+            .unwrap_or_else(|| panic!("the publish job must configure the tag author with `{needle}`"));
+        assert!(
+            at < closing,
+            "`{needle}` must run before `cutver publish`: the tag it creates is annotated, and this \
+             job inherits no global git identity"
+        );
+    }
+}
+
 /// The plugin owns release creation, so the workflow must fill that draft and publish it — not
 /// create a second release. A leftover `softprops/action-gh-release` would race the plugin for the
 /// same tag and fail with 422.

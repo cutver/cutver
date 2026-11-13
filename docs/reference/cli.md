@@ -87,10 +87,12 @@ A deferred run marks the tag `[DEFERRED]` in the summary tree and names the `cut
 `--json` and `--report` are independent: either, both, or neither. Both describe a real and a `--dry-run` run alike, and a failed run writes no report. The object holds `released`, `deferred`, `version`, `tag`, `commit`, `floating_tag`, `publish_push_command` and `publish_commands`; field order is part of the contract.
 
 ```json
-{"released":true,"deferred":false,"version":"0.19.0","tag":"v0.19.0","commit":"abc1234","floating_tag":"v0","publish_push_command":"git push origin refs/heads/main","publish_commands":["cargo publish"]}
+{"released":true,"deferred":false,"version":"0.19.0","tag":"v0.19.0","commit":"abc1234","floating_tag":"v0","publish_push_command":null,"publish_commands":["cargo publish"]}
 ```
 
-`released` is `false` on a `--dry-run`; `deferred` is `true` when the run stopped after the branch push; `floating_tag` and `publish_push_command` are `null` when the run never reached them, and `publish_commands` is always an array.
+`released` is `false` on a `--dry-run`; `deferred` is `true` when the run stopped after the branch push; `floating_tag` is `null` when the run never reached it; `publish_commands` lists the rendered `[publish].commands` and is always an array.
+
+`publish_push_command` is the *planned* push command line, so it is filled on a `--dry-run` report and `null` on a real run: by the time a real run writes the object the pushes have already happened, and `publish_commands` then names the commands it ran. Read the push line before the run, and confirm the refs afterwards with `git ls-remote origin`.
 
 ---
 

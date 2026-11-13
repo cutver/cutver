@@ -180,6 +180,142 @@ fn publish_creates_the_tag_pushes_it_and_runs_the_publish_commands() {
 }
 
 #[test]
+fn publish_refuses_a_commit_that_is_not_head() {
+    let (guard, remote, cfg) = prepared_repo("deferred-publish-stale-commit");
+    let fixture = guard.fixture();
+    let verified = rev(&fixture.dir, "HEAD");
+    run_deferred_publish(&cfg, Bump::Minor, false, &[], false).expect("the prepare phase succeeds");
+    let head = rev(&fixture.dir, "HEAD");
+    assert_ne!(head, verified, "the prepare phase must move HEAD");
+
+    let err = run_publish(&cfg, &publish_request("v1.3.0", Some(verified.clone())))
+        .expect_err("a commit the caller verified earlier is not HEAD any more");
+
+    match &err {
+        cutver::bump::Error::PublishCommitMismatch { expected, actual } => {
+            assert_eq!(expected, &verified, "the failure must name the requested commit");
+            assert_eq!(actual, &head, "the failure must name the actual HEAD");
+        }
+        other => panic!("expected a commit mismatch, got: {other:?}"),
+    }
+    let text = err.to_string();
+    assert!(
+        text.contains("Where:") && text.contains("Fix:") && text.contains("Nothing was written"),
+        "the mismatch must be actionable: {text}"
+    );
+    assert!(!tag_exists(fixture, "v1.3.0"), "no tag may be created");
+    assert!(
+        !remote_refs(&remote.dir).contains("refs/tags/"),
+        "nothing may be pushed: {}",
+        remote_refs(&remote.dir)
+    );
+    assert!(
+        !fixture.dir.join("published.txt").exists(),
+        "no publish command may run"
+    );
+}
+
+#[test]
+fn publish_refuses_a_tag_that_already_exists_locally() {
+    let (guard, remote, cfg) = prepared_repo("deferred-publish-local-tag");
+    let fixture = guard.fixture();
+    let verified = rev(&fixture.dir, "HEAD");
+    run_deferred_publish(&cfg, Bump::Minor, false, &[], false).expect("the prepare phase succeeds");
+    // A release tag cut by hand on an earlier commit: the retry must not move it, and must not
+    // report a remote collision it never checked.
+    run_git_ok(&fixture.dir, &["tag", "-a", "v1.3.0", "-m", "already cut", &verified]);
+
+    let err = run_publish(&cfg, &publish_request("v1.3.0", None)).expect_err("the tag exists locally");
+
+    match &err {
+        cutver::bump::Error::TagExists { tag, commit } => {
+            assert_eq!(tag, "v1.3.0");
+            assert_eq!(commit, &verified, "the failure must name the commit the tag points at");
+        }
+        other => panic!("expected an existing tag, got: {other:?}"),
+    }
+    assert!(
+        !remote_refs(&remote.dir).contains("refs/tags/"),
+        "an existing local tag must fail before any push: {}",
+        remote_refs(&remote.dir)
+    );
+    assert!(
+        !fixture.dir.join("published.txt").exists(),
+        "no publish command may run"
+    );
+}
+
+#[test]
+fn publish_refuses_a_tag_that_only_exists_remotely() {
+    let (guard, remote, cfg) = prepared_repo("deferred-publish-remote-tag");
+    let fixture = guard.fixture();
+    run_deferred_publish(&cfg, Bump::Minor, false, &[], false).expect("the prepare phase succeeds");
+    let head = rev(&fixture.dir, "HEAD");
+    // The tag a previous, half-finished run pushed before it failed: it is not in this clone, so
+    // only the remote check can see it, and a local-only check would tag over it. A plain ref
+    // rather than `git tag -a`: the bare remote has no identity, and this test must not depend on
+    // whatever `tag.gpgsign` the ambient git config asks for.
+    run_git_ok(&remote.dir, &["update-ref", "refs/tags/v1.3.0", &head]);
+
+    let err = run_publish(&cfg, &publish_request("v1.3.0", None)).expect_err("the tag exists remotely");
+
+    match &err {
+        cutver::bump::Error::RemoteTagExists {
+            tag,
+            remote: name,
+            commit,
+        } => {
+            assert_eq!(tag, "v1.3.0");
+            assert_eq!(name, "origin");
+            assert_eq!(commit, &head, "the failure must name the remote commit");
+        }
+        other => panic!("expected an existing remote tag, got: {other:?}"),
+    }
+    assert!(!tag_exists(fixture, "v1.3.0"), "no local tag may be created");
+    assert!(
+        !fixture.dir.join("published.txt").exists(),
+        "no publish command may run"
+    );
+}
+
+#[test]
+fn a_publish_dry_run_writes_nothing() {
+    let (guard, remote, cfg) = prepared_repo("deferred-publish-dry-run");
+    let fixture = guard.fixture();
+    run_deferred_publish(&cfg, Bump::Minor, false, &[], false).expect("the prepare phase succeeds");
+    let head = rev(&fixture.dir, "HEAD");
+    let floating_before = rev(&fixture.dir, "v1^{commit}");
+
+    let request = PublishRequest {
+        dry_run: true,
+        ..publish_request("v1.3.0", Some(head.clone()))
+    };
+    let summary = run_publish(&cfg, &request).expect("a valid plan passes the dry run");
+
+    assert!(summary.dry_run, "the summary must report a dry run");
+    assert_eq!(
+        summary.publish_commands,
+        vec!["echo published 1.3.0 > published.txt"],
+        "the plan must name the commands it would run"
+    );
+    assert!(!tag_exists(fixture, "v1.3.0"), "a dry run must not create the tag");
+    assert_eq!(
+        rev(&fixture.dir, "v1^{commit}"),
+        floating_before,
+        "a dry run must not move the floating major tag"
+    );
+    assert!(
+        !remote_refs(&remote.dir).contains("refs/tags/"),
+        "a dry run must push nothing: {}",
+        remote_refs(&remote.dir)
+    );
+    assert!(
+        !fixture.dir.join("published.txt").exists(),
+        "a dry run must not run the publish commands"
+    );
+}
+
+#[test]
 fn publish_refuses_a_tag_the_manifests_do_not_declare() {
     let (guard, remote, cfg) = prepared_repo("deferred-publish-mismatch");
     let fixture = guard.fixture();

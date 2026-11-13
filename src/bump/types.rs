@@ -37,7 +37,7 @@ pub enum Error {
         source: crate::git::TagError,
     },
     #[error(
-        "tag '{tag}' failed after commit {commit} was created: {source}\n  Where: tag creation, immediately after the release commit and before any push\n  Fix: the bump is already committed as {commit} and tag '{tag}' was not created; nothing was pushed. Once the cause is fixed, create the tag by hand (`git tag -a {tag} {commit}`) or undo the commit with a plain `git reset {commit}~1`, which keeps uncommitted work; do not reach for `--hard` here, it would discard changes this run never touched."
+        "tag '{tag}' failed after commit {commit} was created: {source}\n  Where: tag creation, which `cutver bump` runs inline or `cutver publish` runs on an earlier run's release commit\n  Fix: the release commit {commit} exists and tag '{tag}' was not created. Whether a push already happened depends on `[publish] push` and on which phase ran: `cutver publish` starts after the branch push an earlier run made, and `cutver bump` pushes the branch before it creates the tag. Find out with `git ls-remote origin` before removing anything. Once the cause is fixed, create the tag by hand (`git tag -a {tag} {commit}`) or undo the commit with a plain `git reset {commit}~1`, which keeps uncommitted work; do not reach for `--hard` here, it would discard changes this run never touched."
     )]
     Tag {
         tag: String,

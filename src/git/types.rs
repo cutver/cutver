@@ -315,4 +315,15 @@ pub enum Error {
     Output { source: std::io::Error },
     #[error("invalid commit sha '{sha}': {reason}")]
     InvalidSha { sha: String, reason: String },
+    #[error("push of '{refspec}' failed: {detail}\n  Where: {where_}\n  Fix: {fix}")]
+    PushRef {
+        refspec: String,
+        detail: String,
+        where_: String,
+        fix: String,
+    },
+    #[error(
+        "no branch to push: {reason}\n  Where: {where_}\n  Fix: check out the branch to release, or set `[git] require_branch` in cutver.toml so the pushed branch is named explicitly."
+    )]
+    PushBranchUnresolved { reason: String, where_: String },
 }

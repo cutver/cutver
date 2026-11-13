@@ -33,7 +33,8 @@ pub use status::{current_branch, is_clean, parse_branch, require_branch, require
 
 // Re-export mutation operations
 pub use ops::{
-    commit, commit_ext, commit_message, is_floating_major_tag, push, push_tag_force, stage, tag, update_floating_tag,
+    commit, commit_ext, commit_message, is_floating_major_tag, push, push_tag, push_tag_force, stage, tag,
+    update_floating_tag,
 };
 
 // Re-export tag querying and resolution

@@ -102,71 +102,120 @@ pub fn tag(repo: impl AsRef<Path>, tag_name: &str, version: &str, dry_run: bool)
     }
 }
 
-pub fn push(
-    repo: impl AsRef<Path>,
-    branch: Option<&str>,
-    include_tags: bool,
-    dry_run: bool,
-) -> Result<Option<String>, Error> {
-    let current = if branch.is_none() {
-        current_branch(&repo).unwrap_or_else(|_| "HEAD".to_string())
-    } else {
-        String::new()
+pub fn push(repo: impl AsRef<Path>, branch: Option<&str>, dry_run: bool) -> Result<Option<String>, Error> {
+    let repo = repo.as_ref();
+    // A push must name the branch it sends. There is no safe fallback: `HEAD` is not a branch
+    // ref, so git rejects it with 'fatal: You are not currently on a branch' after the local
+    // commit and tag already exist (#263).
+    let branch = match branch {
+        Some(branch) => branch.to_string(),
+        None => current_branch(repo).map_err(|source| Error::PushBranchUnresolved {
+            reason: source.to_string(),
+            where_: BRANCH_PUSH_WHERE.to_string(),
+        })?,
     };
-    let target = branch.unwrap_or(&current);
-    if dry_run {
-        return Ok(Some(
-            format!(
-                "git push origin {} {}",
-                target,
-                if include_tags { "--tags" } else { "" }
-            )
-            .trim()
-            .to_string(),
-        ));
-    }
-    let mut args = vec!["push", "origin", target];
-    if include_tags {
-        args.push("--tags");
-    }
-    let status = Command::new("git")
-        .current_dir(&repo)
-        .args(&args)
-        .status()
-        .map_err(|e| Error::Command {
-            command: args.join(" "),
-            source: e,
-        })?;
-    if status.success() {
-        Ok(None)
-    } else {
-        Err(Error::Status {
-            command: args.join(" "),
-            status,
-        })
-    }
+    run_push(
+        repo,
+        &branch_push_args(&branch),
+        &format!("refs/heads/{branch}"),
+        BRANCH_PUSH_WHERE,
+        BRANCH_PUSH_FIX,
+        dry_run,
+    )
+}
+
+pub fn push_tag(repo: impl AsRef<Path>, tag_name: &str, dry_run: bool) -> Result<Option<String>, Error> {
+    run_push(
+        repo.as_ref(),
+        &tag_push_args(tag_name),
+        &format!("refs/tags/{tag_name}"),
+        TAG_PUSH_WHERE,
+        TAG_PUSH_FIX,
+        dry_run,
+    )
 }
 
 pub fn push_tag_force(repo: impl AsRef<Path>, tag_name: &str, dry_run: bool) -> Result<Option<String>, Error> {
-    let refspec = format!("+refs/tags/{tag_name}:refs/tags/{tag_name}");
+    run_push(
+        repo.as_ref(),
+        &tag_force_push_args(tag_name),
+        &format!("+refs/tags/{tag_name}:refs/tags/{tag_name}"),
+        FLOATING_PUSH_WHERE,
+        FLOATING_PUSH_FIX,
+        dry_run,
+    )
+}
+
+// Publishing sends three pushes in dependency order, so each failure names the step it stopped at
+// and what the remote already holds.
+const BRANCH_PUSH_WHERE: &str = "publish push, step 1 of 3 (branch)";
+const TAG_PUSH_WHERE: &str = "publish push, step 2 of 3 (release tag)";
+const FLOATING_PUSH_WHERE: &str = "publish push, step 3 of 3 (floating major tag)";
+
+const BRANCH_PUSH_FIX: &str = "nothing was published and the floating major tag did not move; resolve the branch push (ruleset, permissions, or a diverging remote) and re-run.";
+
+const TAG_PUSH_FIX: &str = "the branch is already published; once tag creation is allowed, push the release tag on its own — the floating major tag did not move and no publish command ran.";
+
+const FLOATING_PUSH_FIX: &str = "the branch and release tag are already published; move the floating major tag by hand once the force push is allowed.";
+
+/// The exact `git push` argv for one branch ref.
+///
+/// No `--tags`: a push sends exactly the refs it names, so a rejected tag can never take a branch
+/// update down with it. No `+`: a branch update is never forced.
+pub(crate) fn branch_push_args(branch: &str) -> Vec<String> {
+    vec!["push".to_string(), "origin".to_string(), format!("refs/heads/{branch}")]
+}
+
+/// The exact `git push` argv for one release tag. Names that tag and nothing else.
+pub(crate) fn tag_push_args(tag_name: &str) -> Vec<String> {
+    vec![
+        "push".to_string(),
+        "origin".to_string(),
+        format!("refs/tags/{tag_name}"),
+    ]
+}
+
+/// The force refspec, reachable only from the floating-major-tag path and only after the release
+/// push succeeded (Pillar II.2).
+pub(crate) fn tag_force_push_args(tag_name: &str) -> Vec<String> {
+    vec![
+        "push".to_string(),
+        "origin".to_string(),
+        format!("+refs/tags/{tag_name}:refs/tags/{tag_name}"),
+    ]
+}
+
+/// Runs one push. A dry run reports the command without sending anything.
+fn run_push(
+    repo: &Path,
+    argv: &[String],
+    refspec: &str,
+    where_: &str,
+    fix: &str,
+    dry_run: bool,
+) -> Result<Option<String>, Error> {
+    let command = format!("git {}", argv.join(" "));
     if dry_run {
-        return Ok(Some(format!("git push origin {refspec}")));
+        return Ok(Some(command));
     }
-    let args = ["push", "origin", &refspec];
     let status = Command::new("git")
-        .current_dir(&repo)
-        .args(args)
+        .current_dir(repo)
+        .args(argv)
         .status()
-        .map_err(|e| Error::Command {
-            command: format!("git push origin {refspec}"),
-            source: e,
+        .map_err(|source| Error::PushRef {
+            refspec: refspec.to_string(),
+            detail: format!("the git process could not be started: {source}"),
+            where_: where_.to_string(),
+            fix: fix.to_string(),
         })?;
     if status.success() {
         Ok(None)
     } else {
-        Err(Error::Status {
-            command: format!("git push origin {refspec}"),
-            status,
+        Err(Error::PushRef {
+            refspec: refspec.to_string(),
+            detail: format!("`{command}` exited with {status}"),
+            where_: where_.to_string(),
+            fix: fix.to_string(),
         })
     }
 }

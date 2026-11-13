@@ -112,8 +112,24 @@ pub fn run_with_first_release(
     })?;
     let tag_skipped = tag_report.is_some() && !dry_run;
 
-    let floating_tag = handle_floating_tag(config, repo, &next, dry_run)?;
-    let publish_push_command = execute_publish_push(config, repo, floating_tag.as_ref(), dry_run)?;
+    // Publication is ordered by dependency: the branch, then the release tag, then the floating
+    // major tag. Each push names exactly one ref, so a rejected ref can never roll back a ref that
+    // already landed, and the floating tag moves only after the release push succeeded (#263).
+    let mut push_commands = Vec::new();
+    if config.publish.push {
+        if let Some(cmd) = git::push(repo, config.git.require_branch.as_deref(), dry_run).map_err(Error::Push)? {
+            push_commands.push(cmd);
+        }
+        if let Some(cmd) = git::push_tag(repo, &tag, dry_run).map_err(Error::Push)? {
+            push_commands.push(cmd);
+        }
+    }
+    let floating_tag = handle_floating_tag(config, repo, &next, dry_run, &mut push_commands)?;
+    let publish_push_command = if push_commands.is_empty() {
+        None
+    } else {
+        Some(push_commands.join(" && "))
+    };
     let publish_commands = run_publish_commands(config, &interp_ctx, dry_run)?;
 
     run_plugin_post_release(&plugin_manager, repo, &next, &tag, dry_run, release_notes.as_deref())?;
@@ -358,7 +374,16 @@ fn run_post_bump_hook(
     Ok(Some(cmd))
 }
 
-fn handle_floating_tag(config: &Config, repo: &Path, next: &Version, dry_run: bool) -> Result<Option<String>, Error> {
+/// Moves the floating major tag and force-pushes it, in that order, and only once the release
+/// push has succeeded. Moving it before the push is what orphaned `v0` in issue #263. The force
+/// refspec lives on this path alone (Pillar II.2).
+fn handle_floating_tag(
+    config: &Config,
+    repo: &Path,
+    next: &Version,
+    dry_run: bool,
+    push_commands: &mut Vec<String>,
+) -> Result<Option<String>, Error> {
     if !config.git.floating_major_tag {
         return Ok(None);
     }
@@ -367,32 +392,12 @@ fn handle_floating_tag(config: &Config, repo: &Path, next: &Version, dry_run: bo
         tag: f_tag.clone(),
         source: e,
     })?;
-    Ok(Some(f_tag))
-}
-
-fn execute_publish_push(
-    config: &Config,
-    repo: &Path,
-    floating_tag: Option<&String>,
-    dry_run: bool,
-) -> Result<Option<String>, Error> {
-    if !config.publish.push {
-        return Ok(None);
-    }
-    let mut push_cmds = Vec::new();
-    if let Some(f_tag) = floating_tag
-        && let Some(cmd) = git::push_tag_force(repo, f_tag, dry_run).map_err(Error::Push)?
+    if config.publish.push
+        && let Some(cmd) = git::push_tag_force(repo, &f_tag, dry_run).map_err(Error::Push)?
     {
-        push_cmds.push(cmd);
+        push_commands.push(cmd);
     }
-    if let Some(cmd) = git::push(repo, config.git.require_branch.as_deref(), true, dry_run).map_err(Error::Push)? {
-        push_cmds.push(cmd);
-    }
-    if push_cmds.is_empty() {
-        Ok(None)
-    } else {
-        Ok(Some(push_cmds.join(" && ")))
-    }
+    Ok(Some(f_tag))
 }
 
 fn run_publish_commands(

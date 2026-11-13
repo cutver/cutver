@@ -192,9 +192,11 @@ fn publish_context(
 ) -> Result<(changelog::InterpolationContext, Option<String>), Error> {
     let repo = &config.root_dir;
     let prev_tag = git::latest_tag(repo, Some(&config.git.tag_prefix))?;
+    // The closing phase runs after the bump, so the previous version is only readable from the tag.
+    let previous = previous_version(prev_tag.as_deref(), &config.git.tag_prefix, version);
     let context = guard::build_context(
         repo,
-        version,
+        &previous,
         version,
         &request.tag,
         prev_tag.as_deref(),
@@ -203,6 +205,15 @@ fn publish_context(
     );
     let notes = request.notes_file.as_ref().map(read).transpose()?;
     Ok((context, notes))
+}
+
+/// The version the previous tag names, so the closing phase renders `previous_version` the way the
+/// inline phase does. A tag that does not carry `tag_prefix` or a semver after it names no version.
+fn previous_version(prev_tag: Option<&str>, tag_prefix: &str, version: &Version) -> Version {
+    prev_tag
+        .and_then(|tag| tag.strip_prefix(tag_prefix))
+        .and_then(|rest| Version::parse(rest).ok())
+        .unwrap_or_else(|| version.clone())
 }
 
 /// Publishes the release: tag, branch push, tag push, floating major tag, `[publish].commands`,

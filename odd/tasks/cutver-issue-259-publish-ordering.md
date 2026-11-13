@@ -103,6 +103,16 @@ human's decision verbatim; nothing below adds a requirement they did not state.
   `expected-revision` `7649d549…`), the harness defect recorded in
   `cutver/rdd/correction-plan-binding-defect`. The lineage is therefore stuck at `correction_required`
   and terminal approval is unobtainable; see the Close report.
+- **L14** (second native cycle, lineage `review-84953ae8561b8987`) 4 reviewers ran and were admitted,
+  then the refuter closed the lineage in `escalated` (`unknown_causality`): two findings corroborated
+  (`R1-001` at `publish.rs:187-192`/`guard.rs:24-33`, `R4-002` at `release.yml:610`/`publish.rs:140`),
+  two inconclusive (`R3-001`, `R4-001`). The provider did not surface the finding texts and STATUS
+  returns `action: stop` / `native_stop_required`, so this lineage is terminal without approval and
+  without a correction route. Inspecting the cited lines myself found one real divergence: the
+  closing phase built its interpolation context with the new version as the previous one, so
+  `{{ previous_version }}` in `[publish].commands` rendered the published version instead of the
+  previous release. Fixed with `previous_version(prev_tag, tag_prefix, version)` and pinned by
+  `publish_renders_the_previous_version_from_the_previous_tag` (RED `1.3.0` → GREEN `1.2.3`).
 - **L12** (split, review comfort) the container contract tests moved to
   `tests/container_workflow_contract.rs` (280 lines) so `release_pipeline_contract.rs` stays at 502 and
   each CI commit carries its own pin.

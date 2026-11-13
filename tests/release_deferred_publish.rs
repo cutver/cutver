@@ -58,6 +58,12 @@ fn remote_refs(remote: &Path) -> String {
 /// A repository at 1.2.3 on `main`, published to a bare remote, with the floating major tag `v1`
 /// already pointing at the released commit — the state `cutver publish` closes from.
 fn prepared_repo(name: &str) -> (FixtureGuard, Fixture, config::Config) {
+    prepared_repo_with(name, TOML)
+}
+
+/// The same prepared state with its own `cutver.toml`, so a test can configure the
+/// `[publish].commands` line it needs instead of sharing the fixture's one command.
+fn prepared_repo_with(name: &str, toml: &str) -> (FixtureGuard, Fixture, config::Config) {
     assert!(
         git_available(),
         "git CLI is required for e2e tests but was not found in PATH"
@@ -70,7 +76,7 @@ fn prepared_repo(name: &str) -> (FixtureGuard, Fixture, config::Config) {
     fixture.write("package.json", PACKAGE_JSON);
     fixture.write("Cargo.toml", CARGO_TOML);
     fixture.write("CHANGELOG.md", CHANGELOG_MD);
-    fixture.write("cutver.toml", TOML);
+    fixture.write("cutver.toml", toml);
     init_git_repo(fixture);
     run_git_ok(&fixture.dir, &["checkout", "-B", "main"]);
     initial_commit(fixture);
@@ -218,6 +224,39 @@ fn publish_creates_the_tag_pushes_it_and_runs_the_publish_commands() {
     assert!(
         tag_push < floating_push,
         "the release tag push must come before the floating refspec: {command}"
+    );
+}
+
+/// `{{ previous_version }}` must render the same value in both entry points: the inline phase derives
+/// it from the manifests it bumped, the closing phase from the previous release tag. Rendering the
+/// new version there broke the one-authority invariant the two-phase split is built on (#259). The
+/// token is the Jinja field `[publish].commands` interpolate against, not the legacy `{version}`
+/// form, which `normalize_legacy_tokens` only accepts for `version` and `tag`.
+#[test]
+fn publish_renders_the_previous_version_from_the_previous_tag() {
+    let toml = TOML.replace(
+        r#"commands = ["echo published {version} > published.txt"]"#,
+        r#"commands = ["echo {{ previous_version }} > previous.txt"]"#,
+    );
+    let (guard, _remote, cfg) = prepared_repo_with("deferred-publish-previous-version", &toml);
+    let fixture = guard.fixture();
+    // The shared fixture cuts no release tag, so this test cuts the previous release itself: `v1.2.3`
+    // is the name of the released 1.2.3 state, and the closing phase has to read it back.
+    run_git_ok(&fixture.dir, &["tag", "-a", "v1.2.3", "-m", "v1.2.3"]);
+    run_deferred_publish(&cfg, Bump::Minor, false, &[], false).expect("the prepare phase succeeds");
+    let head = rev(&fixture.dir, "HEAD");
+
+    run_publish(&cfg, &publish_request("v1.3.0", Some(head))).expect("the closing phase succeeds");
+
+    let rendered = fixture.read("previous.txt");
+    assert_eq!(
+        rendered.trim(),
+        "1.2.3",
+        "the closing phase must render the version the previous tag names, not the one it publishes"
+    );
+    assert!(
+        !rendered.contains("1.3.0"),
+        "the closing phase must not report the new version as the previous one: {rendered}"
     );
 }
 

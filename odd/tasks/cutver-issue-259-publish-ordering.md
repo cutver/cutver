@@ -42,7 +42,13 @@ human's decision verbatim; nothing below adds a requirement they did not state.
   release tags only after it passes. S3
 - [x] T7 Docs: `docs/reference/cli.md`, `docs/reference/configuration.md`, `docs/internals/pipeline.md`,
   `docs/internals/design.md`, README. S4, S5
-- [ ] T8 Gates: build, test, clippy, fmt, the new e2e test; record the S2 dynamic-proof constraint.
+- [x] T8 Gates: build, test, clippy, fmt, the new e2e test; record the S2 dynamic-proof constraint.
+  Local: `cargo fmt --all -- --check` clean, `cargo clippy --locked --workspace --all-targets
+  --features plugins -- -D warnings` clean, `cargo test --locked --workspace` green (410 lib + 16
+  release contract + 3 container contract + 3 deferred-publish e2e; `e2e_bump` and
+  `e2e_lifecycle` are `#![cfg(unix)]` and compile to zero tests on Windows). The workflows were
+  parsed with a real YAML parser but not executed: no docker, act or GitHub runner here. S2's
+  dynamic rehearsal stays open, see L6 and the Close report.
 
 ## Log
 
@@ -82,3 +88,10 @@ human's decision verbatim; nothing below adds a requirement they did not state.
   the 400-line hard ceiling: the `[hooks]` steps moved verbatim to `src/bump/exec/hooks.rs` and the
   phase-1 guards plus the interpolation context to `src/bump/exec/guard.rs`. A differential run against
   the base commit showed identical exit codes, tags, remote refs, `published.txt` and output shape.
+- **L11** (commit slices, branch `fix/issue-259-publish-ordering`) `af9d388` the CLI phases ·
+  `e51ae97` the release workflow · `072c22e` the container workflow · `453b337` docs. The CLI slice is
+  ~1359 authored lines because the extraction only exists to serve the two phases: committing it
+  alone would leave `publish.rs` with no caller. Review workload is declared, not hidden.
+- **L12** (split, review comfort) the container contract tests moved to
+  `tests/container_workflow_contract.rs` (280 lines) so `release_pipeline_contract.rs` stays at 502 and
+  each CI commit carries its own pin.

@@ -92,6 +92,17 @@ human's decision verbatim; nothing below adds a requirement they did not state.
   `e51ae97` the release workflow · `072c22e` the container workflow · `453b337` docs. The CLI slice is
   ~1359 authored lines because the extraction only exists to serve the two phases: committing it
   alone would leave `publish.rs` with no caller. Review workload is declared, not hidden.
+- **L13** (native review, lineage `review-767fb5e2f748fcb1`, tier high) 4 reviewers ran and were
+  admitted; the refuter returned `correction_required` with four CRITICAL `introduced` findings —
+  `R1-002`/`R3-001` (no clean-tree guard in `cutver publish`, version read from the working tree),
+  `R4-001` (branch push moved ahead of tag creation) and `R4-003` (an existing `Error::Tag`
+  diagnostic was rewritten). All four triaged as real and fixed in `88159d2` (188 diff lines), with
+  `publish_refuses_a_dirty_working_tree` and `an_inline_run_creates_the_tag_before_it_pushes_the_branch`
+  pinning the two behavioural ones. The correction could not be registered: the correction-plan
+  capture rejects its own provider-issued binding (`authority.revision` `0df49092…` vs the binding's
+  `expected-revision` `7649d549…`), the harness defect recorded in
+  `cutver/rdd/correction-plan-binding-defect`. The lineage is therefore stuck at `correction_required`
+  and terminal approval is unobtainable; see the Close report.
 - **L12** (split, review comfort) the container contract tests moved to
   `tests/container_workflow_contract.rs` (280 lines) so `release_pipeline_contract.rs` stays at 502 and
   each CI commit carries its own pin.

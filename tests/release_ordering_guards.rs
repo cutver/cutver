@@ -246,13 +246,19 @@ fn a_failing_publish_command_names_the_commit_and_the_tag_that_already_landed() 
         text.contains("Where:") && text.contains("Fix:"),
         "the failure must be actionable, got: {text}"
     );
-    // The remote is part of the unwind. By the time a publish command runs, `[publish] push` has
-    // already sent the branch and the tag, so a local-only reset leaves a published half-release
-    // (native review #265, R4-post-publish-unwind).
+    // The failure must not assert a remote state it cannot know: `[publish] push` may be off, and
+    // the first push may have failed before anything landed. It has to send the operator to look,
+    // not to delete (native review #265, R1-001/R1-002/R4-001/R4-002).
     assert!(
-        text.contains("remote tag") && text.contains("reset --hard"),
-        "the fix must cover both the remote refs and the local commit, not only one of them, got: {text}"
+        text.contains("ls-remote"),
+        "the fix must tell the operator to inspect the remote before removing anything, got: {text}"
     );
+    for claim in ["is already published", "are already on the remote"] {
+        assert!(
+            !text.contains(claim),
+            "the fix must not assert `{claim}`: it depends on [publish] push and on which push failed, got: {text}"
+        );
+    }
 }
 
 fn rev(repo: &Path, reff: &str) -> String {

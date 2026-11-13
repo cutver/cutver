@@ -274,3 +274,31 @@ fn the_promotion_does_not_override_the_title() {
         "the title must be declared where the plugin reads it"
     );
 }
+
+/// The `main` ruleset requires `CI gate`, and the bump commit is created inside the version job, so
+/// no check run can exist for it when `cutver release` pushes. The push must therefore authenticate
+/// as the release app, which is the ruleset's only bypass actor: the GitHub Actions integration
+/// cannot be one (GitHub rejects it with "must be part of the ruleset source or owner
+/// organization"), so a checkout authenticated by `secrets.GITHUB_TOKEN` is rejected by the ruleset
+/// after `cargo publish` has already run.
+#[test]
+fn the_version_job_pushes_as_the_app_the_ruleset_lets_by() {
+    let workflow = repo_text(".github/workflows/release.yml");
+    assert!(
+        workflow.contains("token: ${{ steps.release-token.outputs.token || secrets.GITHUB_TOKEN }}"),
+        "the checkout must persist the app token: without it the bump push is rejected by the \
+         `main` ruleset after `cargo publish` has already run"
+    );
+
+    let token_at = workflow
+        .find("id: release-token")
+        .expect("the version job must mint the app token");
+    let checkout_at = workflow
+        .find("uses: actions/checkout@v7")
+        .expect("the version job must check out the repository");
+    assert!(
+        token_at < checkout_at,
+        "the app token must be minted before the checkout, or the checkout persists the wrong \
+         credentials and the push falls back to `github-actions[bot]`, which no ruleset lets by"
+    );
+}

@@ -3,6 +3,21 @@
 All notable changes to this project are documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com).
 
+## v0.18.2 — 2026-11-13
+
+### 🐛 Fixes
+- **git**: push one named ref per publish so a rejected tag cannot roll back the branch in [#278](https://github.com/cutver/cutver/pull/278) ([eb11d06](https://github.com/cutver/cutver/commit/eb11d0602a978e2ac2a341cf1b586eed227bd0e5)) by @Row0902
+- **release**: require the release app token instead of falling back silently in [#277](https://github.com/cutver/cutver/pull/277) ([2f3c79d](https://github.com/cutver/cutver/commit/2f3c79d9fd67bd9d16d11cbcc4970d15bd21162a)) by @Row0902
+- **release**: push as the release app so the main ruleset lets the bump through in [#275](https://github.com/cutver/cutver/pull/275) ([c796701](https://github.com/cutver/cutver/commit/c7967016dcc2f32beb35e2a62b443a38a49d439c)) by @Row0902
+
+### 🛠️ Maintenance
+- scope the release push guard to its job and correct the push ordering in [#276](https://github.com/cutver/cutver/pull/276) ([1831dfc](https://github.com/cutver/cutver/commit/1831dfc9454a5f845620ffd747c63e1f03bf58e2)) by @Row0902
+- make the quality gates block a merge with one umbrella check in [#273](https://github.com/cutver/cutver/pull/273) ([6cada5a](https://github.com/cutver/cutver/commit/6cada5aed5a05128f045a439eeed22b6a1ce61d9)) by @Row0902
+
+### 👥 Contributors
+@Row0902
+
+[Compare v0.18.1...v0.18.2](https://github.com/cutver/cutver/compare/v0.18.1...v0.18.2)
 ## v0.18.1 — 2026-11-13
 
 ### 🐛 Fixes

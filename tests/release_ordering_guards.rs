@@ -246,9 +246,12 @@ fn a_failing_publish_command_names_the_commit_and_the_tag_that_already_landed() 
         text.contains("Where:") && text.contains("Fix:"),
         "the failure must be actionable, got: {text}"
     );
+    // The remote is part of the unwind. By the time a publish command runs, `[publish] push` has
+    // already sent the branch and the tag, so a local-only reset leaves a published half-release
+    // (native review #265, R4-post-publish-unwind).
     assert!(
-        text.contains("reset --hard"),
-        "the fix must say how to unwind the commit, got: {text}"
+        text.contains("remote tag") && text.contains("reset --hard"),
+        "the fix must cover both the remote refs and the local commit, not only one of them, got: {text}"
     );
 }
 

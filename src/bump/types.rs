@@ -48,7 +48,7 @@ pub enum Error {
         source: Box<crate::git::Error>,
     },
     #[error(
-        "floating major tag '{tag}' failed after commit {commit} was created: {source}\n  Where: floating major tag update, after the release commit and tag and, with `[publish] push`, the pushes\n  Fix: the release commit {commit} already exists locally. Recreate the floating tag once the cause is fixed (`git tag -f -a {tag} {commit}`), and push it by hand (`git push origin +refs/tags/{tag}:refs/tags/{tag}`) if the release tag was already published."
+        "floating major tag '{tag}' failed after commit {commit} was created: {source}\n  Where: floating major tag update, after the release commit, the release tag and, with `[publish] push`, the pushes\n  Fix: the release tag is already published, so the remote is part of the fix. Recreate the floating tag once the cause is fixed (`git tag -f -a {tag} {commit}`) and push it by hand (`git push origin +refs/tags/{tag}:refs/tags/{tag}`); to abandon the release, delete the remote tag and revert the remote branch first, then reset locally (`git reset --hard {commit}~1`)."
     )]
     FloatingTag {
         tag: String,
@@ -96,7 +96,7 @@ pub enum Error {
         source: io::Error,
     },
     #[error(
-        "publish push failed: {source}\n  Where: publish push, after commit {commit} and tag '{tag}' were created locally; the push step that failed and the refs that already landed are named above\n  Fix: the release commit {commit} and tag '{tag}' already exist locally: push the remaining ref by hand once the cause is fixed, or unwind with `git reset --hard {commit}~1` and delete tag '{tag}'. Do not re-run `cutver bump` against the already-bumped files."
+        "publish push failed: {source}\n  Where: publish push, after commit {commit} and tag '{tag}' exist locally; the failing refspec is named above and `git push` lists the refs that did land\n  Fix: the ref named above is absent from the remote, and every ref pushed before it is already published there and stays published. Fix the cause and push that ref alone. Abandoning the release is not a local unwind: delete the remote tag ({tag}), revert or delete the remote branch if policy allows, and only then reset locally (`git reset --hard {commit}~1`) and delete the local tag. Do not re-run `cutver bump` against already-bumped files."
     )]
     Push {
         commit: String,
@@ -110,7 +110,7 @@ pub enum Error {
         status: std::process::ExitStatus,
     },
     #[error(
-        "a publish command failed after release {tag} at commit {commit}: {source}\n  Where: publish commands, the last step after the commit, the tag and (with `[publish] push`) the pushes\n  Fix: the release commit {commit} and tag '{tag}' already exist; fix the publish command and re-run that command alone. Do not re-run `cutver bump`, which would bump again; to unwind, delete tag '{tag}' and run `git reset --hard {commit}~1`."
+        "a publish command failed after release {tag} at commit {commit}: {source}\n  Where: publish commands, the last step, after the commit, the tag and, with `[publish] push`, the branch and release-tag pushes\n  Fix: with `[publish] push` the branch and the tag are already on the remote, so a local reset is not a complete unwind. Fix the command and re-run that command alone; to abandon the release, delete the remote tag ({tag}) and revert the remote branch first, then reset locally (`git reset --hard {commit}~1`). Do not re-run `cutver bump`, which would bump again."
     )]
     PublishAfterCommit {
         commit: String,
@@ -119,7 +119,7 @@ pub enum Error {
         source: Box<Error>,
     },
     #[error(
-        "post-release plugin '{plugin}' failed after release {tag} at commit {commit}: {source}\n  Where: lifecycle hook 'on_post_release', after the commit, the tag and the publish commands\n  Fix: the release commit {commit} and tag '{tag}' already exist; fix the plugin and dispatch `on_post_release` by hand, or unwind with `git reset --hard {commit}~1` and delete tag '{tag}'."
+        "post-release plugin '{plugin}' failed after release {tag} at commit {commit}: {source}\n  Where: lifecycle hook 'on_post_release', after the commit, the tag, the pushes and the publish commands\n  Fix: the release is already published wherever `[publish] push` sent it. Fix the plugin and dispatch `on_post_release` by hand rather than re-running `cutver bump`. Unwinding means deleting the remote tag and reverting the remote branch first, then resetting locally (`git reset --hard {commit}~1`)."
     )]
     PostReleasePlugin {
         plugin: String,

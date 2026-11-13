@@ -1,8 +1,11 @@
-//! Contract tests binding `cutver.toml` to `.github/workflows/release.yml`.
+//! Contract tests binding `cutver.toml` to `.github/workflows/release.yml`, the workflow that cuts
+//! a release: the crate version, the git tag and the draft release.
 //!
 //! The release workflow cannot be run from a test, but every coupling that would silently break a
 //! release is text-visible. Each assertion names the release failure it prevents, so a future edit
 //! to either file fails here instead of during a dispatch.
+//!
+//! The OCI half of the same release is pinned in `container_workflow_contract.rs`.
 //!
 //! Guards PR #229 (risk item 5: delivery/CI).
 
@@ -13,6 +16,10 @@ use cutver::plugin::types::{Capability, RuntimeKind};
 use cutver::plugin::{PluginConfig, PluginName};
 
 const PLUGIN: &str = "github-publish";
+/// Every job id in the file, in declaration order.
+const JOBS: [&str; 6] = ["version", "build", "build-plugins", "smoke", "smoke-plugins", "publish"];
+/// The jobs whose green result the publish job waits on: the bump, both builds and both smokes.
+const VERIFIED_BEFORE_PUBLISHING: [&str; 5] = ["version", "build", "build-plugins", "smoke", "smoke-plugins"];
 
 fn repo_text(relative: &str) -> String {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(relative);
@@ -20,6 +27,23 @@ fn repo_text(relative: &str) -> String {
     // Git checks these files out with CRLF on Windows. Line endings are a checkout setting, not
     // content, so every assertion in this file compares normalised text.
     raw.replace("\r\n", "\n")
+}
+
+/// One job body, anchored on its two-space job key so a same-named value elsewhere in the file (a
+/// `needs:` entry, a step name, an output) cannot stand in for the job. The last job runs to EOF.
+fn job<'a>(workflow: &'a str, id: &str) -> &'a str {
+    let marker = format!("\n  {id}:\n");
+    let start = workflow
+        .find(&marker)
+        .unwrap_or_else(|| panic!("release.yml must declare the `{id}` job"))
+        + marker.len();
+    let rest = &workflow[start..];
+    let end = JOBS
+        .iter()
+        .filter_map(|next| rest.find(&format!("\n  {next}:\n")))
+        .min()
+        .unwrap_or(rest.len());
+    &rest[..end]
 }
 
 fn declared_plugin() -> PluginConfig {
@@ -59,33 +83,36 @@ fn workflow_restores_the_declared_plugins_instead_of_pinning_them_again() {
 #[test]
 fn the_release_is_cut_by_the_cli_built_from_the_released_commit() {
     let workflow = repo_text(".github/workflows/release.yml");
-
     assert!(
-        workflow.contains("cargo build --locked --release --features plugins"),
-        "release.yml must build the plugin-enabled CLI from the checkout before releasing"
-    );
-    assert!(
-        workflow.contains("target/release") && workflow.contains("$GITHUB_PATH"),
-        "release.yml must put the built CLI on PATH, because cutver/release shells out to `cutver`"
+        !workflow.contains("uses: cutver/release@v1"),
+        "the release must not run the published action: `cutver/release` resolves `version: latest`, \
+         so a fix in the release path could only ship in a release it was unable to cut"
     );
 
-    let built = workflow.find("Build the CLI from this commit").expect("build step");
-    let on_path = workflow.find("Put the built CLI first on PATH").expect("PATH step");
-    let action = workflow.find("uses: cutver/release@v1").expect("release action step");
+    // Scoped to the job that cuts the release: a literal elsewhere in the file keeps the test green
+    // while the mechanism is dead.
+    let version = job(&workflow, "version");
+    let built = version.find("Build the CLI from this commit").expect("build step");
+    let on_path = version.find("Put the built CLI first on PATH").expect("PATH step");
+    let restored = version.find("run: cutver plugin restore").expect("plugin restore step");
+    let bump = version
+        .find("cutver bump \"${{ inputs.bump || 'auto' }}\"")
+        .expect("bump step");
     assert!(
-        built < on_path && on_path < action,
-        "the CLI must be built and exposed on PATH before the release action runs"
+        built < on_path && on_path < restored && restored < bump,
+        "the plugin-enabled CLI must be built, put on PATH and hydrated with the declared plugins \
+         before the bump step runs: every step in between shells out to whatever `cutver` resolves"
     );
     // Later jobs may install a published CLI on purpose: the smoke test proves the artifact a user
     // downloads works. What must never happen is an installed binary *cutting* the release.
     assert!(
-        !workflow[..action].contains("uses: cutver/setup"),
+        !version[..bump].contains("uses: cutver/setup"),
         "no published CLI may be installed before the release step: the binary that cuts release N must be N's code"
     );
 }
 
 /// The plugin only owns the release if it is a draft: its `draft` field defaults to false, and a
-/// non-draft release is published during the version job, before any binary is built.
+/// non-draft release is published the moment `on_post_release` fires, before its assets exist.
 #[test]
 fn plugin_creates_the_release_as_a_draft() {
     let plugin = declared_plugin();
@@ -127,15 +154,133 @@ fn declared_capability_events_and_permissions_are_the_ones_the_host_uses() {
 #[test]
 fn workflow_requests_the_plugin_build_and_forwards_dry_run() {
     let workflow = repo_text(".github/workflows/release.yml");
-    for needle in ["--features plugins", "dry_run:", "dry-run: ${{ inputs.dry_run }}"] {
-        assert!(workflow.contains(needle), "release.yml must keep `{needle}`");
-    }
+    let version = job(&workflow, "version");
+    assert!(
+        version.contains("cargo build --locked --release --features plugins"),
+        "the version job must build the plugin-enabled CLI: a lean build fails closed on the \
+         [plugins.github-publish] declaration"
+    );
+    assert!(
+        version.contains("if [ \"${{ inputs.dry_run }}\" = \"true\" ]"),
+        "the `workflow_dispatch` boolean must drive the flag, or `dry_run: true` still releases"
+    );
+    assert!(
+        version.contains("args+=(--dry-run)"),
+        "`--dry-run` must be the branch `inputs.dry_run` controls"
+    );
     for key in ["GITHUB_TOKEN:", "GITHUB_REPOSITORY:"] {
         assert!(
-            workflow.contains(key),
-            "the release step must export `{key}`, or the declared permission arrives empty"
+            version.contains(key),
+            "the bump step must export `{key}`, or the declared permission arrives empty"
         );
     }
+}
+
+/// #259: the version job must leave no trace a failed smoke would have to undo. A tag cannot be
+/// unpublished, a crate version cannot be reused, and a public release without its assets is
+/// exactly what `draft = true` exists to prevent.
+#[test]
+fn the_version_job_publishes_nothing_irreversible() {
+    let workflow = repo_text(".github/workflows/release.yml");
+    let version = job(&workflow, "version");
+    for forbidden in ["cutver publish", "cargo publish", "git tag"] {
+        assert!(
+            !version.contains(forbidden),
+            "the version job must not run `{forbidden}`: an irreversible step there means a run whose \
+             smoke fails has already published a tag, a crate version or a public release"
+        );
+    }
+    assert!(
+        version.contains("--defer-publish"),
+        "the bump step must pass `--defer-publish`, or `cutver bump` runs the tag, the registry and \
+         `on_post_release` inside the version job again"
+    );
+    assert!(
+        version.contains("id: cutver"),
+        "the job outputs must come from the report-reading step, not from the bump step"
+    );
+}
+
+/// The only job that publishes must run after every verification job, on one exact `needs:` line:
+/// a leg added here but left out there runs red while the release goes public anyway.
+#[test]
+fn the_publish_job_waits_for_every_verification_job() {
+    let workflow = repo_text(".github/workflows/release.yml");
+    let publish = job(&workflow, "publish");
+    let needs = format!("    needs: [{}]", VERIFIED_BEFORE_PUBLISHING.join(", "));
+    assert!(
+        publish.contains(&format!("\n{needs}\n")),
+        "the publish job must declare exactly `{needs}`: a smoke that fails has to leave the tag, \
+         the crate and the draft unpublished"
+    );
+    for id in VERIFIED_BEFORE_PUBLISHING {
+        assert!(
+            workflow.contains(&format!("\n  {id}:\n")),
+            "the publish job needs `{id}`, which must still exist as a job"
+        );
+    }
+    assert!(
+        publish.contains("if: needs.version.outputs.released == 'true'"),
+        "a dry run must publish nothing: the job stays gated on the reported `released`"
+    );
+}
+
+/// The tag no longer exists while the build and smoke jobs run, so they must check out the release
+/// commit. A `ref: needs.version.outputs.tag` there resolves to nothing and the run dies before the
+/// verification it exists to perform.
+#[test]
+fn the_built_artifacts_come_from_the_release_commit() {
+    let workflow = repo_text(".github/workflows/release.yml");
+    for id in ["build", "build-plugins", "smoke", "smoke-plugins"] {
+        let slice = job(&workflow, id);
+        let checkout = slice
+            .find("uses: actions/checkout@v7")
+            .unwrap_or_else(|| panic!("the `{id}` job must check out"));
+        let rest = &slice[checkout..];
+        let step = &rest[..rest.find("\n      - ").unwrap_or(rest.len())];
+        assert!(
+            step.contains("ref: ${{ needs.version.outputs.commit }}"),
+            "the `{id}` job must check out the release commit: {step}"
+        );
+        assert!(
+            !step.contains("needs.version.outputs.tag"),
+            "the `{id}` job must not check out by tag: that ref does not exist until the publish \
+             job creates it: {step}"
+        );
+    }
+}
+
+/// The irreversibility order #259 is about: the tag and the crate first, the assets into the draft,
+/// and only then the draft made public. A public release without its assets cannot be undone.
+#[test]
+fn the_tag_the_crate_and_the_draft_are_published_after_verification() {
+    let workflow = repo_text(".github/workflows/release.yml");
+    let publish = job(&workflow, "publish");
+    let closing = publish.find("cutver publish --tag").expect("the closing phase");
+    let assets = publish
+        .find("Download all asset artifacts")
+        .expect("asset download step");
+    let upload = publish
+        .find("gh release upload \"$TAG\" dist/* --clobber")
+        .expect("upload step");
+    let promote = publish
+        .find("gh release edit \"$TAG\" --draft=false")
+        .expect("promotion step");
+    assert!(
+        closing < assets && assets < upload && upload < promote,
+        "`cutver publish` creates the tag and the crate, the assets land in its draft, and only then \
+         is the draft promoted"
+    );
+    assert!(
+        publish.contains("--commit \"${{ needs.version.outputs.commit }}\""),
+        "`cutver publish` must name the commit the verification jobs built, or it can tag a commit \
+         nobody tested"
+    );
+    assert!(
+        publish.contains("name: release-notes") && publish.contains("--notes-file RELEASE_NOTES.md"),
+        "the publish job must download the rendered notes and hand them to `cutver publish`: they \
+         are the body `on_post_release` releases, not a second copy of the changelog"
+    );
 }
 
 /// The plugin owns release creation, so the workflow must fill that draft and publish it — not
@@ -212,50 +357,55 @@ fn publish_steps_pass_gh_token_and_tag() {
     );
 }
 
-/// The version job saves the rendered entry as an artifact, so a release can be audited after the
-/// fact — but nothing consumes it. The body and the title belong to the plugin, which created the
-/// draft from the same entry; repeating them in the promotion gives the release a second owner.
+/// The version job renders the entry once and saves it as an artifact. The publish job downloads it
+/// and hands the path to `cutver publish`, whose `on_post_release` plugin creates the draft from it;
+/// the promotion that follows only flips the draft state. Repeating the body there gave the release
+/// a second owner — that is how `title_template` once came out dead.
 #[test]
 fn release_notes_artifact_is_kept_but_does_not_feed_the_promotion() {
     let workflow = repo_text(".github/workflows/release.yml");
+    let version = job(&workflow, "version");
     assert!(
-        workflow.contains("name: release-notes\n          path: RELEASE_NOTES.md"),
+        version.contains("name: release-notes\n          path: RELEASE_NOTES.md"),
         "the version job must save RELEASE_NOTES.md as the `release-notes` artifact"
     );
     assert!(
-        !workflow.contains("--notes-file"),
-        "the promotion must not set the body: the plugin publishes the entry Cutver rendered"
+        version.contains("cutver changelog latest --template .github/templates/cutver/RELEASE.md > RELEASE_NOTES.md"),
+        "the version job must render the notes from the template cutver.toml names"
     );
-    assert!(
-        !workflow.contains("name: release-notes\n          path: ./"),
-        "downloading the notes artifact back is dead plumbing once the plugin owns the body"
+    let promote_at = workflow
+        .find("gh release edit \"$TAG\" --draft=false")
+        .expect("the promotion step");
+    let promotion = workflow[promote_at..].split('\n').next().unwrap_or_default();
+    assert_eq!(
+        promotion, "gh release edit \"$TAG\" --draft=false",
+        "the promotion must only publish the draft: a `--title` or a body there overrides the plugin"
     );
 }
 
 /// The plugin authenticates with whatever token reaches it, so that token decides who the release
 /// is attributed to. `secrets.GITHUB_TOKEN` publishes as github-actions[bot], which is the
-/// attribution regression issue #166 removed.
+/// attribution regression issue #166 removed. Both jobs that hand the plugin a token mint it
+/// themselves and fail closed without it: an optional token is how 0.16.0 shipped under the wrong
+/// identity, and how the tag push once reached the ruleset unauthenticated.
 #[test]
 fn the_plugin_authenticates_with_the_app_token() {
     let workflow = repo_text(".github/workflows/release.yml");
-    assert!(
-        workflow.contains("GITHUB_TOKEN: ${{ steps.release-token.outputs.token || secrets.GITHUB_TOKEN }}"),
-        "the plugin must receive the app token, falling back to GITHUB_TOKEN only when it is absent"
-    );
+    const MANDATORY: &str = "GITHUB_TOKEN: ${{ steps.release-token.outputs.token }}";
+    for id in ["version", "publish"] {
+        let slice = job(&workflow, id);
+        assert!(
+            slice.contains("id: release-token"),
+            "the `{id}` job must mint the app token it hands the plugin"
+        );
+        assert!(
+            slice.contains(MANDATORY),
+            "the `{id}` job must hand the plugin `{MANDATORY}`, with no fallback"
+        );
+    }
     assert!(
         !workflow.contains("GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}"),
         "a bare secrets.GITHUB_TOKEN attributes the release to github-actions[bot]"
-    );
-    // The token has to be generated in the same job as the release step: a version job without it
-    // falls back silently, which is exactly how 0.16.0 was published under the wrong identity.
-    let version_job = workflow
-        .split("\n  version:\n")
-        .nth(1)
-        .and_then(|rest| rest.split("\n  build:\n").next())
-        .expect("release.yml must keep a version job");
-    assert!(
-        version_job.contains("id: release-token"),
-        "the version job must generate the app token the plugin uses"
     );
 }
 

@@ -34,18 +34,25 @@ jobs:
       tag: ${{ steps.cutver.outputs.tag }}
       released: ${{ steps.cutver.outputs.released }}
       version: ${{ steps.cutver.outputs.version }}
-      notes: ${{ steps.cutver.outputs.notes-path }}
+      commit: ${{ steps.cutver.outputs.commit }}
+      # The render step owns this path, so the value is a constant: the action output that used to
+      # carry it went away with the action.
+      notes: RELEASE_NOTES.md
     steps:
+      # This job bumps and pushes the branch; it publishes nothing irreversible. The tag, the crate
+      # and the draft release are created by the `publish` job below, which runs only once `build`,
+      # `build-plugins`, `smoke` and `smoke-plugins` are green: a run whose smoke fails leaves no tag
+      # to delete, no crate version burned and no draft to clean up (#259). That is why the bump step
+      # defers — `cutver bump --defer-publish` stops after the branch push and reports what it left
+      # for the closing job in .cutver-release.json.
+      #
       # The `main` ruleset requires `CI gate`, and the bump commit is created inside this job, so no
-      # check run can exist for it when `cutver release` pushes: the push must therefore authenticate
+      # check run can exist for it when `cutver bump` pushes: the push must therefore authenticate
       # as the release app, the ruleset's only bypass actor. The app token is therefore mandatory, not
       # opportunistic: the checkout below persists exactly that token, and a missing one now fails
       # this job at the step that mints it, before anything is written, instead of degrading into a
-      # github-actions[bot] push the ruleset rejects after the fact. `cutver release` pushes
-      # (`src/bump/exec/pipeline.rs:116`) before it runs the publish commands (`:117`), so a rejected
-      # push never reaches the registry — the tag is the part that does land, and a retry then fails
-      # with `release tag <tag> already exists`, needing a manual
-      # `git push --delete origin <tag>` first.
+      # github-actions[bot] push the ruleset rejects after the fact. The `publish` job mints the same
+      # app token for the same reason: the tag push it performs reaches the same ruleset.
       #
       # The github-publish plugin creates the release, so the token it authenticates with decides
       # who the release is attributed to. The bump commit is authored as cutver-release[bot] by the
@@ -96,7 +103,7 @@ jobs:
       - name: Build the CLI from this commit
         run: cargo build --locked --release --features plugins
 
-      # `cutver/release` shells out to `cutver` through PATH, so the built binary is the one
+      # Every `cutver` step below resolves the binary through PATH, so the build above is the one
       # that runs. The plugin-enabled variant is required: a lean build fails closed on the
       # [plugins.github-publish] declaration.
       - name: Put the built CLI first on PATH
@@ -109,22 +116,44 @@ jobs:
       - name: Restore the declared plugin artifacts
         run: cutver plugin restore
 
-      - name: Run Cutver Release
-        id: cutver
-        uses: cutver/release@v1
-        with:
-          command: "release"
-          bump: ${{ inputs.bump || 'auto' }}
-          check-changelog: "true"
-          dry-run: ${{ inputs.dry_run }}
-          notes-file: "RELEASE_NOTES.md"
-          template: ".github/templates/cutver/RELEASE.md"
+      - name: Doctor
+        run: cutver doctor --check-changelog
+
+      # `--defer-publish` is what keeps this job harmless: the bump commit and its branch push are
+      # the only writes it performs. The tag, the registry and the release wait for `publish`.
+      - name: Release (bump only)
+        id: release
+        run: |
+          args=(--defer-publish --report .cutver-release.json)
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            args+=(--dry-run)
+          fi
+          cutver bump "${{ inputs.bump || 'auto' }}" "${args[@]}"
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
           # Declared in permissions.env, so these are the only environment keys the plugin sees.
           # The app token is what makes the release attributed to cutver-release[bot].
-          GITHUB_TOKEN: ${{ steps.release-token.outputs.token || secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.release-token.outputs.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+
+      # The machine-readable result of the bump, and the only source the other jobs read. A
+      # `--dry-run` reports `released=false`, so every downstream job stays skipped; a real run
+      # reports the commit they check out instead of a tag that does not exist yet.
+      - name: Read the release report
+        id: cutver
+        run: |
+          report=.cutver-release.json
+          if [ ! -f "$report" ]; then
+            echo "::error::cutver bump wrote no release report; nothing was published."
+            exit 1
+          fi
+          for key in released deferred version tag commit; do
+            value=$(jq -r --arg k "$key" '.[$k] // "" | tostring' "$report")
+            echo "$key=$value" >> "$GITHUB_OUTPUT"
+          done
+
+      - name: Render the release notes
+        if: steps.cutver.outputs.released == 'true'
+        run: cutver changelog latest --template .github/templates/cutver/RELEASE.md > RELEASE_NOTES.md
 
       - name: Save Release Notes Artifact
         if: steps.cutver.outputs.released == 'true'
@@ -176,9 +205,10 @@ jobs:
             archive: zip
     runs-on: ${{ matrix.os }}
     steps:
+      # The tag does not exist while these jobs run: the release commit is the only ref there is.
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.version.outputs.tag }}
+          ref: ${{ needs.version.outputs.commit }}
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -282,9 +312,10 @@ jobs:
             archive: zip
     runs-on: ${{ matrix.os }}
     steps:
+      # The tag does not exist while these jobs run: the release commit is the only ref there is.
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.version.outputs.tag }}
+          ref: ${{ needs.version.outputs.commit }}
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -382,7 +413,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          ref: ${{ needs.version.outputs.tag }}
+          ref: ${{ needs.version.outputs.commit }}
 
       - name: Download asset artifact
         uses: actions/download-artifact@v5
@@ -458,7 +489,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          ref: ${{ needs.version.outputs.tag }}
+          ref: ${{ needs.version.outputs.commit }}
 
       - name: Download asset artifact
         uses: actions/download-artifact@v5
@@ -499,16 +530,84 @@ jobs:
 
   publish:
     name: Upload release assets
-    needs: [version, build, smoke, build-plugins, smoke-plugins]
+    needs: [version, build, build-plugins, smoke, smoke-plugins]
     if: needs.version.outputs.released == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
       id-token: write
     steps:
-      - uses: actions/checkout@v7
+      # This job is the only place the release is published, and `cutver publish` is what makes it
+      # irreversible: it creates the tag, pushes it, moves the floating major tag, runs
+      # `[publish].commands` (cargo publish) and dispatches `on_post_release`, which creates the
+      # draft release. It therefore runs only after build, build-plugins, smoke and smoke-plugins
+      # are green, and it authenticates as the release app for the same ruleset reason as the
+      # version job: the tag push reaches `main`, which only that app may bypass. The token is
+      # mandatory here too — a fallback would only move the rejection to the push, after the tag
+      # has already landed.
+      - name: Generate release bot token
+        id: release-token
+        uses: actions/create-github-app-token@v3
         with:
-          ref: ${{ needs.version.outputs.tag }}
+          app-id: ${{ secrets.CUTVER_APP_ID }}
+          private-key: ${{ secrets.CUTVER_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+        env:
+          CUTVER_APP_ID: ${{ secrets.CUTVER_APP_ID }}
+          CUTVER_APP_PRIVATE_KEY: ${{ secrets.CUTVER_APP_PRIVATE_KEY }}
+
+      - name: Require the release bot token
+        run: |
+          if [ -z "${{ steps.release-token.outputs.token }}" ]; then
+            echo "::error::the cutver-release app token is missing. The main ruleset only lets that app push, so the release cannot be published: fix CUTVER_APP_ID / CUTVER_APP_PRIVATE_KEY and the app's contents:write permission on ${{ github.repository }}."
+            exit 1
+          fi
+
+      # The release commit, not the tag: the tag is created by the step at the bottom of this job.
+      # `fetch-depth: 0` gives `cutver publish` the history it resolves HEAD against, and the token
+      # is the app's, because the tag push must bypass the ruleset.
+      - name: Checkout the release commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.version.outputs.commit }}
+          fetch-depth: 0
+          token: ${{ steps.release-token.outputs.token }}
+
+      # Same rationale as the version job: the CLI that publishes is the one built from this
+      # commit, never the previously published binary. The plugin-enabled variant is required, or
+      # the closing phase fails closed on the [plugins.github-publish] declaration.
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache the release-profile build
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: release-cli
+
+      - name: Build the CLI from the release commit
+        run: cargo build --locked --release --features plugins
+
+      - name: Put the built CLI first on PATH
+        run: echo "$GITHUB_WORKSPACE/target/release" >> "$GITHUB_PATH"
+
+      - name: Restore the declared plugin artifacts
+        run: cutver plugin restore
+
+      - name: Download the rendered release notes
+        uses: actions/download-artifact@v5
+        with:
+          name: release-notes
+
+      - name: Publish the release
+        id: publish
+        run: cutver publish --tag "${{ needs.version.outputs.tag }}" --commit "${{ needs.version.outputs.commit }}" --notes-file RELEASE_NOTES.md
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          # Declared in permissions.env, so these are the only environment keys the plugin sees.
+          # The app token is what makes the release attributed to cutver-release[bot].
+          GITHUB_TOKEN: ${{ steps.release-token.outputs.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
 
       - name: Download all asset artifacts
         uses: actions/download-artifact@v5
@@ -532,36 +631,16 @@ jobs:
             --bundle dist/SHA256SUMS.bundle \
             dist/SHA256SUMS
 
-      - name: Generate release bot token
-        id: release-token
-        if: env.CUTVER_APP_ID != '' && env.CUTVER_APP_PRIVATE_KEY != ''
-        continue-on-error: true
-        uses: actions/create-github-app-token@v3
-        with:
-          app-id: ${{ secrets.CUTVER_APP_ID }}
-          private-key: ${{ secrets.CUTVER_APP_PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
-          repositories: ${{ github.event.repository.name }}
-        env:
-          CUTVER_APP_ID: ${{ secrets.CUTVER_APP_ID }}
-          CUTVER_APP_PRIVATE_KEY: ${{ secrets.CUTVER_APP_PRIVATE_KEY }}
-
-      - name: Warn when the release cannot be attributed to the bot
-        if: steps.release-token.outputs.token == ''
-        run: |
-          echo "::warning::the cutver-release app token is unavailable, so this release will be published as github-actions[bot]. Check the CUTVER_APP_ID / CUTVER_APP_PRIVATE_KEY secrets and that the app is installed on ${{ github.repository }} with contents:write."
-
       - name: Upload binaries into the draft release
         env:
           GH_TOKEN: ${{ steps.release-token.outputs.token || secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.version.outputs.tag }}
         run: |
-          # The github-publish plugin creates this release during the version job, as a draft.
-          # Only a missing release is an error: that means the plugin-enabled build or
-          # on_post_release did not happen, and creating a second release here would race it.
-          # An already-published release is a legitimate retry, so it falls through to the upload.
-          # The failure carries gh's own message, so an auth problem is never reported as a
-          # missing release.
+          # The github-publish plugin created this release as a draft when `cutver publish` ran
+          # `on_post_release` above, so it must already exist. Only a missing release is an error:
+          # creating a second release here would race the plugin. An already-published release is a
+          # legitimate retry, so it falls through to the upload. The failure carries gh's own
+          # message, so an auth problem is never reported as a missing release.
           if state=$(gh release view "$TAG" --json isDraft --jq 'if .isDraft then "draft" else "published" end' 2>&1); then
             case "$state" in
               draft|published) echo "release $TAG is $state; uploading assets" ;;
@@ -572,12 +651,12 @@ jobs:
             esac
           else
             echo "::error::Could not read the release for $TAG: $state"
-            echo "::error::If it does not exist, the github-publish plugin never created its draft in the version job: check that the plugin-enabled build was installed and that on_post_release succeeded."
+            echo "::error::If it does not exist, the github-publish plugin never created its draft: check that `cutver publish` ran on the plugin-enabled build and that on_post_release succeeded."
             exit 1
           fi
           gh release upload "$TAG" dist/* --clobber
 
-      - name: Publish the release
+      - name: Promote the draft release
         env:
           GH_TOKEN: ${{ steps.release-token.outputs.token || secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.version.outputs.tag }}
@@ -600,8 +679,9 @@ jobs:
           # A failed build never reaches this step, so a draft cannot become public without them.
           #
           # Neither the title nor the body is repeated here: the plugin created the draft from the
-          # entry Cutver rendered and the title `title_template` asked for. Passing either again
-          # gave the release a second owner — that is how `title_template` once came out dead.
+          # entry Cutver rendered (fed by `--notes-file` on `cutver publish`) and the title
+          # `title_template` asked for. Passing either again gave the release a second owner — that
+          # is how `title_template` once came out dead.
           gh release edit "$TAG" --draft=false
           gh release view "$TAG" --json isDraft,tagName --jq 'if .isDraft then error("release is still a draft after publishing") else "published \(.tagName)" end'
 

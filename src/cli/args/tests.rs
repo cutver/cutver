@@ -12,6 +12,9 @@ fn bump_patch_defaults() {
         dry_run,
         skip_preflight,
         first_release,
+        defer_publish,
+        json,
+        report,
     } = cli.command
     else {
         panic!("expected bump")
@@ -20,6 +23,9 @@ fn bump_patch_defaults() {
     assert!(!dry_run);
     assert!(skip_preflight.is_empty());
     assert!(!first_release);
+    assert!(!defer_publish);
+    assert!(!json);
+    assert!(report.is_none());
     assert!(cli.config.is_none());
 }
 
@@ -41,6 +47,9 @@ fn bump_minor_dry_run_and_skip_preflight() {
         dry_run,
         skip_preflight,
         first_release,
+        defer_publish,
+        json,
+        report,
     } = cli.command
     else {
         panic!("expected bump")
@@ -49,6 +58,9 @@ fn bump_minor_dry_run_and_skip_preflight() {
     assert!(dry_run);
     assert_eq!(skip_preflight, vec!["tests", "build"]);
     assert!(!first_release);
+    assert!(!defer_publish);
+    assert!(!json);
+    assert!(report.is_none());
 }
 
 #[test]
@@ -59,6 +71,9 @@ fn bump_auto_cli() {
         dry_run,
         skip_preflight,
         first_release,
+        defer_publish,
+        json,
+        report,
     } = cli.command
     else {
         panic!("expected bump")
@@ -67,6 +82,115 @@ fn bump_auto_cli() {
     assert!(!dry_run);
     assert!(skip_preflight.is_empty());
     assert!(!first_release);
+    assert!(!defer_publish);
+    assert!(!json);
+    assert!(report.is_none());
+}
+
+#[test]
+fn bump_defer_publish_parses_and_defaults_to_false() {
+    let cli = Cli::try_parse_from(["cutver", "bump", "auto"]).unwrap();
+    let Commands::Bump { defer_publish, .. } = cli.command else {
+        panic!("expected bump")
+    };
+    assert!(!defer_publish);
+
+    let cli = Cli::try_parse_from(["cutver", "bump", "patch", "--defer-publish"]).unwrap();
+    let Commands::Bump {
+        level, defer_publish, ..
+    } = cli.command
+    else {
+        panic!("expected bump")
+    };
+    assert_eq!(level, BumpLevel::Patch);
+    assert!(defer_publish);
+}
+
+#[test]
+fn bump_json_flag_parses_and_defaults_to_false() {
+    let cli = Cli::try_parse_from(["cutver", "bump", "patch"]).unwrap();
+    let Commands::Bump { json, .. } = cli.command else {
+        panic!("expected bump")
+    };
+    assert!(!json);
+
+    let cli = Cli::try_parse_from(["cutver", "bump", "patch", "--json"]).unwrap();
+    let Commands::Bump { json, .. } = cli.command else {
+        panic!("expected bump")
+    };
+    assert!(json);
+}
+
+#[test]
+fn publish_parses_its_arguments_and_requires_the_tag() {
+    let cli = Cli::try_parse_from(["cutver", "publish", "--tag", "v1.3.0"]).unwrap();
+    let Commands::Publish {
+        tag,
+        commit,
+        notes_file,
+        dry_run,
+    } = cli.command
+    else {
+        panic!("expected publish")
+    };
+    assert_eq!(tag, "v1.3.0");
+    assert!(commit.is_none());
+    assert!(notes_file.is_none());
+    assert!(!dry_run);
+
+    let cli = Cli::try_parse_from([
+        "cutver",
+        "publish",
+        "--tag",
+        "v1.3.0",
+        "--commit",
+        "abc1234",
+        "--notes-file",
+        "notes.md",
+        "--dry-run",
+    ])
+    .unwrap();
+    let Commands::Publish {
+        tag,
+        commit,
+        notes_file,
+        dry_run,
+    } = cli.command
+    else {
+        panic!("expected publish")
+    };
+    assert_eq!(tag, "v1.3.0");
+    assert_eq!(commit.as_deref(), Some("abc1234"));
+    assert_eq!(notes_file, Some(PathBuf::from("notes.md")));
+    assert!(dry_run);
+
+    assert!(
+        Cli::try_parse_from(["cutver", "publish"]).is_err(),
+        "the tag is required"
+    );
+}
+
+#[test]
+fn bump_report_parses_its_path_and_is_independent_of_json() {
+    let cli = Cli::try_parse_from(["cutver", "bump", "patch"]).unwrap();
+    let Commands::Bump { report, .. } = cli.command else {
+        panic!("expected bump")
+    };
+    assert!(report.is_none(), "no report file is written unless asked");
+
+    let cli = Cli::try_parse_from(["cutver", "bump", "patch", "--report", "out/release.json"]).unwrap();
+    let Commands::Bump { report, json, .. } = cli.command else {
+        panic!("expected bump")
+    };
+    assert_eq!(report, Some(PathBuf::from("out/release.json")));
+    assert!(!json, "--report must not imply --json");
+
+    let cli = Cli::try_parse_from(["cutver", "bump", "patch", "--report", "r.json", "--json"]).unwrap();
+    let Commands::Bump { report, json, .. } = cli.command else {
+        panic!("expected bump")
+    };
+    assert_eq!(report, Some(PathBuf::from("r.json")));
+    assert!(json, "both may be passed together");
 }
 
 #[test]
@@ -330,6 +454,9 @@ fn bump_first_release_flags_and_defaults() {
         dry_run,
         skip_preflight,
         first_release,
+        defer_publish,
+        json,
+        report,
     } = cli.command
     else {
         panic!("expected bump")
@@ -338,6 +465,9 @@ fn bump_first_release_flags_and_defaults() {
     assert!(!dry_run);
     assert!(skip_preflight.is_empty());
     assert!(first_release);
+    assert!(!defer_publish);
+    assert!(!json);
+    assert!(report.is_none());
 
     let cli2 = Cli::try_parse_from(["cutver", "bump", "auto", "--first-release"]).unwrap();
     let Commands::Bump {

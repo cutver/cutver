@@ -56,6 +56,14 @@ pub enum Error {
         #[source]
         source: Box<crate::git::Error>,
     },
+    #[error(
+        "release tag '{tag}' does not match the version the manifests declare at HEAD ('{declared}')\n  Where: `cutver publish` validation, before the tag, the pushes and the publish commands\n  Fix: publish the tag this commit declares (`cutver publish --tag {declared}`), or check out the release commit you meant to publish. Nothing was written."
+    )]
+    PublishTagMismatch { tag: String, declared: String },
+    #[error(
+        "release commit '{expected}' is not HEAD ('{actual}')\n  Where: `cutver publish` validation, before the tag, the pushes and the publish commands\n  Fix: check out the commit you meant to publish (`git checkout {expected}`) and re-run, or drop `--commit` to publish the current HEAD. Nothing was written."
+    )]
+    PublishCommitMismatch { expected: String, actual: String },
     #[error("release tag {tag} already exists (points at {commit}) — resolve it before re-running")]
     TagExists { tag: String, commit: String },
     #[error(
@@ -178,6 +186,8 @@ pub struct Summary {
     pub touched: Vec<Touched>,
     pub changelog: Option<String>,
     pub commit_message: String,
+    /// The release commit sha, empty on a dry run where no commit is created.
+    pub commit: String,
     pub tag: String,
     pub tag_skipped: bool,
     pub floating_tag: Option<String>,
@@ -187,6 +197,9 @@ pub struct Summary {
     pub publish_push: bool,
     pub publish_push_command: Option<String>,
     pub publish_commands: Vec<String>,
+    /// True when the run stopped before publishing: the tag, its pushes, `[publish] commands` and
+    /// the post-release plugins wait for `cutver publish` (#259).
+    pub deferred: bool,
     pub rationale: Option<crate::conventional::BumpRationale>,
     pub root_dir: Option<std::path::PathBuf>,
 }

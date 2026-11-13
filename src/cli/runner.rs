@@ -6,12 +6,15 @@ pub mod doctor;
 pub mod external;
 pub mod open;
 pub mod plugin;
+pub mod publish;
 
 #[cfg(test)]
 mod tests;
 
 #[allow(unused_imports)]
-pub use bump::{print_bump_summary, print_summary, run_bump};
+pub use bump::{
+    BumpOutput, ReportError, print_bump_summary, print_summary, render_summary_json, run_bump, write_report,
+};
 #[allow(unused_imports)]
 pub use changelog::{
     ReleaseTargetInfo, execute_changelog_output, extract_heading_date, find_raw_heading_version, load_template_file,
@@ -28,3 +31,5 @@ pub use external::run_external;
 pub use open::run_open;
 #[allow(unused_imports)]
 pub use plugin::run_plugin;
+#[allow(unused_imports)]
+pub use publish::{print_publish_summary, render_publish_plan, run_publish};

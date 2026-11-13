@@ -37,6 +37,12 @@ pub fn is_known_lockfile(path: impl AsRef<Path>) -> bool {
         .is_some_and(|name| KNOWN_LOCKFILES.contains(&name))
 }
 
+/// Renders a configured shell command against the release interpolation context. The one authority
+/// shared by the hooks and `[publish].commands` (Pillar V.6).
+pub fn format_command(template: &str, context: &crate::changelog::InterpolationContext) -> Result<String, Error> {
+    crate::changelog::interpolate_string(template, context).map_err(Error::Changelog)
+}
+
 const POLL: Duration = Duration::from_millis(50);
 
 pub fn run_publish_command(command: &str, current_dir: &Path, timeout_secs: Option<u64>) -> Result<(), Error> {

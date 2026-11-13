@@ -4,12 +4,13 @@ use crate::cli::args::{Cli, Commands};
 use crate::cli::style::Theme;
 use crate::config;
 
-use super::bump::run_bump;
+use super::bump::{BumpOutput, run_bump};
 use super::changelog::run_changelog;
 use super::doctor::run_doctor;
 use super::external::run_external;
 use super::open::run_open;
 use super::plugin::run_plugin;
+use super::publish::run_publish;
 
 pub fn print_error(msg: impl std::fmt::Display) {
     let theme = Theme::stderr();
@@ -43,12 +44,43 @@ pub fn run(args: Cli) -> i32 {
             dry_run,
             skip_preflight,
             first_release,
+            defer_publish,
+            json,
+            report,
         } => {
             let config = match load_config(args.config) {
                 Ok(c) => c,
                 Err(code) => return code,
             };
-            run_bump(&config, level, dry_run, &skip_preflight, first_release)
+            run_bump(
+                &config,
+                level,
+                dry_run,
+                &skip_preflight,
+                first_release,
+                defer_publish,
+                BumpOutput { json, report },
+            )
+        }
+        Commands::Publish {
+            tag,
+            commit,
+            notes_file,
+            dry_run,
+        } => {
+            let config = match load_config(args.config) {
+                Ok(c) => c,
+                Err(code) => return code,
+            };
+            run_publish(
+                &config,
+                crate::bump::PublishRequest {
+                    tag,
+                    commit,
+                    notes_file,
+                    dry_run,
+                },
+            )
         }
         Commands::Open {
             target,

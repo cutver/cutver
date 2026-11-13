@@ -36,6 +36,17 @@ pub(crate) struct PublicationScope<'a> {
     pub dry_run: bool,
     /// Stop after the branch push and leave the rest to `cutver publish` (#259).
     pub defer_publish: bool,
+    /// Which entry point is publishing, so a failure describes the state that phase really leaves.
+    pub phase: Phase,
+}
+
+/// The two entry points. `Inline` is `cutver bump`, which owns the branch push and creates the tag
+/// before it pushes anything; `Closing` is `cutver publish`, which starts after an earlier run
+/// already pushed the branch, so it pushes no branch and cannot claim nothing was pushed.
+#[derive(Clone, Copy)]
+pub(crate) enum Phase {
+    Inline,
+    Closing,
 }
 
 /// What the publication half did, for the run summary.
@@ -98,6 +109,10 @@ pub struct PublishSummary {
 /// manifests at HEAD, a commit that is not HEAD, or an existing tag fails closed with the workspace
 /// untouched.
 pub fn run_publish(config: &Config, request: &PublishRequest) -> Result<PublishSummary, Error> {
+    // Runs before any other validation: the declared version is read from the working tree below, so
+    // the tree must be the one the tag names — an uncommitted manifest would validate one version
+    // and publish another (#259 findings R1-002 and R3-001).
+    git::require_clean_tree(&config.root_dir, config.git.require_clean_tree)?;
     let plugin_manager = Arc::new(PluginManager::from_config(&config.plugins)?);
     let (version, head) = validate(config, request, &plugin_manager)?;
     publish_prepared(config, request, &version, &head, &plugin_manager)
@@ -156,6 +171,7 @@ fn publish_prepared(
         notes: notes.as_deref(),
         dry_run: request.dry_run,
         defer_publish: false,
+        phase: Phase::Closing,
     };
     let published = finalize(&scope, &mut pushes)?;
     Ok(PublishSummary {
@@ -189,16 +205,23 @@ fn publish_context(
     Ok((context, notes))
 }
 
-/// Publishes the release: tag, tag push, floating major tag, `[publish].commands`, post-release
-/// plugins — in that order, recording every push it made in `pushes`.
+/// Publishes the release: tag, branch push, tag push, floating major tag, `[publish].commands`,
+/// post-release plugins — in that order, recording every push it made in `pushes`.
 pub(crate) fn finalize(scope: &PublicationScope<'_>, pushes: &mut PushLog) -> Result<Published, Error> {
     // A deferred run stops after the branch push: the tag, its pushes, the publish commands and
     // the post-release plugins belong to `cutver publish`, which runs once the built artifacts
-    // pass their smoke (#259).
+    // pass their smoke (#259). The commit must be reachable by the jobs that build and smoke it.
     if scope.defer_publish {
+        push_branch(scope, pushes)?;
         return Ok(Published::deferred(&pushes.planned));
     }
+    // The baseline order: the tag exists locally before the branch reaches the remote, so a failed
+    // tag never leaves a release commit published without one (#259 finding R4-001). Only the
+    // inline phase pushes the branch; the closing phase starts after an earlier run pushed it.
     let tag_skipped = create_tag(scope)?;
+    if let Phase::Inline = scope.phase {
+        push_branch(scope, pushes)?;
+    }
     push_release_tag(scope, pushes)?;
     let floating_tag = handle_floating_tag(scope, pushes)?;
     let publish_commands = run_publish_commands(scope)?;
@@ -227,13 +250,40 @@ fn push_command(argv: &[String]) -> String {
 }
 
 fn create_tag(scope: &PublicationScope<'_>) -> Result<bool, Error> {
-    let report =
-        git::tag(scope.repo, scope.tag, &scope.version.to_string(), scope.dry_run).map_err(|source| Error::Tag {
-            tag: scope.tag.to_string(),
-            commit: scope.commit.to_string(),
-            source: Box::new(source),
-        })?;
+    let report = git::tag(scope.repo, scope.tag, &scope.version.to_string(), scope.dry_run)
+        .map_err(|source| tag_error(scope, source))?;
     Ok(report.is_some() && !scope.dry_run)
+}
+
+/// The tag failure each phase can report honestly: the inline phase is still before every push, the
+/// closing phase is not.
+fn tag_error(scope: &PublicationScope<'_>, source: crate::git::Error) -> Error {
+    let (tag, commit, source) = (scope.tag.to_string(), scope.commit.to_string(), Box::new(source));
+    match scope.phase {
+        Phase::Inline => Error::Tag { tag, commit, source },
+        Phase::Closing => Error::TagInClosingPhase { tag, commit, source },
+    }
+}
+
+/// Pushes the branch carrying the release commit, one named ref, and only when `[publish] push`
+/// asks for it. A failure names the release tag, as it always has: the branch is what makes that
+/// tag reachable.
+fn push_branch(scope: &PublicationScope<'_>, pushes: &mut PushLog) -> Result<(), Error> {
+    if !scope.config.publish.push {
+        return Ok(());
+    }
+    let pushed =
+        git::push(scope.repo, scope.config.git.require_branch.as_deref(), scope.dry_run).map_err(|source| {
+            Error::Push {
+                commit: scope.commit.to_string(),
+                tag: scope.tag.to_string(),
+                source: Box::new(source),
+            }
+        })?;
+    if let Some(cmd) = pushed {
+        pushes.planned.push(cmd);
+    }
+    Ok(())
 }
 
 /// Pushes the release tag, one named ref, and only when `[publish] push` asks for it.

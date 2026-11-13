@@ -10,7 +10,7 @@ mod common;
 use std::path::Path;
 
 use common::*;
-use cutver::bump::{PublishRequest, run_deferred_publish, run_publish};
+use cutver::bump::{PublishRequest, run as bump_run, run_deferred_publish, run_publish};
 use cutver::config;
 use cutver::semver_bump::Bump;
 
@@ -89,6 +89,48 @@ fn publish_request(tag: &str, commit: Option<String>) -> PublishRequest {
         notes_file: None,
         dry_run: false,
     }
+}
+
+/// The baseline order, restored for issue #259's review (finding R4-001): the release tag is created
+/// before the branch is pushed, so a tag that cannot be created never leaves the release commit on
+/// the remote without one.
+#[test]
+fn an_inline_run_creates_the_tag_before_it_pushes_the_branch() {
+    let (guard, remote, cfg) = prepared_repo("deferred-publish-inline-order");
+    let fixture = guard.fixture();
+    let before = rev(&fixture.dir, "HEAD");
+    // A ref under the release tag's own path: `git tag -a v1.3.0` cannot lock a ref whose child
+    // already exists, and `check_tag_collisions` does not see it because `v1.3.0` itself does not
+    // exist. That makes tag creation fail after the release commit, which is the case the order
+    // has to survive.
+    run_git_ok(&fixture.dir, &["tag", "v1.3.0/blocker"]);
+
+    let err = bump_run(&cfg, Bump::Minor, false, &[]).expect_err("the release tag cannot be created");
+
+    let head = rev(&fixture.dir, "HEAD");
+    match &err {
+        cutver::bump::Error::Tag { tag, commit, .. } => {
+            assert_eq!(tag, "v1.3.0");
+            assert_eq!(commit, &head, "the failure must name the release commit");
+        }
+        other => panic!("expected a tag failure, got: {other:?}"),
+    }
+    assert_ne!(head, before, "the release commit must have been created");
+    assert!(
+        err.to_string().contains("nothing was pushed"),
+        "an inline tag failure keeps its original wording, which only holds while the tag comes \
+         before every push: {err}"
+    );
+    assert_eq!(
+        rev(&remote.dir, "refs/heads/main"),
+        before,
+        "the branch must not be pushed when the tag could not be created"
+    );
+    assert!(!tag_exists(fixture, "v1.3.0"), "no tag may be created");
+    assert!(
+        !fixture.dir.join("published.txt").exists(),
+        "no publish command may run"
+    );
 }
 
 #[test]
@@ -176,6 +218,40 @@ fn publish_creates_the_tag_pushes_it_and_runs_the_publish_commands() {
     assert!(
         tag_push < floating_push,
         "the release tag push must come before the floating refspec: {command}"
+    );
+}
+
+#[test]
+fn publish_refuses_a_dirty_working_tree() {
+    let (guard, remote, cfg) = prepared_repo("deferred-publish-dirty-tree");
+    let fixture = guard.fixture();
+    run_deferred_publish(&cfg, Bump::Minor, false, &[], false).expect("the prepare phase succeeds");
+    let head = rev(&fixture.dir, "HEAD");
+    // An uncommitted manifest edit: the declared version is read from the working tree, so the tree
+    // must be the one the tag names before anything is tagged, pushed or published.
+    fixture.write("package.json", &fixture.read("package.json").replace("1.3.0", "1.9.9"));
+
+    let err = run_publish(&cfg, &publish_request("v1.3.0", Some(head)))
+        .expect_err("a working tree that is not the tagged one must be refused");
+
+    match &err {
+        cutver::bump::Error::Git(cutver::git::Error::Guard { detail }) => {
+            assert!(
+                detail.contains("package.json"),
+                "the guard must name the uncommitted file: {detail}"
+            );
+        }
+        other => panic!("expected the clean-tree guard, got: {other:?}"),
+    }
+    assert!(!tag_exists(fixture, "v1.3.0"), "no tag may be created");
+    assert!(
+        !remote_refs(&remote.dir).contains("refs/tags/"),
+        "nothing may be pushed: {}",
+        remote_refs(&remote.dir)
+    );
+    assert!(
+        !fixture.dir.join("published.txt").exists(),
+        "no publish command may run"
     );
 }
 

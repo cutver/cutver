@@ -7,7 +7,7 @@ use crate::bump::exec::changelog::{ChangelogPlanParams, apply_changelog, assembl
 use crate::bump::exec::guard::{build_context, bump_level_name, check_tag_collisions, validate_tag_name};
 use crate::bump::exec::hooks::{run_post_bump_hook, run_pre_bump_hook};
 use crate::bump::exec::manifest::{apply, compute, current_source};
-use crate::bump::exec::publish::{self, PublicationScope};
+use crate::bump::exec::publish::{self, Phase, PublicationScope};
 use crate::bump::exec::transaction::MutationTransaction;
 use crate::bump::types::BumpLevel;
 use crate::bump::{Error, Summary};
@@ -165,21 +165,10 @@ fn run_staged(
     // major tag. Each push names exactly one ref, so a rejected ref can never roll back a ref that
     // already landed, and the floating tag moves only after the release push succeeded (#263).
     //
-    // Only the branch push belongs to the mutation pipeline: it is what makes the release commit
-    // reachable by the jobs that build and smoke it. Everything after it is irreversible, so it
-    // lives in `publish::finalize`, and `cutver publish` runs the very same code from a separate
-    // process once those jobs pass (#259).
+    // Publishing lives in `publish::finalize` so `cutver publish` can run the very same code from a
+    // separate process once the built artifacts pass their smoke (#259). The branch push is part of
+    // it: the tag must exist before the branch reaches the remote (finding R4-001).
     let mut push_commands = publish::PushLog::default();
-    if config.publish.push
-        && let Some(cmd) =
-            git::push(repo, config.git.require_branch.as_deref(), dry_run).map_err(|source| Error::Push {
-                commit: release_commit.clone(),
-                tag: tag.clone(),
-                source: Box::new(source),
-            })?
-    {
-        push_commands.planned.push(cmd);
-    }
     let published = publish::finalize(
         &PublicationScope {
             config,
@@ -192,6 +181,7 @@ fn run_staged(
             notes: release_notes.as_deref(),
             dry_run,
             defer_publish,
+            phase: Phase::Inline,
         },
         &mut push_commands,
     )?;

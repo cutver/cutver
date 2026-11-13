@@ -84,14 +84,14 @@ Arbitrary untracked files and unstaged edits outside declared manifests and the 
 
 **Publish** — `cutver publish --tag <TAG> [--commit <SHA>] [--notes-file <PATH>] [--dry-run]`, after the caller verified the artifacts:
 
-1. Validate, before anything is written or pushed: the tag is a valid ref, it equals the version the manifests declare at `HEAD`, `--commit` (when given) is `HEAD`, and no release tag exists locally or remotely.
+1. Validate, before anything is written or pushed: the working tree is clean (`require_clean_tree`), the tag is a valid ref, it equals the version the manifests declare at `HEAD`, `--commit` (when given) is `HEAD`, and no release tag exists locally or remotely.
 2. Create the annotated tag on `HEAD`.
 3. `git push origin refs/tags/<release tag>`, only when `[publish] push = true`.
 4. Move the floating major tag onto the release commit when `[git] floating_major_tag = true`, and force-push it when `[publish] push` is enabled too.
 5. Run `[publish].commands` in declaration order.
 6. Dispatch the `on_post_release` plugins, which is what creates the draft release.
 
-Steps 2 to 6 are the code the single-process pipeline runs inline after its branch push: one implementation, two entry points. Without `--defer-publish` the tail still runs in the bump process, so the split is a choice at cut time rather than a new default.
+Steps 2 to 6 are the code the single-process pipeline runs inline, in that order: it creates the tag first and only then pushes the branch, so a tag that cannot be created never leaves the release commit on the remote. One implementation, two entry points. Without `--defer-publish` the tail still runs in the bump process, so the split is a choice at cut time rather than a new default.
 
 **The residual, stated plainly.** The crate is published by `[publish].commands` (step 5), while the release assets are uploaded and the draft is promoted by CI afterwards. An asset-upload failure therefore leaves a published crate version with a draft nobody can see. Nothing was lost and nothing needs re-cutting: re-run the asset upload and the promotion, which clobbers the assets and treats an already-published release as a no-op. `cutver publish` itself now fails closed on the tag it already created, and a crate version can be yanked but not withdrawn.
 
@@ -99,7 +99,7 @@ Steps 2 to 6 are the code the single-process pipeline runs inline after its bran
 
 ## Publish Ordering
 
-`publish.push = true` sends three pushes in dependency order, one ref each. The branch push belongs to the run that creates the release commit; the two tag pushes are the closing phase of a two-phase run, and the tail of the same run otherwise.
+`publish.push = true` sends three pushes in dependency order, one ref each. The branch push belongs to the run that creates the release commit; the two tag pushes are the closing phase of a two-phase run, and the tail of the same run otherwise. The annotated tag is created before the first of them, so a tag that cannot be created pushes nothing.
 
 1. `git push origin refs/heads/<branch>`
 2. `git push origin refs/tags/<release tag>`

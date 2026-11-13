@@ -37,13 +37,23 @@ pub enum Error {
         source: crate::git::TagError,
     },
     #[error(
-        "tag '{tag}' failed after commit {commit} was created: {source}\n  Where: tag creation, which `cutver bump` runs inline or `cutver publish` runs on an earlier run's release commit\n  Fix: the release commit {commit} exists and tag '{tag}' was not created. Whether a push already happened depends on `[publish] push` and on which phase ran: `cutver publish` starts after the branch push an earlier run made, and `cutver bump` pushes the branch before it creates the tag. Find out with `git ls-remote origin` before removing anything. Once the cause is fixed, create the tag by hand (`git tag -a {tag} {commit}`) or undo the commit with a plain `git reset {commit}~1`, which keeps uncommitted work; do not reach for `--hard` here, it would discard changes this run never touched."
+        "tag '{tag}' failed after commit {commit} was created: {source}\n  Where: tag creation, immediately after the release commit and before any push\n  Fix: the bump is already committed as {commit} and tag '{tag}' was not created; nothing was pushed. Once the cause is fixed, create the tag by hand (`git tag -a {tag} {commit}`) or undo the commit with a plain `git reset {commit}~1`, which keeps uncommitted work; do not reach for `--hard` here, it would discard changes this run never touched."
     )]
     Tag {
         tag: String,
         commit: String,
         // Boxed to keep `bump::Error` inside the 128-byte `result_large_err` budget
         // (`plugin::error::tests::plugin_error_stays_within_the_bump_result_budget`).
+        #[source]
+        source: Box<crate::git::Error>,
+    },
+    #[error(
+        "tag '{tag}' failed in the closing phase of the release at commit {commit}: {source}\n  Where: tag creation in `cutver publish`, after `cutver bump --defer-publish` already pushed commit {commit} to the remote branch\n  Fix: tag '{tag}' was not created, so no tag push, no floating tag and no publish command ran. Unlike `cutver bump`, this phase starts after the branch push, so the release commit may already be on the remote without a tag: confirm with `git ls-remote origin` before removing anything. Once the cause is fixed, re-run `cutver publish --tag {tag}`, which creates only the missing tag and repeats the remaining steps; do not re-run `cutver bump`, which would bump again."
+    )]
+    TagInClosingPhase {
+        tag: String,
+        commit: String,
+        // Boxed for the same 128-byte `bump::Error` budget as `Tag` above.
         #[source]
         source: Box<crate::git::Error>,
     },

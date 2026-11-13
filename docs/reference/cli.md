@@ -98,7 +98,7 @@ A deferred run marks the tag `[DEFERRED]` in the summary tree and names the `cut
 
 ### `cutver publish`
 
-Closes a release that `bump --defer-publish` prepared. Every input is validated first, so a mistyped tag or a stale commit fails with the workspace untouched; only then does it create the annotated tag, push it, move the floating major tag, run `[publish].commands` and dispatch the `on_post_release` plugins.
+Closes a release that `bump --defer-publish` prepared. Every input is validated first, so a mistyped tag, a stale commit or a dirty working tree fails with the workspace untouched; only then does it create the annotated tag, push it, move the floating major tag, run `[publish].commands` and dispatch the `on_post_release` plugins.
 
 ```bash
 cutver publish --tag <TAG> [OPTIONS]
@@ -106,7 +106,7 @@ cutver publish --tag <TAG> [OPTIONS]
 
 | Flag | Long Option | Description |
 | :--- | :--- | :--- |
-| | `--tag <TAG>` | Release tag to publish. It must be a valid git ref, and it must equal the version the manifests declare at `HEAD`, so the tag is derived from the release commit instead of trusted from the command line. |
+| | `--tag <TAG>` | Release tag to publish. It must be a valid git ref, and it must equal the version the manifests declare at `HEAD`, so the tag is derived from the release commit instead of trusted from the command line. The declared version is read from the working tree, so `require_clean_tree` applies here too. |
 | | `--commit <SHA>` | The release commit the caller verified. When given it must be `HEAD`; omit it to publish whatever `HEAD` is. |
 | | `--notes-file <PATH>` | Release notes for the `on_post_release` payload, which is what renders the draft release. |
 | | `--dry-run` | Validates and prints the plan without creating a tag, pushing anything or running a command. |

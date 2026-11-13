@@ -45,13 +45,10 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          # A release tag must never exist before its smoke. This job pushes one rehearsal ref no
+          # consumer pulls; the `promote` job adds the release tags once the smoke has passed.
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-            type=raw,value=latest,enable=${{ github.event_name == 'release' || github.ref == 'refs/heads/main' }}
-            type=ref,event=branch
-            type=sha
+            type=raw,value=rehearsal-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Build and push multi-arch image
         id: build
@@ -61,6 +58,7 @@ jobs:
           file: ./Containerfile
           platforms: linux/amd64,linux/arm64
           push: true
+          load: false
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
@@ -102,10 +100,10 @@ jobs:
           # image raced it and won, so the default tag pulled the plugin stack.
           flavor: |
             latest=false
+          # Same rehearsal rule as the lean image, distinct ref: both images share
+          # one repository, so a shared rehearsal tag would overwrite the other.
           tags: |
-            type=semver,pattern={{version}}-plugins
-            type=semver,pattern={{major}}.{{minor}}-plugins
-            type=raw,value=plugins
+            type=raw,value=rehearsal-plugins-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Build and push multi-arch plugins image
         id: build
@@ -115,6 +113,7 @@ jobs:
           file: ./Containerfile
           platforms: linux/amd64,linux/arm64
           push: true
+          load: false
           build-args: |
             CUTVER_FEATURES=--features plugins
           tags: ${{ steps.meta.outputs.tags }}
@@ -221,3 +220,79 @@ jobs:
             -v "$PWD:/repo:ro" \
             --entrypoint /bin/sh \
             "$image" /repo/.github/scripts/release-smoke/run-plugins.sh /usr/local/bin/cutver "${{ steps.version.outputs.version }}"
+
+  promote:
+    name: Promote Verified Digests To Release Tags
+    needs: [build-and-push, smoke, build-and-push-plugins, smoke-plugins]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract release tags for the CLI image
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest,enable=${{ github.event_name == 'release' || github.ref == 'refs/heads/main' }}
+            type=ref,event=branch
+            type=sha
+
+      - name: Retag the smoked CLI digest into the release tags
+        env:
+          SOURCE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build-and-push.outputs.digest }}
+        run: |
+          # Retag the verified digest, never rebuild: the bytes that passed the smoke are the bytes
+          # that get released.
+          set -euo pipefail
+          mapfile -t tags <<< "${{ steps.meta.outputs.tags }}"
+          args=()
+          for tag in "${tags[@]}"; do
+            if [ -n "$tag" ]; then
+              args+=(--tag "$tag")
+            fi
+          done
+          docker buildx imagetools create "${args[@]}" "$SOURCE"
+
+      - name: Extract release tags for the plugins image
+        id: meta-plugins
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          # `latest` belongs to the lean image: the plugin stack must never win the
+          # default tag.
+          flavor: |
+            latest=false
+          tags: |
+            type=semver,pattern={{version}}-plugins
+            type=semver,pattern={{major}}.{{minor}}-plugins
+            type=raw,value=plugins
+
+      - name: Retag the smoked plugins digest into the release tags
+        env:
+          SOURCE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build-and-push-plugins.outputs.digest }}
+        run: |
+          set -euo pipefail
+          mapfile -t tags <<< "${{ steps.meta-plugins.outputs.tags }}"
+          args=()
+          for tag in "${tags[@]}"; do
+            if [ -n "$tag" ]; then
+              args+=(--tag "$tag")
+            fi
+          done
+          docker buildx imagetools create "${args[@]}" "$SOURCE"

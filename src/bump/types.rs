@@ -37,7 +37,7 @@ pub enum Error {
         source: crate::git::TagError,
     },
     #[error(
-        "tag '{tag}' failed after commit {commit} was created: {source}\n  Where: tag creation, immediately after the release commit and before any push\n  Fix: the bump is already committed as {commit} and tag '{tag}' was not created; nothing was pushed. Once the cause is fixed, create the tag by hand (`git tag -a {tag} {commit}`) or unwind with `git reset --hard {commit}~1` before re-running."
+        "tag '{tag}' failed after commit {commit} was created: {source}\n  Where: tag creation, immediately after the release commit and before any push\n  Fix: the bump is already committed as {commit} and tag '{tag}' was not created; nothing was pushed. Once the cause is fixed, create the tag by hand (`git tag -a {tag} {commit}`) or undo the commit with a plain `git reset {commit}~1`, which keeps uncommitted work; do not reach for `--hard` here, it would discard changes this run never touched."
     )]
     Tag {
         tag: String,

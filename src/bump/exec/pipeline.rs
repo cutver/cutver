@@ -45,6 +45,12 @@ pub fn run_with_first_release(
     let (next, prev_tag, auto_commits, rationale) =
         resolve_next_version(config, repo, &current, bump_level, first_release, &plugin_manager)?;
     let tag = git::tag_name(&config.git.tag_prefix, &next.to_string());
+    // Phase 1: the tag name is validated before anything is written. `git::tag_name` only
+    // concatenates, so an invalid `tag_prefix` used to surface when `git tag` ran — after the
+    // release commit existed (#265, finding F-09). The check reuses the `TagName` invariants rather
+    // than a second rule (finding F-15: `TagPrefix::format_tag` still returns an unvalidated name),
+    // and it runs on a dry run too, so a rehearsal cannot approve a prefix a real run would refuse.
+    validate_tag_name(&config.git.tag_prefix, &tag)?;
     let interp_ctx = build_context(
         repo,
         &current,
@@ -104,11 +110,35 @@ pub fn run_with_first_release(
     if !dry_run {
         transaction.mark_staged();
     }
+    // The point of no return. Once this line succeeds a commit exists, so the files can no longer be
+    // rolled back: `transaction.commit()` must stay immediately below, never later. Everything that
+    // can be validated without a commit is already done above — the tag name (Phase 1), the tag
+    // collisions, the preflight, the changelog render and every hook that mutates files. Everything
+    // that follows genuinely needs the commit, so it cannot be moved earlier:
+    //
+    //   * the annotated tag names the release commit, so it cannot be created before it exists;
+    //   * both pushes send that commit and that tag, so they cannot precede either of them;
+    //   * the floating major tag is moved onto the release commit, and only after the release push
+    //     succeeded (#263);
+    //   * the publish commands publish what the pushes sent.
+    //
+    // Deliberately not reordered: `transaction.commit()` stays here. Moving it after the tag or the
+    // pushes would leave the drop guard armed while a commit exists, and a later failure would then
+    // rewrite files underneath an existing commit — worse than a clean failure. Every failure below
+    // therefore names the commit that already landed and how to unwind it.
     git::commit_ext(repo, &commit_message, dry_run, paths_to_stage.is_empty()).map_err(Error::Commit)?;
     transaction.commit();
-    let tag_report = git::tag(repo, &tag, &next.to_string(), dry_run).map_err(|e| Error::Tag {
+    // The sha every post-commit failure names. Empty on a dry run, where nothing is written and the
+    // only post-commit step that can still fail is a plugin dispatch.
+    let release_commit = if dry_run {
+        String::new()
+    } else {
+        git::rev_parse(repo, "HEAD")?
+    };
+    let tag_report = git::tag(repo, &tag, &next.to_string(), dry_run).map_err(|source| Error::Tag {
         tag: tag.clone(),
-        source: e,
+        commit: release_commit.clone(),
+        source: Box::new(source),
     })?;
     let tag_skipped = tag_report.is_some() && !dry_run;
 
@@ -117,22 +147,40 @@ pub fn run_with_first_release(
     // already landed, and the floating tag moves only after the release push succeeded (#263).
     let mut push_commands = Vec::new();
     if config.publish.push {
-        if let Some(cmd) = git::push(repo, config.git.require_branch.as_deref(), dry_run).map_err(Error::Push)? {
+        if let Some(cmd) =
+            git::push(repo, config.git.require_branch.as_deref(), dry_run).map_err(|source| Error::Push {
+                commit: release_commit.clone(),
+                tag: tag.clone(),
+                source: Box::new(source),
+            })?
+        {
             push_commands.push(cmd);
         }
-        if let Some(cmd) = git::push_tag(repo, &tag, dry_run).map_err(Error::Push)? {
+        if let Some(cmd) = git::push_tag(repo, &tag, dry_run).map_err(|source| Error::Push {
+            commit: release_commit.clone(),
+            tag: tag.clone(),
+            source: Box::new(source),
+        })? {
             push_commands.push(cmd);
         }
     }
-    let floating_tag = handle_floating_tag(config, repo, &next, dry_run, &mut push_commands)?;
+    let floating_tag = handle_floating_tag(config, repo, &next, &release_commit, dry_run, &mut push_commands)?;
     let publish_push_command = if push_commands.is_empty() {
         None
     } else {
         Some(push_commands.join(" && "))
     };
-    let publish_commands = run_publish_commands(config, &interp_ctx, dry_run)?;
+    let publish_commands = run_publish_commands(config, &interp_ctx, dry_run, &release_commit, &tag)?;
 
-    run_plugin_post_release(&plugin_manager, repo, &next, &tag, dry_run, release_notes.as_deref())?;
+    run_plugin_post_release(
+        &plugin_manager,
+        repo,
+        &next,
+        &tag,
+        &release_commit,
+        dry_run,
+        release_notes.as_deref(),
+    )?;
 
     Ok(Summary {
         source: source_entry.path.clone(),
@@ -281,6 +329,20 @@ fn build_context(
     )
 }
 
+/// Phase 1 guard: refuses a tag name `git tag` would reject, before the workspace is written.
+///
+/// The name is derived from user configuration, so it is validated with the `TagName` invariants —
+/// the same rule `git tag` relies on — instead of being handed to `git tag` after the commit.
+fn validate_tag_name(prefix: &str, tag: &str) -> Result<(), Error> {
+    git::TagName::parse(tag)
+        .map(|_| ())
+        .map_err(|source| Error::InvalidTagName {
+            tag: tag.to_string(),
+            prefix: prefix.to_string(),
+            source,
+        })
+}
+
 fn check_tag_collisions(repo: &Path, tag: &str, publish_push: bool) -> Result<(), Error> {
     if git::tag_exists(repo, tag)? {
         let at = git::rev_parse(repo, &format!("{tag}^{{commit}}"))?;
@@ -381,6 +443,7 @@ fn handle_floating_tag(
     config: &Config,
     repo: &Path,
     next: &Version,
+    release_commit: &str,
     dry_run: bool,
     push_commands: &mut Vec<String>,
 ) -> Result<Option<String>, Error> {
@@ -388,12 +451,17 @@ fn handle_floating_tag(
         return Ok(None);
     }
     let f_tag = git::tag_name(&config.git.tag_prefix, &next.major.to_string());
-    git::update_floating_tag(repo, &f_tag, "HEAD", dry_run).map_err(|e| Error::Tag {
+    git::update_floating_tag(repo, &f_tag, "HEAD", dry_run).map_err(|source| Error::FloatingTag {
         tag: f_tag.clone(),
-        source: e,
+        commit: release_commit.to_string(),
+        source: Box::new(source),
     })?;
     if config.publish.push
-        && let Some(cmd) = git::push_tag_force(repo, &f_tag, dry_run).map_err(Error::Push)?
+        && let Some(cmd) = git::push_tag_force(repo, &f_tag, dry_run).map_err(|source| Error::Push {
+            commit: release_commit.to_string(),
+            tag: f_tag.clone(),
+            source: Box::new(source),
+        })?
     {
         push_commands.push(cmd);
     }
@@ -404,12 +472,22 @@ fn run_publish_commands(
     config: &Config,
     interp_ctx: &changelog::InterpolationContext,
     dry_run: bool,
+    release_commit: &str,
+    tag: &str,
 ) -> Result<Vec<String>, Error> {
     let mut publish_commands = Vec::new();
     for cmd in &config.publish.commands {
         let formatted = format_command(cmd, interp_ctx)?;
         if !dry_run {
-            run_publish_command(&formatted, &config.root_dir, config.publish.default_timeout)?;
+            // The last step of a run whose commit and tag already exist, so the failure carries
+            // them: it must never look like a failure before anything landed.
+            run_publish_command(&formatted, &config.root_dir, config.publish.default_timeout).map_err(|source| {
+                Error::PublishAfterCommit {
+                    commit: release_commit.to_string(),
+                    tag: tag.to_string(),
+                    source: Box::new(source),
+                }
+            })?;
         }
         publish_commands.push(formatted);
     }
@@ -486,6 +564,7 @@ fn run_plugin_post_release(
     repo: &Path,
     next: &Version,
     tag: &str,
+    release_commit: &str,
     dry_run: bool,
     notes: Option<&str>,
 ) -> Result<(), Error> {
@@ -503,7 +582,19 @@ fn run_plugin_post_release(
         notes: notes.map(str::to_string),
     };
     for plugin_name in manager.plugins_for_event("on_post_release") {
-        manager.dispatch_post_release(plugin_name, &payload)?;
+        manager.dispatch_post_release(plugin_name, &payload).map_err(|source| {
+            if dry_run {
+                // Nothing landed, so the failure must not claim a commit exists.
+                Error::Plugin(source)
+            } else {
+                Error::PostReleasePlugin {
+                    plugin: plugin_name.to_string(),
+                    tag: tag.to_string(),
+                    commit: release_commit.to_string(),
+                    source: Box::new(source),
+                }
+            }
+        })?;
     }
     Ok(())
 }

@@ -127,17 +127,28 @@ fn a_rejected_release_tag_push_leaves_the_branch_published_and_the_floating_tag_
 
     let err = bump_run(&cfg, Bump::Minor, false, &[]).expect_err("the tag push is rejected by the remote");
 
-    // The failure names the ref that was rejected, not an opaque `push --tags` command.
+    // The failure names the ref that was rejected, not an opaque `push --tags` command, and names
+    // the commit and tag that already exist locally (#265).
+    let local_release_commit = rev(&fixture.dir, "HEAD");
     match &err {
-        cutver::bump::Error::Push(source) => {
+        cutver::bump::Error::Push { commit, tag, source } => {
             let text = source.to_string();
             assert!(text.contains("refs/tags/v1.3.0"), "unexpected push error: {text}");
+            assert_eq!(
+                commit, &local_release_commit,
+                "the push failure must name the release commit"
+            );
+            assert_eq!(tag, "v1.3.0", "the push failure must name the release tag");
+            assert!(
+                err.to_string().contains("Where:") && err.to_string().contains("Fix:"),
+                "the push failure must be actionable: {err}"
+            );
         }
         other => panic!("expected a push failure, got: {other:?}"),
     }
 
     // The branch moved on its own, before the tag was attempted.
-    let local_release_commit = rev(&fixture.dir, "HEAD");
+    assert_eq!(rev(&fixture.dir, "HEAD"), local_release_commit);
     assert_ne!(local_release_commit, pre_release_commit);
     assert_eq!(
         rev(&remote.dir, "refs/heads/main"),

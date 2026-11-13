@@ -27,11 +27,34 @@ pub enum Error {
     Stage(#[source] crate::git::Error),
     #[error("commit failed: {0}")]
     Commit(#[source] crate::git::Error),
-    #[error("tag '{tag}' failed: {source}")]
+    #[error(
+        "release tag name '{tag}' is not a valid git ref (built from `[git] tag_prefix = \"{prefix}\"`): {source}\n  Where: tag naming, before any file, commit or tag is written\n  Fix: change `[git] tag_prefix` in cutver.toml so that the prefix plus the version forms a valid git ref (git forbids whitespace and control characters, `~`, `^`, `:`, `?`, `*`, `[`, `\\`, `..`, `@{{`, a leading or trailing `/`, and a trailing `.` or `.lock`). Nothing was written, staged, committed or tagged."
+    )]
+    InvalidTagName {
+        tag: String,
+        prefix: String,
+        #[source]
+        source: crate::git::TagError,
+    },
+    #[error(
+        "tag '{tag}' failed after commit {commit} was created: {source}\n  Where: tag creation, immediately after the release commit and before any push\n  Fix: the bump is already committed as {commit} and tag '{tag}' was not created; nothing was pushed. Once the cause is fixed, create the tag by hand (`git tag -a {tag} {commit}`) or unwind with `git reset --hard {commit}~1` before re-running."
+    )]
     Tag {
         tag: String,
+        commit: String,
+        // Boxed to keep `bump::Error` inside the 128-byte `result_large_err` budget
+        // (`plugin::error::tests::plugin_error_stays_within_the_bump_result_budget`).
         #[source]
-        source: crate::git::Error,
+        source: Box<crate::git::Error>,
+    },
+    #[error(
+        "floating major tag '{tag}' failed after commit {commit} was created: {source}\n  Where: floating major tag update, after the release commit and tag and, with `[publish] push`, the pushes\n  Fix: the release commit {commit} already exists locally. Recreate the floating tag once the cause is fixed (`git tag -f -a {tag} {commit}`), and push it by hand (`git push origin +refs/tags/{tag}:refs/tags/{tag}`) if the release tag was already published."
+    )]
+    FloatingTag {
+        tag: String,
+        commit: String,
+        #[source]
+        source: Box<crate::git::Error>,
     },
     #[error("release tag {tag} already exists (points at {commit}) — resolve it before re-running")]
     TagExists { tag: String, commit: String },
@@ -72,12 +95,38 @@ pub enum Error {
         #[source]
         source: io::Error,
     },
-    #[error("publish push failed: {0}")]
-    Push(#[source] crate::git::Error),
+    #[error(
+        "publish push failed: {source}\n  Where: publish push, after commit {commit} and tag '{tag}' were created locally; the push step that failed and the refs that already landed are named above\n  Fix: the release commit {commit} and tag '{tag}' already exist locally: push the remaining ref by hand once the cause is fixed, or unwind with `git reset --hard {commit}~1` and delete tag '{tag}'. Do not re-run `cutver bump` against the already-bumped files."
+    )]
+    Push {
+        commit: String,
+        tag: String,
+        #[source]
+        source: Box<crate::git::Error>,
+    },
     #[error("publish command '{command}' failed with status {status}")]
     PublishCommandFailed {
         command: String,
         status: std::process::ExitStatus,
+    },
+    #[error(
+        "a publish command failed after release {tag} at commit {commit}: {source}\n  Where: publish commands, the last step after the commit, the tag and (with `[publish] push`) the pushes\n  Fix: the release commit {commit} and tag '{tag}' already exist; fix the publish command and re-run that command alone. Do not re-run `cutver bump`, which would bump again; to unwind, delete tag '{tag}' and run `git reset --hard {commit}~1`."
+    )]
+    PublishAfterCommit {
+        commit: String,
+        tag: String,
+        #[source]
+        source: Box<Error>,
+    },
+    #[error(
+        "post-release plugin '{plugin}' failed after release {tag} at commit {commit}: {source}\n  Where: lifecycle hook 'on_post_release', after the commit, the tag and the publish commands\n  Fix: the release commit {commit} and tag '{tag}' already exist; fix the plugin and dispatch `on_post_release` by hand, or unwind with `git reset --hard {commit}~1` and delete tag '{tag}'."
+    )]
+    PostReleasePlugin {
+        plugin: String,
+        tag: String,
+        commit: String,
+        #[source]
+        source: Box<crate::plugin::PluginError>,
     },
     #[error("failed to run publish command '{command}': {source}")]
     PublishCommandSpawn {

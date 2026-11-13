@@ -275,30 +275,42 @@ fn the_promotion_does_not_override_the_title() {
     );
 }
 
-/// The `main` ruleset requires `CI gate`, and the bump commit is created inside the version job, so
-/// no check run can exist for it when `cutver release` pushes. The push must therefore authenticate
-/// as the release app, which is the ruleset's only bypass actor: the GitHub Actions integration
-/// cannot be one (GitHub rejects it with "must be part of the ruleset source or owner
-/// organization"), so a checkout authenticated by `secrets.GITHUB_TOKEN` is rejected by the ruleset
-/// after `cargo publish` has already run.
+/// Delivery (S1/S2): the bump push must authenticate as the app, inside the version job.
+///
+/// The ruleset requires `CI gate` on `main` and the bump commit is created in this same job, so the
+/// push can never carry a check run: it has to authenticate as the one bypass actor, the
+/// `cutver-release` app. Scoped to the job, because a literal elsewhere in the file keeps the test
+/// green while the mechanism is dead.
 #[test]
-fn the_version_job_pushes_as_the_app_the_ruleset_lets_by() {
+fn the_version_job_checkout_persists_the_app_token_in_that_job() {
+    const LITERAL: &str = "token: ${{ steps.release-token.outputs.token || secrets.GITHUB_TOKEN }}";
     let workflow = repo_text(".github/workflows/release.yml");
-    assert!(
-        workflow.contains("token: ${{ steps.release-token.outputs.token || secrets.GITHUB_TOKEN }}"),
-        "the checkout must persist the app token: without it the bump push is rejected by the \
-         `main` ruleset after `cargo publish` has already run"
-    );
+    let start = workflow.find("\n  version:\n").expect("the version job must exist");
+    let end = workflow[start + 1..]
+        .find("\n  build:\n")
+        .map(|i| start + 1 + i)
+        .expect("the build job marks the end of the version job");
+    let job = &workflow[start..end];
 
-    let token_at = workflow
+    let token_at = job
         .find("id: release-token")
         .expect("the version job must mint the app token");
-    let checkout_at = workflow
+    let checkout_at = job
         .find("uses: actions/checkout@v7")
-        .expect("the version job must check out the repository");
+        .expect("the version job must check out");
     assert!(
         token_at < checkout_at,
-        "the app token must be minted before the checkout, or the checkout persists the wrong \
-         credentials and the push falls back to `github-actions[bot]`, which no ruleset lets by"
+        "the app token must be minted before the version job's checkout"
+    );
+
+    let after = &job[checkout_at..];
+    let block = &after[..after.find("\n      - ").unwrap_or(after.len())];
+    assert!(
+        block.contains(LITERAL),
+        "the version job's own checkout must pass `{LITERAL}`: {block}"
+    );
+    assert!(
+        !block.contains("persist-credentials: false"),
+        "`persist-credentials: false` removes the credential `git push origin main --tags` needs"
     );
 }

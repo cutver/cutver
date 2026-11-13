@@ -26,7 +26,7 @@ record; this block says what has since changed, so nobody implements an already-
 | F-04 `release-assets.yml` | **Open** — #260 |
 | F-05 dead `Dockerfile` | **Open** — #258 |
 | F-06 rollback writes `""` | **Open** — #261 |
-| F-09 point of no return | **Open** — #265 |
+| F-09 point of no return | **Fixed** — #265, merged `7019e02`: the tag name is validated in Phase 1 before any write, and the five post-commit errors name the landed commit and assert no remote state at all |
 | F-10 / F-11 plugin authority | **Open** — #264 |
 | F-12…F-20, pre-registered 2 | **Open** — #266…#272, #268 |
 
@@ -34,6 +34,11 @@ Two facts from this audit were later corrected by measurement, and the correctio
 the release push runs **before** `cargo publish` (`pipeline.rs:116` vs `:117`), so a rejected push does
 not reach the registry; and the bump commit was already authored by `cutver-release[bot]` — the fix
 changed the **pusher** identity, not the author.
+
+One half-fix is worth naming: F-15 says `TagPrefix::format_tag` hands out a name that was never
+validated. #265 closes that on the release path — the name is checked before anything is written —
+but the type still allows it, so the defect stays open in #267 until `format_tag` validates at
+construction.
 
 ## Verdict
 

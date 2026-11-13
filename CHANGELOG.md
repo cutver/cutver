@@ -3,6 +3,16 @@
 All notable changes to this project are documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com).
 
+## v0.18.1 — 2026-11-13
+
+### 🐛 Fixes
+- **release**: cut the release with the CLI built from the released commit in [#256](https://github.com/cutver/cutver/pull/256) ([ccd2fe0](https://github.com/cutver/cutver/commit/ccd2fe0a041d36f5c8279a02b8a88ebd7fae02fe)) by @Row0902
+- **release**: restore the github-publish pin now that 0.18.0 ships the fix in [#255](https://github.com/cutver/cutver/pull/255) ([4fd0f05](https://github.com/cutver/cutver/commit/4fd0f0582a607bb531482b6e434c8a6504800b56)) by @Row0902
+
+### 👥 Contributors
+@Row0902
+
+[Compare v0.18.0...v0.18.1](https://github.com/cutver/cutver/compare/v0.18.0...v0.18.1)
 ## v0.18.0 — 2026-11-13
 
 ### ✨ Features

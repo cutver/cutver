@@ -209,13 +209,16 @@ fn test_only_granted_env_keys_reach_the_plugin() {
     }
 
     let printed = String::from_utf8_lossy(&output);
+    // Neither message formats `printed`: a regression here would dump the inherited environment,
+    // and on CI that environment carries the release tokens (native review, R1-001).
     assert!(
         printed.contains("CUTVER_TEST_GRANTED_KEY=granted-value"),
-        "the granted key must reach the plugin: {printed}"
+        "the granted key must reach the plugin; the dump is withheld because it may contain credentials"
     );
     assert!(
         !printed.contains("CUTVER_TEST_WITHHELD_SECRET"),
-        "a parent key that is not granted must never reach the plugin: {printed}"
+        "a parent key that is not granted must never reach the plugin; the dump is withheld because it \
+         may contain credentials"
     );
 }
 

@@ -4,18 +4,10 @@
 //! names the offending table and key. The two `deny_unknown_fields` proof
 //! tests document why an explicit schema pass is the chosen mechanism.
 
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
-
-static TMP_SEQ: AtomicU64 = AtomicU64::new(0);
-
 fn load(toml: &str) -> Result<cutver::config::Config, cutver::config::ConfigError> {
-    let n = TMP_SEQ.fetch_add(1, Ordering::SeqCst);
-    let dir: PathBuf = std::env::temp_dir().join(format!("cutver-unknown-keys-{}-{}", std::process::id(), n));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(dir.join("cutver.toml"), toml).unwrap();
-    cutver::config::load(dir.join("cutver.toml"))
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("cutver.toml"), toml).unwrap();
+    cutver::config::load(dir.path().join("cutver.toml"))
 }
 
 // ---------------------------------------------------------------------------

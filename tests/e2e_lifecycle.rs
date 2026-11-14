@@ -4,7 +4,6 @@ mod common;
 
 use common::*;
 use cutver::bump::run as bump_run;
-use cutver::config;
 use cutver::semver_bump::Bump;
 
 #[test]
@@ -40,7 +39,7 @@ post_bump = "touch post_bump_ran.txt"
     init_git_repo(fixture);
     initial_commit(fixture);
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
 
     // Dry run: summary records post_bump, command NOT executed
     let dry_summary = bump_run(&cfg, Bump::Minor, true, &[]).unwrap();
@@ -88,7 +87,7 @@ pre_bump = "touch pre_bump_ran.txt"
     init_git_repo(fixture);
     initial_commit(fixture);
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
 
     // Dry run: summary records pre_bump, command NOT executed
     let dry_summary = bump_run(&cfg, Bump::Minor, true, &[]).unwrap();
@@ -136,7 +135,7 @@ pre_bump = "exit 1"
     init_git_repo(fixture);
     initial_commit(fixture);
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
     let res = bump_run(&cfg, Bump::Minor, false, &[]);
     assert!(res.is_err(), "expected bump to fail due to pre_bump exit 1");
 
@@ -183,7 +182,7 @@ post_bump = "echo \"lockfile-version-1.3.0\" > Cargo.lock"
     init_git_repo(fixture);
     initial_commit(fixture);
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
     let summary = bump_run(&cfg, Bump::Minor, false, &[]).unwrap();
     assert_eq!(summary.next.to_string(), "1.3.0");
 
@@ -236,7 +235,7 @@ post_bump = "echo \"lockfile-root-1.3.0\" > Cargo.lock && echo \"lockfile-nested
     init_git_repo(fixture);
     initial_commit(fixture);
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
     let summary = bump_run(&cfg, Bump::Minor, false, &[]).unwrap();
     assert_eq!(summary.next.to_string(), "1.3.0");
 
@@ -303,7 +302,7 @@ post_bump = "echo \"lockfile-version-1.3.0\" > Cargo.lock && echo \"arbitrary-mo
     init_git_repo(fixture);
     initial_commit(fixture);
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
     let summary = bump_run(&cfg, Bump::Minor, false, &[]).unwrap();
     assert_eq!(summary.next.to_string(), "1.3.0");
 
@@ -385,7 +384,7 @@ post_bump = "exit 1"
     init_git_repo(fixture);
     initial_commit(fixture);
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
     let res = bump_run(&cfg, Bump::Minor, false, &[]);
     assert!(res.is_err(), "expected bump to fail due to post_bump exit 1");
 
@@ -439,7 +438,7 @@ commands = ["echo published {version} > published.txt"]
     initial_commit(fixture);
     run_git_ok(&fixture.dir, &["remote", "add", "origin", remote.dir.to_str().unwrap()]);
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
 
     // Dry run: reported in summary, neither push nor commands executed
     let dry_summary = bump_run(&cfg, Bump::Minor, true, &[]).unwrap();
@@ -514,7 +513,7 @@ push = true
     initial_commit(fixture);
     run_git_ok(&fixture.dir, &["remote", "add", "origin", remote.dir.to_str().unwrap()]);
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
 
     // Dry run
     let dry_summary = bump_run(&cfg, Bump::Minor, true, &[]).unwrap();
@@ -577,7 +576,7 @@ push = true
     initial_commit(fixture);
     run_git_ok(&fixture.dir, &["remote", "add", "origin", remote.dir.to_str().unwrap()]);
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
 
     // Dry run dynamically resolves active branch "release-branch"
     let dry_summary = bump_run(&cfg, Bump::Minor, true, &[]).unwrap();
@@ -636,7 +635,7 @@ commands = ["sleep 5"]
     run_git_ok(&fixture.dir, &["checkout", "-B", "main"]);
     initial_commit(fixture);
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
 
     // Dry run remains unaffected (commands are recorded but not executed)
     let dry_summary = bump_run(&cfg, Bump::Minor, true, &[]).unwrap();
@@ -710,7 +709,7 @@ post_bump = "echo bun-lock >> bun.lock && echo uv-lock >> uv.lock && echo pdm-lo
     init_git_repo(fixture);
     initial_commit(fixture);
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
     let _summary = bump_run(&cfg, Bump::Patch, false, &[]).unwrap();
 
     let commit_files = head_commit_files(fixture);
@@ -773,7 +772,7 @@ commands = [
     let instead_of_key = format!("url.{}.insteadOf", remote.dir.to_string_lossy());
     run_git_ok(&fixture.dir, &["config", &instead_of_key, origin_url]);
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
 
     let summary = bump_run(&cfg, Bump::Minor, false, &[]).unwrap();
     assert_eq!(summary.next.to_string(), "1.3.0");
@@ -853,7 +852,7 @@ env = ["PATH"]
     init_git_repo(fixture);
     initial_commit(fixture);
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
     let res = bump_run(&cfg, Bump::Minor, false, &[]);
 
     let err = res.expect_err("bump must fail due to pre-bump rejection");
@@ -930,7 +929,7 @@ env = ["PATH"]
     init_git_repo(fixture);
     initial_commit(fixture);
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
     let res = bump_run(&cfg, Bump::Minor, false, &[]);
     assert!(res.is_err(), "expected bump to fail due to post_bump plugin exit 1");
 
@@ -999,7 +998,7 @@ env = ["PATH"]
     init_git_repo(fixture);
     initial_commit(fixture);
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
     let summary = bump_run(&cfg, Bump::Minor, false, &[]).unwrap();
 
     assert_eq!(summary.next.to_string(), "1.3.0");
@@ -1071,7 +1070,7 @@ env = ["PATH"]
     run_git_ok(&fixture.dir, &["add", "."]);
     run_git_ok(&fixture.dir, &["commit", "-m", "feat: a new capability"]);
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
     bump_run(&cfg, Bump::Minor, false, &[]).expect("bump should succeed");
 
     let payload = fixture.read("post-release.json");

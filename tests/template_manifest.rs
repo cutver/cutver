@@ -316,9 +316,14 @@ fn an_absent_sink_is_removed_by_rollback_instead_of_recreated_empty() {
     let fixture = guard.fixture();
     write_fixture(fixture);
     // The lock makes `git stage` fail after the sink was written, so the drop guard rolls back.
+    // It is named by absolute path because `src/preflight.rs::spawn` gives the preflight shell no
+    // `current_dir`: a relative `.git/index.lock` lands wherever the process was launched, and in a
+    // linked worktree `.git` is a file, so `touch` fails there instead of locking anything (#295).
+    let index_lock = fixture.dir.join(".git/index.lock");
     fixture.write(
         "cutver.toml",
-        r#"[version]
+        &format!(
+            r#"[version]
 current_source = "Cargo.toml"
 
 [[manifest]]
@@ -331,11 +336,13 @@ kind = "template"
 template = "src/version.ts.jinja"
 
 [preflight]
-check = "touch .git/index.lock"
+check = "touch '{}'"
 
 [changelog]
 path = "CHANGELOG.md"
 "#,
+            index_lock.display().to_string().replace('\\', "/")
+        ),
     );
     init_git_repo(fixture);
     initial_commit(fixture);

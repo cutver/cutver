@@ -68,6 +68,18 @@ executed."
 | T5 | S11, S12, S15 | inline | `chore(release): retire the release-assets backfill` |
 | T6 | S13, S14 | inline, tests | same commit (`tests/release_metadata_ownership.rs`) |
 
+## Delivery
+
+`git diff --stat` measures 707 authored changed lines in the first commit, past the
+~400-line review slice. The overage is not the fix: 123 lines are the
+`Containerfile`/`.dockerignore`/`container.yml` change, 106 this document, and 484
+`tests/container_build_inputs.rs` — the harness that turns one instance of the defect into
+the invariant. Splitting the guard from its fix was rejected on purpose: a test that lands
+after its fix is a test that gets reverted with it.
+
+Delivery strategy: **two chained work units, one PR each**. PR A is `#258` (commit
+`3c4c740`), PR B is `#260` stacked on A. The slice boundary is the commit boundary.
+
 ## Log
 
 L1 (user, verbatim): "Contigo tengo 3 sessiones abiertas, puedes verlas para asignar un par

@@ -104,8 +104,8 @@ green) and the container design review recorded below.
 - The container smoke pulls the just-pushed image by digest and runs it under QEMU for `linux/arm64`.
   It is a post-push check by construction (buildx multi-arch cannot `load` before push); that matches
   D5, which asked for the same check, not for a pre-push one.
-- `release-assets.yml` (the manual backfill path) is not covered here; it is a recovery workflow, not the
-  release workflow, and stays out of scope.
+- `release-assets.yml` (the manual backfill path) was not covered here, and #260 retired it:
+  `release.yml` is now the only path that builds, smokes and publishes release assets.
 
 ### Proven on real hosts (Task 5)
 

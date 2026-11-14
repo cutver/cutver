@@ -21,10 +21,10 @@ record; this block says what has since changed, so nobody implements an already-
 | F-01 `main` unprotected | **Fixed** — #257, ruleset `main: required gates` (id 27202161) requiring `CI gate` + `Exactly one type label`, one bypass actor: the `cutver-release` app |
 | F-07 tag collision fails open | **Open** — #262 |
 | F-08 force tag ops / `push --tags` | **Fixed** — #263, one named ref per push, force only on the floating tag after success |
-| F-02 container image | **Open** — #258, still broken; v0.18.2 shipped without an image |
+| F-02 container image | **Fixed** — #258: the builder stage copies the template it compiles in, `.github/` left `.dockerignore`, and `container.yml` now builds the image on `pull_request`; the published image returns with the next release |
 | F-03 publish ordering | **Fixed** — #259, merged `157ea25`: `bump --defer-publish` stops after the branch push and `cutver publish` creates the tag, publishes the crate and opens the draft only after every smoke job is green; the container build pushes a rehearsal tag and the verified digest is promoted afterwards |
-| F-04 `release-assets.yml` | **Open** — #260 |
-| F-05 dead `Dockerfile` | **Open** — #258 |
+| F-04 `release-assets.yml` | **Fixed** — #260: deleted. `release.yml` is the only path that builds, smokes and publishes release assets, and the only one that owns the release title and body |
+| F-05 dead `Dockerfile` | **Fixed** — #258: deleted, and `tests/container_build_inputs.rs` keeps it gone |
 | F-06 rollback writes `""` | **Open** — #261 |
 | F-09 point of no return | **Fixed** — #265, merged `7019e02`: the tag name is validated in Phase 1 before any write, and the five post-commit errors name the landed commit and assert no remote state at all |
 | F-10 / F-11 plugin authority | **Open** — #264 |
@@ -279,7 +279,7 @@ changes that each fit one reviewable commit.
 | WU6 | Plugin authority: `.env_clear()` + explicit grants, stdin write under the timeout | F-10, F-11 | medium |
 | WU7 | `doctor` declared→real grant map (retain declared paths through resolution) | pre-registered 2 | medium |
 | WU8 | Single-source version normalization + single config resolution | F-13, F-14, F-15 | large, refactor |
-| WU9 | Retire `release-assets.yml` or re-derive it from `release.yml` | F-04 | medium |
+| WU9 | Retire `release-assets.yml` or re-derive it from `release.yml` | F-04 | **Done** — #260 deleted the file |
 | WU10 | Error-swallow sweep, hook timeout parity, test isolation, README decomposition | F-12, F-16…F-20 | large |
 
 ## What is healthy

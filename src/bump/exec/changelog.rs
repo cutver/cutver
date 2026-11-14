@@ -277,7 +277,7 @@ pub(crate) fn apply_changelog(
     };
     if !dry_run && let Some(new_content) = update.updated {
         if let Some(orig) = update.original {
-            transaction.record_backup(update.path.clone(), orig);
+            transaction.record_backup(update.path.clone(), Some(orig));
         }
         if let Err(e) = atomic::write_atomic(&update.path, &new_content) {
             return Err(Error::Changelog(changelog::Error::Write {

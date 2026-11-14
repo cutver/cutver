@@ -995,3 +995,50 @@ require_clean_tree = false
     assert_eq!(commit_count(fixture), 2);
     assert!(!tag_exists(fixture, "v1.0.1"));
 }
+
+/// #261 AC2: when the post-write failure also breaks the restore, the operator must learn that the
+/// tree no longer matches its committed content — the message reaches stderr through `print_error`.
+#[test]
+#[cfg_attr(not(unix), ignore)]
+fn a_failed_restore_is_reported_with_its_path_and_the_risk() {
+    use std::os::unix::fs::PermissionsExt;
+
+    assert!(
+        git_available(),
+        "git CLI is required for e2e tests but was not found in PATH"
+    );
+    let guard = FixtureGuard::new("restore-fail-rollback");
+    write_fixture(
+        &guard,
+        r#"[preflight]
+check = "true""#,
+    );
+    let fixture = guard.fixture();
+
+    // The commit fails *and* replaces the manifest with a directory, so restoring its bytes cannot
+    // succeed: the rollback failure has to be reported, not swallowed.
+    let hook_path = fixture.dir.join(".git/hooks/pre-commit");
+    std::fs::write(
+        &hook_path,
+        "#!/bin/sh\nrm -f package.json\nmkdir -p package.json\nexit 1\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&hook_path, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let cfg = config::load("cutver.toml").unwrap();
+    let err = bump_run(&cfg, Bump::Minor, false, &[]).unwrap_err();
+    let message = err.to_string();
+
+    assert!(
+        matches!(err, cutver::bump::Error::RollbackFailed { .. }),
+        "expected RollbackFailed, got {err:?}"
+    );
+    assert!(
+        message.contains("package.json"),
+        "the message must name the path that could not be restored: {message}"
+    );
+    assert!(
+        message.contains("Rollback failed"),
+        "the message must say the rollback failed: {message}"
+    );
+}

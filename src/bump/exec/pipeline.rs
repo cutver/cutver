@@ -126,13 +126,21 @@ fn run_staged(
         .and_then(|update| update.updated.as_deref())
         .and_then(changelog::release_notes);
     let mut transaction = MutationTransaction::new(repo);
-    let (touched, mut paths_to_stage) = apply(&computed, &next, dry_run, &mut transaction)?;
-    apply_changelog(changelog_plan.update, dry_run, &mut transaction, &mut paths_to_stage)?;
+    // Every fallible step from here to `transaction.commit()` routes its error through
+    // `transaction.abort`, which rolls back now and folds any rollback failure into the returned
+    // error. Relying on the drop guard alone would discard those failures, because `Drop` cannot
+    // report anything (#261).
+    let (touched, mut paths_to_stage) =
+        apply(&computed, &next, dry_run, &mut transaction).map_err(|e| transaction.abort(e))?;
+    apply_changelog(changelog_plan.update, dry_run, &mut transaction, &mut paths_to_stage)
+        .map_err(|e| transaction.abort(e))?;
 
-    run_plugin_post_bump(&plugin_manager, repo, &current, &next, &tag, &paths_to_stage, dry_run)?;
-    let summary_post_bump = run_post_bump_hook(config, repo, &interp_ctx, dry_run, &mut paths_to_stage)?;
+    run_plugin_post_bump(&plugin_manager, repo, &current, &next, &tag, &paths_to_stage, dry_run)
+        .map_err(|e| transaction.abort(e))?;
+    let summary_post_bump = run_post_bump_hook(config, repo, &interp_ctx, dry_run, &mut paths_to_stage)
+        .map_err(|e| transaction.abort(e))?;
 
-    git::stage(repo, &paths_to_stage, dry_run).map_err(Error::Stage)?;
+    git::stage(repo, &paths_to_stage, dry_run).map_err(|e| transaction.abort(Error::Stage(e)))?;
     if !dry_run {
         transaction.mark_staged();
     }
@@ -152,7 +160,8 @@ fn run_staged(
     // pushes would leave the drop guard armed while a commit exists, and a later failure would then
     // rewrite files underneath an existing commit — worse than a clean failure. Every failure below
     // therefore names the commit that already landed and how to unwind it.
-    git::commit_ext(repo, &commit_message, dry_run, paths_to_stage.is_empty()).map_err(Error::Commit)?;
+    git::commit_ext(repo, &commit_message, dry_run, paths_to_stage.is_empty())
+        .map_err(|e| transaction.abort(Error::Commit(e)))?;
     transaction.commit();
     // The sha every post-commit failure names. Empty on a dry run, where nothing is written and the
     // only post-commit step that can still fail is a plugin dispatch.

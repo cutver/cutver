@@ -3,6 +3,33 @@
 All notable changes to this project are documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com).
 
+## v0.19.0 — 2026-11-14
+
+### 🐛 Fixes
+- **ci**: give the two config-loading release steps the declared grant in [#301](https://github.com/cutver/cutver/pull/301) ([9187621](https://github.com/cutver/cutver/commit/91876216a76d9661eda467caec7f5e4dd88a2c47)) by @Row0902
+- **config**: resolve a manifest's template path against root_dir in [#298](https://github.com/cutver/cutver/pull/298) ([7009767](https://github.com/cutver/cutver/commit/70097672306f9d6ba8064335ef25c8ed33378f80)) by @Row0902
+- **bump,git**: fail closed on an unreadable manifest and an unreachable remote in [#292](https://github.com/cutver/cutver/pull/292) ([f07e04e](https://github.com/cutver/cutver/commit/f07e04e3f2701a623872e70307d3b87d00329656)) by @Row0902
+- **container**: give the builder stage the release template it compiles in in [#290](https://github.com/cutver/cutver/pull/290) ([7434c4e](https://github.com/cutver/cutver/commit/7434c4e2aaeb17a40639c63a3d10fd07aa6a6700)) by @Row0902
+- **plugin**: zero ambient authority and a bounded exchange for process plugins in [#286](https://github.com/cutver/cutver/pull/286) ([2c1c2b0](https://github.com/cutver/cutver/commit/2c1c2b0b511a07decab3e3ddc18e23689e4ce963)) by @Row0902
+- **release**: verify before publishing, with the release split into two phases in [#282](https://github.com/cutver/cutver/pull/282) ([157ea25](https://github.com/cutver/cutver/commit/157ea257993e91bd8fe8c1f443d0993d761bb861)) by @Row0902
+- **bump**: validate the release tag before the commit and name the landed state after it in [#280](https://github.com/cutver/cutver/pull/280) ([7019e02](https://github.com/cutver/cutver/commit/7019e0244d6c029c8056bb0749935dbee1fdf16d)) by @Row0902
+
+### 📚 Documentation
+- **readme**: decompose the README and enforce the 200-line ceiling in [#293](https://github.com/cutver/cutver/pull/293) ([47f4afe](https://github.com/cutver/cutver/commit/47f4afe30e1bed442708fc8d5a587fe4672b20c0)) by @Row0902
+- mark F-03 fixed in the audit status block in [#283](https://github.com/cutver/cutver/pull/283) ([5989f66](https://github.com/cutver/cutver/commit/5989f66312d0cc0d6a6cdef3d4baa5c7611f6bda)) by @Row0902
+- mark F-09 fixed in the audit status block in [#281](https://github.com/cutver/cutver/pull/281) ([c3198b7](https://github.com/cutver/cutver/commit/c3198b733243ed67397d6bf4596cc69cb894bb8c)) by @Row0902
+- record the 2026-11-13 robustness audit and what has since changed in [#279](https://github.com/cutver/cutver/pull/279) ([5136e1d](https://github.com/cutver/cutver/commit/5136e1dc351f04ba9c13c800d9cd0f65458c8cad)) by @Row0902
+
+### 🛠️ Maintenance
+- isolate the process CWD and inject the render clock in [#299](https://github.com/cutver/cutver/pull/299) ([7f6ff96](https://github.com/cutver/cutver/commit/7f6ff9632dbc00796f0903768372bcbe4db8ff9c)) by @Row0902
+- **release**: retire the release-assets backfill in [#296](https://github.com/cutver/cutver/pull/296) ([92384fd](https://github.com/cutver/cutver/commit/92384fdf267d9c77e28336e248703e62ceee2f52)) by @Row0902
+- **release**: revert the #259 rehearsal in [#285](https://github.com/cutver/cutver/pull/285) ([8ab6465](https://github.com/cutver/cutver/commit/8ab64653e2b90285faac0125a7b5f0ca90229370)) by @Row0902
+- **release**: rehearse a red smoke to prove nothing is published in [#284](https://github.com/cutver/cutver/pull/284) ([616bb6b](https://github.com/cutver/cutver/commit/616bb6b29b09aa1ce711197b663313f6b745283d)) by @Row0902
+
+### 👥 Contributors
+@Row0902
+
+[Compare v0.18.2...v0.19.0](https://github.com/cutver/cutver/compare/v0.18.2...v0.19.0)
 ## v0.18.2 — 2026-11-13
 
 ### 🐛 Fixes

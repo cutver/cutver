@@ -122,6 +122,12 @@ Every error surfaced to the user must answer three questions:
 - **Human Authorization Gate**: Agents must never author, generate, or register new skills unprompted. Implementation requires explicit human authorization.
 - **Precondition of Stability**: Skill creation can only be proposed or initiated after the active feature work is 100% functional, verified, and green.
 
+### 7. Checks Name Their Object
+- **One object per check.** A rule about the content of a commit must not read the working tree; a rule about the environment a plugin runs in must not fire while the configuration is merely loaded; a rule about a repository-relative path must not resolve against the process working directory. A check that reaches past its object produces confident answers to questions nobody asked.
+- **No inherited ambient state.** Every subprocess names its working directory explicitly; none inherits the caller's. Every path declared repository-relative resolves against `root_dir` before any consumer reads it, and validation judges the declared spelling, never the resolved one.
+- **A declared input is not drift.** A guard that protects the tree exempts exactly the paths the invocation named, compared canonically, and stays strict for everything else: exempting an entry must never degrade into not checking.
+- **Enforcement is derived, not reviewed.** Each of these holds because a test derives its set from the source — build inputs, spawn sites, resolution points — and fails on the outlier, not because a reviewer remembered.
+
 ---
 
 ## 🏛️ Pillar V: Structural Purity & Complexity Control

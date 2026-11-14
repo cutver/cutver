@@ -40,16 +40,7 @@ pub fn render_grid_row(out: &mut String, label: &str, value: &str, theme: &crate
 fn format_manifest_summary(config: &Config, theme: &crate::cli::style::Theme) -> String {
     let total = config.manifest.len();
     let primary = config.primary_manifest();
-    // Building the manager can legitimately fail now that a declared-but-unset `permissions.env`
-    // grant is a typed error (#264). Swallowing it would turn that error into a silent
-    // "unknown" version in the summary, so it is reported and the row degrades (Pillar III.4).
-    let plugin_manager = match PluginManager::from_config(&config.plugins) {
-        Ok(manager) => Some(Arc::new(manager)),
-        Err(error) => {
-            crate::cli::runner::dispatch::print_error(error);
-            None
-        }
-    };
+    let plugin_manager = PluginManager::from_config(&config.plugins).ok().map(Arc::new);
 
     let (path_str, ver_str) = match primary {
         Some(m) => {

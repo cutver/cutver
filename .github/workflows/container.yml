@@ -4,6 +4,19 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+  pull_request:
+    # The image was only ever built on `release: published`, so a build input that went missing
+    # survived three releases: nothing ran between the change and the day it could not be undone.
+    # Every path the builder stage reads is listed, or a change to one of them is unguarded.
+    paths:
+      - 'src/**'
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'Containerfile'
+      - '.dockerignore'
+      - '.github/templates/**'
+      - '.github/workflows/container.yml'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -14,8 +27,38 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  build-pull-request:
+    name: Build Image On Pull Request
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # A broken build input has to fail here, on the pull request, not on the release that
+      # cannot be retracted. Lean image only: the plugin image differs by Cargo features alone,
+      # and `ci.yml` already compiles that feature set on both platforms.
+      - name: Build the image without pushing
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Containerfile
+          platforms: linux/amd64
+          push: false
+          load: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
   build-and-push:
     name: Build & Publish OCI Image
+    # The pull-request trigger reaches this job too, and everything here writes to the
+    # registry or resolves a release tag. Only `build-pull-request` runs on a pull request.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -66,6 +109,9 @@ jobs:
 
   build-and-push-plugins:
     name: Build & Publish Plugins OCI Image
+    # The pull-request trigger reaches this job too, and everything here writes to the
+    # registry or resolves a release tag. Only `build-pull-request` runs on a pull request.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -123,6 +169,9 @@ jobs:
 
   smoke:
     name: Smoke Image ${{ matrix.platform }}
+    # The pull-request trigger reaches this job too, and everything here writes to the
+    # registry or resolves a release tag. Only `build-pull-request` runs on a pull request.
+    if: github.event_name != 'pull_request'
     needs: build-and-push
     runs-on: ubuntu-latest
     permissions:
@@ -173,6 +222,9 @@ jobs:
 
   smoke-plugins:
     name: Smoke Plugins Image ${{ matrix.platform }}
+    # The pull-request trigger reaches this job too, and everything here writes to the
+    # registry or resolves a release tag. Only `build-pull-request` runs on a pull request.
+    if: github.event_name != 'pull_request'
     needs: build-and-push-plugins
     runs-on: ubuntu-latest
     permissions:
@@ -223,6 +275,9 @@ jobs:
 
   promote:
     name: Promote Verified Digests To Release Tags
+    # The pull-request trigger reaches this job too, and everything here writes to the
+    # registry or resolves a release tag. Only `build-pull-request` runs on a pull request.
+    if: github.event_name != 'pull_request'
     needs: [build-and-push, smoke, build-and-push-plugins, smoke-plugins]
     runs-on: ubuntu-latest
     permissions:

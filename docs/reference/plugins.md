@@ -137,6 +137,13 @@ No flag skips the install-time gate: there is no `--insecure` and no "continue a
 is checked before the artifact enters the cache. The registry index itself is `https`-only on purpose,
 because the index is what distributes the digest — TLS there is trust, not just transport.
 
+## Runtime Sandbox
+
+A WASM plugin gets **no filesystem, no network, and no environment** access unless explicitly
+granted under `[plugins.<name>.permissions]`, which accepts `network`, `env` and `filesystem`
+([plugin authoring guide](../guides/plugin-authoring.md)). There is no `--insecure` bypass: a
+capability the plugin did not declare is a capability it cannot reach.
+
 ## Cache Location
 
 | Source | Cache root |

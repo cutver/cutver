@@ -5,11 +5,13 @@ mod common;
 
 use common::*;
 use cutver::bump::run as bump_run;
-use cutver::config;
 use cutver::semver_bump::Bump;
 
 /// A configuration whose version source is `Cargo.toml` and whose sink is `src/version.ts`,
 /// generated from the template beside it. Mirrors the shape the issue proposes.
+///
+/// The template is declared the way a user writes it — relative — and these tests run the real
+/// binary with the project as its CWD, so the resolution path under test is the one users get.
 fn write_fixture(fixture: &Fixture) {
     fixture.write(
         "cutver.toml",
@@ -48,6 +50,30 @@ fn commit(fixture: &Fixture, message: &str) {
     run_git_ok(&fixture.dir, &["commit", "-m", message]);
 }
 
+/// Run the real binary with the project as its working directory.
+///
+/// `kind = "template"` resolves a relative `template` path against the process CWD
+/// (`src/manifest/dispatch.rs:72` hands the raw config string to `TemplateEditor`). Driving the
+/// binary puts that CWD on the project, which is what a user has — and keeps these tests from
+/// mutating the test process's own CWD to fake it.
+fn run_cutver(fixture: &Fixture, args: &[&str]) -> std::process::Output {
+    std::process::Command::new(env!("CARGO_BIN_EXE_cutver"))
+        .current_dir(&fixture.dir)
+        .args(args)
+        .output()
+        .expect("the cutver binary runs")
+}
+
+fn assert_succeeded(output: &std::process::Output, what: &str) {
+    assert!(
+        output.status.success(),
+        "{what} must succeed: status {:?}\nstdout:\n{}\nstderr:\n{}",
+        output.status,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 /// S2 + S7: the sink is generated from the release context, byte-exact, and the version source is
 /// still the in-place manifest.
 #[test]
@@ -60,8 +86,8 @@ fn bump_generates_a_template_sink_from_the_release_context() {
     run_git_ok(&fixture.dir, &["tag", "v1.0.0"]);
     commit(fixture, "feat: add a sink");
 
-    let cfg = config::load("cutver.toml").unwrap();
-    bump_run(&cfg, Bump::Minor, false, &[]).expect("bump should succeed with a template sink");
+    let output = run_cutver(fixture, &["bump", "minor"]);
+    assert_succeeded(&output, "bump with a template sink");
 
     assert_eq!(
         fixture.read("src/version.ts"),
@@ -105,7 +131,7 @@ kind = "template"
     initial_commit(fixture);
     commit(fixture, "feat: default template path");
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
     bump_run(&cfg, Bump::Minor, false, &[]).expect("bump should succeed with the default template");
 
     assert_eq!(fixture.read("include/version.h"), "#define DEMO_VERSION \"2.1.0\"\n");
@@ -141,7 +167,7 @@ template = "src/absent.jinja"
     initial_commit(fixture);
     commit(fixture, "feat: missing template");
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
     let err = bump_run(&cfg, Bump::Minor, false, &[]).unwrap_err();
     let message = err.to_string();
     assert!(
@@ -161,23 +187,31 @@ fn doctor_reports_drift_when_the_sink_no_longer_matches_its_template() {
     run_git_ok(&fixture.dir, &["tag", "v1.0.0"]);
     commit(fixture, "feat: add a sink");
 
-    let cfg = config::load("cutver.toml").unwrap();
-    bump_run(&cfg, Bump::Minor, false, &[]).expect("bump should succeed");
+    let output = run_cutver(fixture, &["bump", "minor"]);
+    assert_succeeded(&output, "bump");
     let generated = fixture.read("src/version.ts");
 
     // Consistent right after generation: nothing to report.
-    let drifts = cutver::bump::doctor(&cfg).expect("doctor should succeed");
-    assert!(
-        !drifts.iter().any(|d| d.path.ends_with("src/version.ts")),
-        "a freshly generated sink must not drift: {drifts:?}"
-    );
+    let doctor = run_cutver(fixture, &["doctor"]);
+    assert_succeeded(&doctor, "doctor on a freshly generated sink");
 
     // Hand-edit the generated file: the render no longer matches it.
     fixture.write("src/version.ts", &generated.replace("1.1.0", "9.9.9"));
-    let drifts = cutver::bump::doctor(&cfg).expect("doctor should succeed");
+    let doctor = run_cutver(fixture, &["doctor"]);
     assert!(
-        drifts.iter().any(|d| d.path.ends_with("src/version.ts")),
-        "an edited sink must be reported as drift: {drifts:?}"
+        !doctor.status.success(),
+        "an edited sink must be reported as drift, so doctor must not exit 0:\n{}\n{}",
+        String::from_utf8_lossy(&doctor.stdout),
+        String::from_utf8_lossy(&doctor.stderr)
+    );
+    let report = format!(
+        "{}{}",
+        String::from_utf8_lossy(&doctor.stdout),
+        String::from_utf8_lossy(&doctor.stderr)
+    );
+    assert!(
+        report.contains("src/version.ts"),
+        "the drift report must name the edited sink: {report}"
     );
 }
 
@@ -191,11 +225,19 @@ fn doctor_never_reads_a_version_out_of_a_sink() {
     initial_commit(fixture);
 
     // The sink target does not exist yet: a version-reading check would fail here.
-    let cfg = config::load("cutver.toml").unwrap();
-    let drifts = cutver::bump::doctor(&cfg).expect("doctor must not fail on an ungenerated sink");
+    let doctor = run_cutver(fixture, &["doctor"]);
+    let report = format!(
+        "{}{}",
+        String::from_utf8_lossy(&doctor.stdout),
+        String::from_utf8_lossy(&doctor.stderr)
+    );
     assert!(
-        drifts.iter().any(|d| d.path.ends_with("src/version.ts")),
-        "a sink that was never generated is drift: {drifts:?}"
+        !doctor.status.success(),
+        "a sink that was never generated is drift, so doctor must not exit 0: {report}"
+    );
+    assert!(
+        report.contains("src/version.ts"),
+        "the drift report must name the ungenerated sink: {report}"
     );
 }
 
@@ -210,8 +252,8 @@ fn dry_run_previews_a_sink_without_writing_it() {
     initial_commit(fixture);
     commit(fixture, "feat: dry run a sink");
 
-    let cfg = config::load("cutver.toml").unwrap();
-    bump_run(&cfg, Bump::Minor, true, &[]).expect("a dry run must preview a template sink, not fail");
+    let output = run_cutver(fixture, &["bump", "minor", "--dry-run"]);
+    assert_succeeded(&output, "a dry run with a template sink");
 
     assert!(
         !std::path::Path::new(&fixture.dir).join("src/version.ts").exists(),
@@ -242,7 +284,7 @@ fn an_unreadable_sink_aborts_before_any_write() {
     run_git_ok(&fixture.dir, &["commit", "-m", "chore: unreadable sink"]);
     let cargo_before = fixture.read("Cargo.toml");
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(fixture);
     let err = bump_run(&cfg, Bump::Minor, false, &[]).unwrap_err();
 
     assert!(
@@ -274,9 +316,14 @@ fn an_absent_sink_is_removed_by_rollback_instead_of_recreated_empty() {
     let fixture = guard.fixture();
     write_fixture(fixture);
     // The lock makes `git stage` fail after the sink was written, so the drop guard rolls back.
+    // It is named by absolute path because `src/preflight.rs::spawn` gives the preflight shell no
+    // `current_dir`: a relative `.git/index.lock` lands wherever the process was launched, and in a
+    // linked worktree `.git` is a file, so `touch` fails there instead of locking anything (#295).
+    let index_lock = fixture.dir.join(".git/index.lock");
     fixture.write(
         "cutver.toml",
-        r#"[version]
+        &format!(
+            r#"[version]
 current_source = "Cargo.toml"
 
 [[manifest]]
@@ -289,11 +336,13 @@ kind = "template"
 template = "src/version.ts.jinja"
 
 [preflight]
-check = "touch .git/index.lock"
+check = "touch '{}'"
 
 [changelog]
 path = "CHANGELOG.md"
 "#,
+            index_lock.display().to_string().replace('\\', "/")
+        ),
     );
     init_git_repo(fixture);
     initial_commit(fixture);
@@ -304,7 +353,7 @@ path = "CHANGELOG.md"
         "the fixture must start without the sink"
     );
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(fixture);
     let err = bump_run(&cfg, Bump::Minor, false, &[]).unwrap_err();
     let _ = std::fs::remove_file(fixture.dir.join(".git/index.lock"));
 

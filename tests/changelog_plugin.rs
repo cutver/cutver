@@ -4,7 +4,6 @@ mod common;
 
 use common::*;
 use cutver::bump::run as bump_run;
-use cutver::config;
 use cutver::semver_bump::Bump;
 use std::os::unix::fs::PermissionsExt;
 
@@ -85,7 +84,7 @@ env = ["PATH"]
     run_git_ok(&fixture.dir, &["add", "."]);
     run_git_ok(&fixture.dir, &["commit", "-m", "feat: cool new feature"]);
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
     let res = bump_run(&cfg, Bump::Minor, false, &[]);
 
     assert!(res.is_ok(), "bump should succeed with changelog plugin: {res:?}");
@@ -147,7 +146,7 @@ env = ["PATH"]
     run_git_ok(&fixture.dir, &["add", "."]);
     run_git_ok(&fixture.dir, &["commit", "-m", "feat: cool new feature"]);
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
     let res = bump_run(&cfg, Bump::Minor, false, &[]);
 
     assert!(
@@ -222,7 +221,7 @@ env = ["PATH"]
     run_git_ok(&fixture.dir, &["add", "."]);
     run_git_ok(&fixture.dir, &["commit", "-m", "feat: cool new feature"]);
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
     let res = bump_run(&cfg, Bump::Minor, false, &[]);
 
     assert!(res.is_err(), "bump should fail when changelog plugin fails");

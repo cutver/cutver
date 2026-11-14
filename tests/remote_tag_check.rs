@@ -8,7 +8,6 @@ mod common;
 
 use common::*;
 use cutver::bump::run as bump_run;
-use cutver::config;
 use cutver::semver_bump::Bump;
 
 /// Every non-git file under the fixture, so "nothing was written" is checkable byte for byte.
@@ -60,7 +59,7 @@ check = "true""#,
     run_git_ok(&fixture.dir, &["remote", "add", "origin", &unreachable]);
     let before = snapshot(fixture);
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = load_config(fixture);
     let err = bump_run(&cfg, Bump::Minor, false, &[]).unwrap_err();
 
     assert!(
@@ -102,7 +101,7 @@ check = "true""#,
     );
     let fixture = guard.fixture();
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = load_config(fixture);
     bump_run(&cfg, Bump::Minor, false, &[]).expect("a repository without a remote must still bump");
 
     assert_bumped(fixture);

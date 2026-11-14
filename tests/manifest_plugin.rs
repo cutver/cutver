@@ -4,7 +4,6 @@ mod common;
 
 use common::*;
 use cutver::bump::run as bump_run;
-use cutver::config;
 use cutver::semver_bump::Bump;
 use std::os::unix::fs::PermissionsExt;
 
@@ -97,7 +96,7 @@ env = ["PATH"]
     init_git_repo(fixture);
     initial_commit(fixture);
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
 
     // Verify doctor discovers and reads the plugin manifest version
     let doctor_drifts = cutver::bump::doctor(&cfg).unwrap();
@@ -170,7 +169,7 @@ env = ["PATH"]
     init_git_repo(fixture);
     initial_commit(fixture);
 
-    let _cfg = config::load("cutver.toml").unwrap();
+    let _cfg = common::load_config(guard.fixture());
 
     // Failing script on write error:
     // If the plugin exits non-zero during compute/write, the pipeline aborts before phase 2
@@ -184,7 +183,7 @@ env = ["PATH"]
     let failing_toml = toml.replace(&script_path, &fail_script_path);
     fixture.write("cutver.toml", &failing_toml);
 
-    let cfg_fail = config::load("cutver.toml").unwrap();
+    let cfg_fail = common::load_config(guard.fixture());
     let res = bump_run(&cfg_fail, Bump::Minor, false, &[]);
     assert!(res.is_err(), "bump should fail when plugin manifest write fails");
 

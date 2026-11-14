@@ -5,9 +5,7 @@ mod common;
 use common::*;
 use cutver::bump::run as bump_run;
 use cutver::cli::BumpLevel;
-use cutver::config;
 use cutver::semver_bump::Bump;
-use std::time::SystemTime;
 
 #[test]
 fn bump_auto_dry_run_with_feat() {
@@ -27,7 +25,7 @@ check = "true""#,
         &["commit", "--allow-empty", "-m", "feat: add auto bump support"],
     );
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
     let summary = bump_run(&cfg, BumpLevel::Auto, true, &[]).unwrap();
     assert_eq!(summary.next.to_string(), "1.3.0");
     assert!(summary.dry_run);
@@ -57,7 +55,7 @@ check = "true""#,
         &["commit", "--allow-empty", "-m", "feat: add auto bump support"],
     );
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
     let summary = bump_run(&cfg, BumpLevel::Auto, false, &[]).unwrap();
     assert_eq!(summary.next.to_string(), "1.3.0");
     assert!(!summary.dry_run);
@@ -86,7 +84,7 @@ check = "true""#,
         &["commit", "--allow-empty", "-m", "feat!: breaking change across system"],
     );
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
     let summary = bump_run(&cfg, BumpLevel::Auto, false, &[]).unwrap();
     assert_eq!(summary.next.to_string(), "2.0.0");
     assert!(!summary.dry_run);
@@ -118,7 +116,7 @@ check = "true""#,
         ],
     );
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
     let summary = bump_run(&cfg, BumpLevel::Auto, false, &[]).unwrap();
     assert_eq!(summary.next.to_string(), "2.0.0");
     assert!(!summary.dry_run);
@@ -147,7 +145,7 @@ check = "true""#,
         &["commit", "--allow-empty", "-m", "some non-conventional commit"],
     );
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
     let summary = bump_run(&cfg, BumpLevel::Auto, false, &[]).unwrap();
     assert_eq!(summary.next.to_string(), "1.2.4");
     assert!(!summary.dry_run);
@@ -187,7 +185,7 @@ check = "true""#,
         &["commit", "--allow-empty", "-m", "fix: post-release bugfix"],
     );
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
     let summary = bump_run(&cfg, BumpLevel::Auto, false, &[]).unwrap();
     // Because the breaking change occurred before v1.2.3 tag, it only inspects commits since v1.2.3,
     // deducing a patch bump to 1.2.4 instead of major.
@@ -220,15 +218,14 @@ check = "true""#,
         &["commit", "--allow-empty", "-m", "fix: resolve memory leak on exit"],
     );
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
     assert_eq!(cfg.changelog.mode, "conventional");
     let summary = bump_run(&cfg, BumpLevel::Auto, false, &[]).unwrap();
     assert_eq!(summary.next.to_string(), "1.3.0");
     assert!(!summary.dry_run);
 
     let cl = fixture.read("CHANGELOG.md");
-    let today = cutver::changelog::format_date(SystemTime::now());
-    assert!(cl.contains(&format!("## [v1.3.0] - {today}")));
+    common::assert_release_heading(&cl, "v1.3.0");
     assert!(cl.contains("### Features\n- **parser**: add AST builder"));
     assert!(cl.contains("### Bug Fixes\n- resolve memory leak on exit"));
     assert!(!cl.contains("### ⚠️ Breaking Changes"));
@@ -262,14 +259,13 @@ check = "true""#,
         &["commit", "--allow-empty", "-m", "fix: update error message"],
     );
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
     let summary = bump_run(&cfg, BumpLevel::Auto, false, &[]).unwrap();
     assert_eq!(summary.next.to_string(), "2.0.0");
     assert!(!summary.dry_run);
 
     let cl = fixture.read("CHANGELOG.md");
-    let today = cutver::changelog::format_date(SystemTime::now());
-    assert!(cl.contains(&format!("## [v2.0.0] - {today}")));
+    common::assert_release_heading(&cl, "v2.0.0");
     assert!(cl.contains("### ⚠️ Breaking Changes\n- **api**: remove deprecated endpoints"));
     assert!(cl.contains("### Bug Fixes\n- update error message"));
     assert!(!cl.contains("### Features"));
@@ -293,7 +289,7 @@ check = "true""#,
         &["commit", "--allow-empty", "-m", "feat: manual minor feature"],
     );
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
     let summary = bump_run(&cfg, Bump::Minor, false, &[]).unwrap();
     assert_eq!(summary.next.to_string(), "1.3.0");
     assert!(!summary.dry_run);
@@ -346,7 +342,7 @@ require_clean_tree = true
     initial_commit(fixture);
     run_git_ok(&fixture.dir, &["commit", "--allow-empty", "-m", "feat: some feature"]);
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
     let summary = bump_run(&cfg, BumpLevel::Auto, false, &[]).unwrap();
     assert_eq!(summary.next.to_string(), "1.3.0");
     let cl = fixture.read("CHANGELOG.md");
@@ -376,7 +372,7 @@ check = "true""#,
         &["commit", "--allow-empty", "-m", "feat: exciting new feature"],
     );
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
     let summary = bump_run(&cfg, BumpLevel::Auto, false, &[]).unwrap();
     assert_eq!(summary.next.to_string(), "1.3.0");
 

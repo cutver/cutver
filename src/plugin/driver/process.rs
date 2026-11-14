@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, HashSet};
 use std::io::{Read, Write};
 use std::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, Stdio};
+use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -119,15 +120,20 @@ impl PluginDriver for ProcessDriver {
 ///
 /// The handle is owned by this thread, so the write runs concurrently with `poll_or_kill`: a
 /// plugin that never reads stdin blocks only this thread, and the kill that `poll_or_kill` issues
-/// on timeout closes the pipe, which releases the write with a broken pipe.
-fn spawn_writer_thread(stdin: Option<ChildStdin>, payload: Vec<u8>) -> thread::JoinHandle<std::io::Result<()>> {
+/// on timeout closes the pipe, which releases the write with a broken pipe. The result travels on
+/// a channel rather than a join handle, because joining would let a descendant that inherited the
+/// pipe hold the caller (issue #264).
+fn spawn_writer_thread(stdin: Option<ChildStdin>, payload: Vec<u8>) -> mpsc::Receiver<std::io::Result<()>> {
+    let (sender, receiver) = mpsc::channel();
     thread::spawn(move || {
-        let Some(mut stdin) = stdin else {
-            return Ok(());
+        let result = match stdin {
+            Some(mut stdin) => stdin.write_all(&payload).and_then(|()| stdin.flush()),
+            None => Ok(()),
         };
-        stdin.write_all(&payload)?;
-        stdin.flush()
-    })
+        // A send error only means the caller already returned; the thread ends here either way.
+        let _ = sender.send(result);
+    });
+    receiver
 }
 
 /// Spawns background thread to drain a stream to completion.
@@ -144,43 +150,69 @@ fn spawn_drain_thread<R: Read + Send + 'static>(reader: Option<R>) -> thread::Jo
 /// Waits for child process with timeout isolation, failing closed on timeout.
 fn wait_with_timeout(
     child: Child,
-    writer: thread::JoinHandle<std::io::Result<()>>,
+    writer: mpsc::Receiver<std::io::Result<()>>,
     timeout: Duration,
     name: &PluginName,
     capability: &str,
 ) -> Result<Vec<u8>, PluginError> {
     let child_shared = Arc::new(Mutex::new(child));
-    let stdout_reader = child_shared
-        .lock()
-        .map_err(|_| make_poison_err(name, capability))?
-        .stdout
-        .take();
-    let stderr_reader = child_shared
-        .lock()
-        .map_err(|_| make_poison_err(name, capability))?
-        .stderr
-        .take();
-
+    let (stdout_reader, stderr_reader) = take_output_streams(&child_shared, name, capability)?;
     let stdout_thread = spawn_drain_thread::<ChildStdout>(stdout_reader);
     let stderr_thread = spawn_drain_thread::<ChildStderr>(stderr_reader);
 
-    // The writer joins only after the child ends, so write, wait and drain share one budget.
-    let outcome = poll_or_kill(&child_shared, timeout, name, capability);
-    let written = writer
-        .join()
-        .unwrap_or_else(|_| Err(std::io::Error::other("plugin stdin writer thread panicked")));
-    let status = outcome?;
+    // One budget covers write, wait and drain. On the timeout path `poll_or_kill` kills only the
+    // direct child, so a descendant that inherited the pipes can still hold them open: joining the
+    // writer or the drain threads there would hand that descendant the caller's thread, which is
+    // exactly what `timeout_seconds` exists to prevent. We return at once and leave those threads
+    // detached; leaking one thread is bounded and rare, blocking the caller is not.
+    let start = Instant::now();
+    let status = poll_or_kill(&child_shared, timeout, name, capability)?;
+    let written = await_writer(writer, timeout.saturating_sub(start.elapsed()), capability);
 
     let stdout_bytes = stdout_thread.join().unwrap_or_default();
     let stderr_bytes = stderr_thread.join().unwrap_or_default();
+    finish_outcome(status, &stderr_bytes, written, name, capability)?;
 
+    Ok(stdout_bytes)
+}
+
+/// Waits for the writer's own report inside the remaining part of the invocation budget.
+///
+/// The child already exited here, so an unfinished write means the plugin, or something it
+/// started, stopped draining stdin and still holds the pipe. That is a write failure, not a
+/// timeout: blaming the child with `Timeout` would hide that it succeeded.
+fn await_writer(
+    writer: mpsc::Receiver<std::io::Result<()>>,
+    remaining: Duration,
+    capability: &str,
+) -> std::io::Result<()> {
+    match writer.recv_timeout(remaining) {
+        Ok(result) => result,
+        Err(RecvTimeoutError::Timeout) => Err(std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            format!(
+                "the plugin (or a process it started) stopped draining stdin, and the {remaining:?} left of the invocation budget for capability '{capability}' expired before the write finished"
+            ),
+        )),
+        Err(RecvTimeoutError::Disconnected) => Err(std::io::Error::other("plugin stdin writer thread panicked")),
+    }
+}
+
+/// Applies the exit-status-over-write-error precedence: the child's own stderr is the better
+/// diagnosis, so it wins over a broken stdin pipe.
+fn finish_outcome(
+    status: std::process::ExitStatus,
+    stderr_bytes: &[u8],
+    written: std::io::Result<()>,
+    name: &PluginName,
+    capability: &str,
+) -> Result<(), PluginError> {
     if !status.success() {
-        // The child's own failure carries its stderr, which is the better diagnosis of the two.
         return Err(PluginError::ExecutionFailed {
             name: name.clone(),
             capability: capability.to_string(),
             exit_code: status.code().unwrap_or(-1),
-            stderr: String::from_utf8_lossy(&stderr_bytes).trim().to_string(),
+            stderr: String::from_utf8_lossy(stderr_bytes).trim().to_string(),
         });
     }
 
@@ -188,9 +220,17 @@ fn wait_with_timeout(
         name: name.clone(),
         capability: capability.to_string(),
         source,
-    })?;
+    })
+}
 
-    Ok(stdout_bytes)
+/// Takes both piped output streams before the wait, so a full pipe can never block the child.
+fn take_output_streams(
+    child_shared: &Arc<Mutex<Child>>,
+    name: &PluginName,
+    capability: &str,
+) -> Result<(Option<ChildStdout>, Option<ChildStderr>), PluginError> {
+    let mut guard = child_shared.lock().map_err(|_| make_poison_err(name, capability))?;
+    Ok((guard.stdout.take(), guard.stderr.take()))
 }
 
 /// Polls child for completion or terminates it on timeout.

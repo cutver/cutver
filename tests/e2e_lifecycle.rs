@@ -830,6 +830,10 @@ runtime = "process"
 command = "{script_path}"
 capabilities = ["lifecycle.v1"]
 events = ["on_pre_bump"]
+
+# The driver clears the environment, so the script's `cat` needs the PATH the test runner has.
+[plugins.verifier.permissions]
+env = ["PATH"]
 "#
     );
 
@@ -903,6 +907,10 @@ runtime = "process"
 command = "{script_path}"
 capabilities = ["lifecycle.v1"]
 events = ["on_post_bump"]
+
+# The driver clears the environment, so the script's `cat` needs the PATH the test runner has.
+[plugins.failing-hook.permissions]
+env = ["PATH"]
 "#
     );
 
@@ -968,6 +976,10 @@ runtime = "process"
 command = "{script_path}"
 capabilities = ["lifecycle.v1"]
 events = ["on_pre_bump", "on_post_bump", "on_post_release"]
+
+# The driver clears the environment, so the script's `cat`/`read` needs the PATH the runner has.
+[plugins.lifecycle-orchestrator.permissions]
+env = ["PATH"]
 "#
     );
 
@@ -1034,6 +1046,10 @@ runtime = "process"
 command = "{script_path}"
 capabilities = ["lifecycle.v1"]
 events = ["on_pre_bump", "on_post_release"]
+
+# The driver clears the environment, so the script's `cat` needs the PATH the test runner has.
+[plugins.capture.permissions]
+env = ["PATH"]
 "#
     );
     fixture.write("package.json", PACKAGE_JSON);

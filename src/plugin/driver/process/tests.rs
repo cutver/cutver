@@ -263,6 +263,70 @@ fn test_stdin_that_is_never_read_fails_closed_with_timeout() {
     );
 }
 
+/// The minimum environment a shell needs when it must also find an external child command.
+///
+/// `ping` and `sleep` are external programs, so the platform shell needs `PATH` on both
+/// platforms; Windows additionally needs `SystemRoot` to start at all.
+fn descendant_env() -> BTreeMap<String, String> {
+    let keys: Vec<String> = if cfg!(windows) {
+        vec!["SystemRoot".to_string(), "PATH".to_string()]
+    } else {
+        vec!["PATH".to_string()]
+    };
+    let plugin = PluginName::new("orphan-fixture").unwrap();
+    resolve_env_grants(&plugin, &keys).expect("the platform shell needs these keys to start")
+}
+
+/// S3: the whole exchange -- write, wait, drain -- stays inside `timeout_seconds`. A plugin that
+/// leaves a descendant holding the stdin pipe must not extend the caller's wait, because the
+/// driver kills only the direct child and the descendant keeps the pipe open after it.
+#[test]
+fn test_a_descendant_holding_stdin_cannot_outlive_the_timeout() {
+    let name = PluginName::new("orphan-plugin").unwrap();
+    let mut caps = HashSet::new();
+    caps.insert(Capability::LifecycleV1);
+
+    let (cmd, args) = if cfg!(windows) {
+        (
+            "cmd".to_string(),
+            vec![
+                "/C".to_string(),
+                "start /b ping -n 25 127.0.0.1 >NUL & ping -n 25 127.0.0.1".to_string(),
+            ],
+        )
+    } else {
+        (
+            "sh".to_string(),
+            vec!["-c".to_string(), "sleep 25 & sleep 25".to_string()],
+        )
+    };
+
+    let driver = ProcessDriver::new(name.clone(), cmd, args, descendant_env(), 1, caps);
+    // Larger than any OS pipe buffer, so the write cannot complete while nobody drains stdin.
+    let payload = serde_json::json!({ "blob": "x".repeat(2 * 1024 * 1024) });
+    let invocation = PluginInvocation::new(PluginCall::PreBump, &payload).unwrap();
+
+    let start = Instant::now();
+    let err = driver.invoke(&invocation).unwrap_err();
+    let elapsed = start.elapsed();
+
+    match err {
+        PluginError::Timeout {
+            name: err_name,
+            timeout_secs,
+            ..
+        } => {
+            assert_eq!(err_name, name);
+            assert_eq!(timeout_secs, 1);
+        }
+        other => panic!("expected Timeout, got {other:?}"),
+    }
+    assert!(
+        elapsed < Duration::from_secs(5),
+        "a descendant of the killed child must not extend the caller's wait, took {elapsed:?}"
+    );
+}
+
 /// S4: a declared but unset grant is an error naming the plugin and the key, never an empty
 /// string handed to the plugin. `resolve_env_grants` is the authority the process factory and the
 /// WASM manifest builder both resolve their grants through.

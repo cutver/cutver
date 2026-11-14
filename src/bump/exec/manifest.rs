@@ -92,7 +92,7 @@ pub(crate) fn compute(
             Ok(Change {
                 path: m.path.to_string(),
                 old,
-                original: content,
+                original: Some(content),
                 new,
                 changed,
             })
@@ -100,12 +100,30 @@ pub(crate) fn compute(
         .collect()
 }
 
+/// Reads a target that may legitimately not exist yet, and fails closed on anything else (#261).
+///
+/// An absent file is a normal state: a template sink is often generated for the first time. Any
+/// other read failure is *not* normal, because the bytes returned here are the only copy rollback
+/// will restore. Backing an unreadable file up as empty and writing that back would turn a real
+/// manifest into a zero-byte file.
+fn read_existing(path: &str) -> Result<Option<String>, Error> {
+    match std::fs::read_to_string(path) {
+        Ok(content) => Ok(Some(content)),
+        Err(source) if source.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(source) => Err(Error::ReadUnreadable {
+            path: path.to_string(),
+            source,
+        }),
+    }
+}
+
 /// Renders one `kind = "template"` sink into a [`Change`] without reading a version from it.
 ///
 /// `old` carries `next`: a sink has no version of its own, so the summary reports the version it was
 /// generated for, and `changed` is what tells the pipeline whether a write is needed. A target that
-/// does not exist yet is generated from scratch, with `original` empty so a rollback restores an
-/// empty file rather than deleting what was never there.
+/// does not exist yet is generated from scratch, with `original` empty so a rollback removes it
+/// again: recreating a zero-byte file for something that was never there is a wrong restore, not a
+/// safe one (#261).
 fn compute_template_sink(
     m: &crate::config::Manifest,
     next: &Version,
@@ -135,8 +153,8 @@ fn compute_template_sink(
         path: path.clone(),
         source: e,
     })?;
-    let original = std::fs::read_to_string(m.path.as_str()).unwrap_or_default();
-    let changed = original != new;
+    let original = read_existing(&path)?;
+    let changed = original.as_deref().unwrap_or_default() != new;
     Ok(Change {
         path,
         old: next.clone(),

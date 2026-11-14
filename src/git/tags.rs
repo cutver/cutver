@@ -26,15 +26,59 @@ pub fn has_remote(repo: impl AsRef<Path>, remote: &str) -> bool {
     text.lines().any(|l| l.trim() == remote)
 }
 
-pub fn remote_tag_exists(repo: impl AsRef<Path>, remote: &str, tag_name: &str) -> Result<Option<String>, Error> {
+/// Why the remote could not answer the tag question (#262).
+///
+/// A failed `ls-remote` used to be mapped to `Ok(None)`, which reads as "no tag on the remote".
+/// That let a release write its manifests, commit and tag locally, and fail only at `git push`,
+/// leaving a commit and a tag behind for the operator to unwind by hand.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RemoteUnreachable {
+    /// The remote the check asked about.
+    pub remote: String,
+    /// git's own diagnostic, or the reason git could not be run.
+    pub detail: String,
+}
+
+impl std::fmt::Display for RemoteUnreachable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "remote '{}' did not answer: {}", self.remote, self.detail)
+    }
+}
+
+impl std::error::Error for RemoteUnreachable {}
+
+pub fn remote_tag_exists(
+    repo: impl AsRef<Path>,
+    remote: &str,
+    tag_name: &str,
+) -> Result<Option<String>, RemoteUnreachable> {
     if !has_remote(&repo, remote) {
         return Ok(None);
     }
     let tag_ref = format!("refs/tags/{tag_name}");
     let peeled_ref = format!("{tag_ref}^{{}}");
-    let output = run_git(&repo, &["ls-remote", "--tags", remote, &tag_ref, &peeled_ref])?;
+    let output =
+        run_git(&repo, &["ls-remote", "--tags", remote, &tag_ref, &peeled_ref]).map_err(|e| RemoteUnreachable {
+            remote: remote.to_string(),
+            detail: e.to_string(),
+        })?;
     if !output.status.success() {
-        return Ok(None);
+        // A configured remote the check cannot reach must never read as "no remote tag": that is
+        // exactly the wedge the preflight exists to prevent (Pillar II.2).
+        let stderr = String::from_utf8_lossy_owned(output.stderr);
+        let stderr = stderr.trim();
+        let detail = if stderr.is_empty() {
+            format!("`git ls-remote --tags {remote}` exited with {}", output.status)
+        } else {
+            format!(
+                "`git ls-remote --tags {remote}` exited with {}: {stderr}",
+                output.status
+            )
+        };
+        return Err(RemoteUnreachable {
+            remote: remote.to_string(),
+            detail,
+        });
     }
     let text = String::from_utf8_lossy_owned(output.stdout);
     let mut direct_hash = None;

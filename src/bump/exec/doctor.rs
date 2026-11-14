@@ -89,7 +89,20 @@ fn template_sink_drift(
         path: path.clone(),
         source: e,
     })?;
-    let on_disk = std::fs::read_to_string(m.path.as_str()).unwrap_or_default();
+    let on_disk = match std::fs::read_to_string(m.path.as_str()) {
+        Ok(content) => content,
+        // A sink that does not exist yet is not drift: the next run generates it.
+        Err(source) if source.kind() == std::io::ErrorKind::NotFound => String::new(),
+        // Never claim the rendered output differs: an unreadable sink is a different problem, and
+        // reporting it as drift would send the operator to regenerate a file they must repair first.
+        Err(source) => {
+            return Ok(Some(Drift {
+                path,
+                expected: expected.to_string(),
+                actual: format!("cannot be read: {source}"),
+            }));
+        }
+    };
     if rendered == on_disk {
         return Ok(None);
     }

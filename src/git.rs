@@ -38,7 +38,7 @@ pub use ops::{
 };
 
 // Re-export tag querying and resolution
-pub use tags::{has_remote, latest_tag, list_tags, remote_tag_exists, tag_exists, tag_name};
+pub use tags::{RemoteUnreachable, has_remote, latest_tag, list_tags, remote_tag_exists, tag_exists, tag_name};
 
 // Re-export log traversal and author resolution
 pub use log::{

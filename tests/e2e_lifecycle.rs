@@ -759,10 +759,19 @@ commands = [
     init_git_repo(fixture);
     run_git_ok(&fixture.dir, &["checkout", "-B", "main"]);
     initial_commit(fixture);
-    run_git_ok(
-        &fixture.dir,
-        &["remote", "add", "origin", "https://github.com/test-owner/test-repo.git"],
-    );
+    let origin_url = "https://github.com/test-owner/test-repo.git";
+    run_git_ok(&fixture.dir, &["remote", "add", "origin", origin_url]);
+
+    // #262 turns an unanswered remote tag check into a hard error, so `origin` must answer — but
+    // this test interpolates forge/repo/owner from that URL, and cutver reads it verbatim through
+    // `git config --get remote.origin.url`. Point git's transport at a local bare repository with
+    // a `url.<base>.insteadOf` rewrite instead of changing the remote URL: `ls-remote` then resolves
+    // to that path and never reaches the network or a credential prompt, while `remote.origin.url`
+    // still says `https://github.com/test-owner/test-repo.git`.
+    let remote = Fixture::new("lifecycle-minijinja-interp-remote");
+    run_git_ok(&remote.dir, &["init", "--bare", "-q"]);
+    let instead_of_key = format!("url.{}.insteadOf", remote.dir.to_string_lossy());
+    run_git_ok(&fixture.dir, &["config", &instead_of_key, origin_url]);
 
     let cfg = config::load("cutver.toml").unwrap();
 

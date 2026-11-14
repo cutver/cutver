@@ -222,3 +222,102 @@ fn dry_run_previews_a_sink_without_writing_it() {
         "a dry run must not bump the version source"
     );
 }
+
+/// #261 AC1: an unreadable sink is never backed up as empty. The bump aborts in Phase 1, before any
+/// write, and the unreadable bytes stay exactly as they were.
+#[test]
+fn an_unreadable_sink_aborts_before_any_write() {
+    let guard = FixtureGuard::new("sink-unreadable");
+    let fixture = guard.fixture();
+    write_fixture(fixture);
+    init_git_repo(fixture);
+    initial_commit(fixture);
+    run_git_ok(&fixture.dir, &["tag", "v1.0.0"]);
+    commit(fixture, "feat: add a sink");
+    // Valid file, invalid UTF-8: the release cannot read it back. It used to be backed up as "" and
+    // then restored as a zero-byte manifest, destroying the file.
+    let original: &[u8] = &[0x2f, 0x2f, 0xff, 0xfe, 0x00, 0x41, 0x0a];
+    std::fs::write(fixture.dir.join("src/version.ts"), original).unwrap();
+    run_git_ok(&fixture.dir, &["add", "."]);
+    run_git_ok(&fixture.dir, &["commit", "-m", "chore: unreadable sink"]);
+    let cargo_before = fixture.read("Cargo.toml");
+
+    let cfg = config::load("cutver.toml").unwrap();
+    let err = bump_run(&cfg, Bump::Minor, false, &[]).unwrap_err();
+
+    assert!(
+        matches!(err, cutver::bump::Error::ReadUnreadable { .. }),
+        "expected a fail-closed read error, got {err:?}"
+    );
+    let message = err.to_string();
+    assert!(
+        message.contains("src/version.ts"),
+        "the error must name the sink: {message}"
+    );
+    assert_eq!(
+        std::fs::read(fixture.dir.join("src/version.ts")).unwrap(),
+        original,
+        "the unreadable sink must keep its bytes"
+    );
+    assert_eq!(
+        fixture.read("Cargo.toml"),
+        cargo_before,
+        "nothing may be written before the rollback snapshot exists"
+    );
+}
+
+/// #261 AC3: a sink that did not exist before the run is created and then removed on rollback,
+/// instead of being recorded as an empty backup that recreates it as a zero-byte file.
+#[test]
+fn an_absent_sink_is_removed_by_rollback_instead_of_recreated_empty() {
+    let guard = FixtureGuard::new("sink-absent-rollback");
+    let fixture = guard.fixture();
+    write_fixture(fixture);
+    // The lock makes `git stage` fail after the sink was written, so the drop guard rolls back.
+    fixture.write(
+        "cutver.toml",
+        r#"[version]
+current_source = "Cargo.toml"
+
+[[manifest]]
+path = "Cargo.toml"
+kind = "cargo-package"
+
+[[manifest]]
+path = "src/version.ts"
+kind = "template"
+template = "src/version.ts.jinja"
+
+[preflight]
+check = "touch .git/index.lock"
+
+[changelog]
+path = "CHANGELOG.md"
+"#,
+    );
+    init_git_repo(fixture);
+    initial_commit(fixture);
+    run_git_ok(&fixture.dir, &["tag", "v1.0.0"]);
+    commit(fixture, "feat: add a sink");
+    assert!(
+        !fixture.dir.join("src/version.ts").exists(),
+        "the fixture must start without the sink"
+    );
+
+    let cfg = config::load("cutver.toml").unwrap();
+    let err = bump_run(&cfg, Bump::Minor, false, &[]).unwrap_err();
+    let _ = std::fs::remove_file(fixture.dir.join(".git/index.lock"));
+
+    assert!(
+        matches!(err, cutver::bump::Error::Stage(_)),
+        "expected the stage failure that triggers rollback, got {err:?}"
+    );
+    assert!(
+        !fixture.dir.join("src/version.ts").exists(),
+        "rollback must remove a sink that never existed, not leave it empty"
+    );
+    assert!(
+        fixture.read("Cargo.toml").contains("version = \"1.0.0\""),
+        "the version source must be restored byte-for-byte"
+    );
+}

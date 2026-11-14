@@ -9,6 +9,10 @@ pub enum Error {
     Git(#[from] crate::git::Error),
     #[error("failed to read '{path}': {source}")]
     Read { path: String, source: io::Error },
+    #[error(
+        "could not read '{path}' to record the bytes rollback would restore: {source}\n  Where: Phase 1, taking the pre-write snapshot, before anything was written\n  Fix: make the file readable again (its permissions, its encoding or the I/O path), then re-run. An unreadable target cannot be backed up, so nothing was written, staged, committed or tagged."
+    )]
+    ReadUnreadable { path: String, source: io::Error },
     #[error("current source '{path}': {source}")]
     CurrentSource {
         path: String,
@@ -84,6 +88,14 @@ pub enum Error {
         remote: String,
         commit: String,
     },
+    #[error(
+        "could not check release tag '{tag}' on remote '{remote}': {detail}\n  Where: tag collision check, before any file, commit or tag is written\n  Fix: make the remote reachable — offline CI, an expired or missing token, DNS and proxies are the usual causes — and confirm with `git ls-remote {remote}`. Nothing was written, staged, committed or tagged."
+    )]
+    RemoteTagCheck {
+        tag: String,
+        remote: String,
+        detail: String,
+    },
     #[error("write failed for '{path}'; rollback attempted. {rollback}")]
     WriteRollback {
         path: String,
@@ -91,6 +103,10 @@ pub enum Error {
         source: crate::atomic::Error,
         rollback: String,
     },
+    #[error(
+        "{error}\n  Where: rollback after the failure above\n  Rollback failed: {failures}\n  Fix: the working tree may no longer match its committed content. Inspect it with `git status` and restore each path named above from version control (`git checkout -- <path>`) or from your own copy; re-run the bump only once the tree is clean."
+    )]
+    RollbackFailed { error: Box<Error>, failures: String },
     #[error("pre_bump hook '{command}' failed with status {status}")]
     PreBumpHookFailed {
         command: String,
@@ -237,7 +253,8 @@ impl ChangelogDrift {
 pub(crate) struct Change {
     pub path: String,
     pub old: Version,
-    pub original: String,
+    /// What rollback restores. `None` means the target did not exist before the run (#261).
+    pub original: Option<String>,
     pub new: String,
     pub changed: bool,
 }

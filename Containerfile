@@ -30,6 +30,15 @@ RUN mkdir -p src crates/cutver-pdk/src && \
     cargo build --release $CUTVER_FEATURES && \
     rm -rf src crates/cutver-pdk/src
 
+# The release template is a compile-time input of this stage, exactly like `src/`:
+# `src/init/scaffold/templates.rs` embeds it with `include_str!` so the file this project renders
+# and the file `cutver init` hands to users cannot drift apart.
+#
+# This COPY is load-bearing on its own: every image build from v0.17.0 through v0.18.1 failed at
+# compile time for the want of it, and nothing noticed across three releases because the image was
+# only ever built on `release: published`. `container.yml` now builds it on pull requests too.
+COPY .github/templates/cutver/RELEASE.md ./.github/templates/cutver/RELEASE.md
+
 # Compile application source code.
 #
 # The `touch` is not cosmetic. BuildKit does not advance the mtimes of copied

@@ -1,7 +1,12 @@
+# `.github/` is deliberately NOT excluded here. `src/init/scaffold/templates.rs` embeds
+# `.github/templates/cutver/RELEASE.md` with `include_str!`, so that file is a compile-time input of
+# the builder stage. Excluding the whole directory broke three consecutive releases (#258).
+# The `!` line below is belt and braces, not the mechanism: a negation nested under an excluded
+# parent directory is not something to rely on.
+*.md
+!.github/templates/cutver/RELEASE.md
 target/
 .git/
 odd/
-.github/
 .idea/
 .vscode/
-*.md

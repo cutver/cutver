@@ -1010,12 +1010,24 @@ fn post_release_payload_carries_the_rendered_entry() {
     let fixture = guard.fixture();
 
     let script = fixture.dir.join("capture.sh");
+    // The capture file is named by absolute path. `src/plugin/driver/process.rs` gives the plugin
+    // process no `current_dir`, so it inherits the process CWD, and no test switches that CWD into
+    // a fixture any more (#270). A relative `> post-release.json` therefore landed in the directory
+    // `cargo test` was launched from, and the read below found nothing. The product assumption is
+    // tracked separately; here the payload path follows the fixture.
+    //
+    // POSIX single-quoting keeps the path one word whatever the temp dir contains; an embedded `'`
+    // would be written as `'\''`.
+    let payload_path = fixture.dir.join("post-release.json");
+    let payload_quoted = format!("'{}'", payload_path.to_string_lossy().replace('\'', r"'\''"));
     fixture.write(
         "capture.sh",
         // The process driver expects a JSON answer for every invocation, including the events whose
         // contract defines no response, so the script always replies and only the post-release
         // branch captures its stdin.
-        "#!/bin/sh\nINPUT=$(cat)\ncase \"$INPUT\" in\n  *'\"on_post_release\"'*) printf '%s' \"$INPUT\" > post-release.json ;;\nesac\necho '{\"allow\": true}'\n",
+        &format!(
+            "#!/bin/sh\nINPUT=$(cat)\ncase \"$INPUT\" in\n  *'\"on_post_release\"'*) printf '%s' \"$INPUT\" > {payload_quoted} ;;\nesac\necho '{{\"allow\": true}}'\n"
+        ),
     );
     #[cfg(unix)]
     {

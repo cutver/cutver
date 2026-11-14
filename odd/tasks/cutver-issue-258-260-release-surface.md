@@ -116,3 +116,23 @@ L7 (evidence, 2026-11-13): before the deletion `Package (unix)` appeared 4 times
 workflows (twice in `release.yml`, twice in `release-assets.yml`); after it, twice, both inside
 `release.yml`. S12's literal "returns 1" is an under-count of the two artifact matrices, so the
 test pins the invariant — no other workflow declares packaging steps — instead of the number.
+
+L8 (native review, blocked — fourth occurrence of the harness defect): `assess` read the range as
+`medium` (native `high`, `shell_source` on `container.yml`) and `reviewDue: true`, so the lineage
+`review-11b1924baa9f3ae1` was started with the risk, resilience and reliability lenses (tier
+`high`, correction budget 200) and START reported `action: created`, `state: reviewing`.
+The bound STATUS on that exact lineage then returned
+`status: blocked`, `outcome: native-status-input-invalid`, `reason: untracked-selection-invalid`,
+`mutation_performed: none`, with no continuation offered — on a worktree that `git status`
+reports as completely clean, and after the projection itself listed `intended_untracked: []`
+with a proof digest. A fresh `inspect` still reports `fresh_target_ready` and re-offers
+`review.start` **for the same lineage id**, so the three views disagree about whether the lineage
+exists. No retry was attempted (`automatic_retry: false`) and no authority was mutated.
+Consequence: this track has no native terminal outcome; the gates below are the only independent
+verification, and delivery is the human's call.
+
+L9 (gates, 2026-11-13, commit `2840622`): `cargo fmt --all --check` exit 0,
+`cargo clippy --all-targets --features plugins -- -D warnings` exit 0,
+`cargo test --workspace` green (every suite `ok`), and the seven new contract tests pass. The
+first gate run was not green — fmt exit 1 and three `manual_contains` clippy errors in
+`tests/container_build_inputs.rs` — both fixed before the commit.

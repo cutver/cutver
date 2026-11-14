@@ -296,20 +296,25 @@ fn bump_rolls_back_manifests_when_stage_fails() {
         "git CLI is required for e2e tests but was not found in PATH"
     );
     let guard = FixtureGuard::new("stage-fail-rollback");
+    let fixture = guard.fixture();
+    // The lock has to be named by absolute path. `src/preflight.rs::spawn` gives the preflight
+    // shell no `current_dir`, so the command inherits the process CWD, and no test switches that
+    // CWD into a fixture any more (#270). A relative `.git/index.lock` therefore landed in the
+    // directory `cargo test` was launched from and staging succeeded, which is how this test went
+    // red on the unix legs. The fixture's own index is the one that has to be locked.
+    let index_lock = fixture.dir.join(".git/index.lock");
     write_fixture(
         &guard,
-        r#"[preflight]
-check = "touch .git/index.lock""#,
+        &format!("[preflight]\ncheck = \"touch '{}'\"", index_lock.display()),
     );
-    let fixture = guard.fixture();
-    let cfg = common::load_config(guard.fixture());
+    let cfg = common::load_config(fixture);
     let err = bump_run(&cfg, Bump::Minor, false, &[]).unwrap_err();
     assert!(
         matches!(err, cutver::bump::Error::Stage(_)),
         "expected Stage error, got {err:?}"
     );
 
-    let _ = std::fs::remove_file(fixture.dir.join(".git/index.lock"));
+    let _ = std::fs::remove_file(&index_lock);
     assert_versions_at_123(fixture);
     assert_eq!(commit_count(fixture), 1);
     assert!(!tag_exists(fixture, "v1.3.0"));

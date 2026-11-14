@@ -34,6 +34,11 @@ fi
 BINARY_PATH="$1"
 EXPECTED_VERSION="$2"
 
+# REHEARSAL (#259): deliberate failure, reverted right after the run. It proves that a
+# release whose smoke job fails publishes neither the tag nor the crate, because the
+# closing job never starts.
+fail "rehearsal: the release smoke is deliberately red on purpose"
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 FIXTURE_SRC="$SCRIPT_DIR/../../../tests/fixtures/release-smoke"
 

@@ -130,7 +130,8 @@ jobs:
           fi
           cutver bump "${{ inputs.bump || 'auto' }}" "${args[@]}"
         env:
-          # Declared in permissions.env, so these are the only environment keys the plugin sees.
+          # Declared in permissions.env, so these are the only keys the plugin sees: both the WASM
+          # and the process runtime clear the rest of the environment before the plugin starts.
           # The app token is what makes the release attributed to cutver-release[bot].
           GITHUB_TOKEN: ${{ steps.release-token.outputs.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
@@ -613,7 +614,8 @@ jobs:
         run: cutver publish --tag "${{ needs.version.outputs.tag }}" --commit "${{ needs.version.outputs.commit }}" --notes-file RELEASE_NOTES.md
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-          # Declared in permissions.env, so these are the only environment keys the plugin sees.
+          # Declared in permissions.env, so these are the only keys the plugin sees: both the WASM
+          # and the process runtime clear the rest of the environment before the plugin starts.
           # The app token is what makes the release attributed to cutver-release[bot].
           GITHUB_TOKEN: ${{ steps.release-token.outputs.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}

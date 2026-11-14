@@ -7,7 +7,7 @@ use std::time::Duration;
 use sha2::{Digest, Sha256};
 
 use crate::plugin::cache::PluginCacheRoot;
-use crate::plugin::driver::PluginDriver;
+use crate::plugin::driver::{PluginDriver, resolve_env_grants};
 use crate::plugin::dto::PluginInvocation;
 use crate::plugin::error::PluginError;
 use crate::plugin::types::{Capability, PermissionsConfig, PluginName};
@@ -42,7 +42,7 @@ impl WasmDriver {
         expected_hash: Option<&str>,
     ) -> Result<Self, PluginError> {
         verify_sha256(&name, wasm_bytes, expected_hash)?;
-        let manifest = build_manifest(wasm_bytes, permissions, timeout_secs);
+        let manifest = build_manifest(&name, wasm_bytes, permissions, timeout_secs)?;
         let plugin = build_plugin(&name, manifest)?;
 
         Ok(Self {
@@ -113,7 +113,12 @@ pub fn verify_sha256(name: &PluginName, bytes: &[u8], expected_hash: Option<&str
 }
 
 /// Builds an Extism manifest configured with sandbox permissions and timeout.
-fn build_manifest(wasm_bytes: &[u8], permissions: &PermissionsConfig, timeout_secs: Option<u64>) -> extism::Manifest {
+fn build_manifest(
+    name: &PluginName,
+    wasm_bytes: &[u8],
+    permissions: &PermissionsConfig,
+    timeout_secs: Option<u64>,
+) -> Result<extism::Manifest, PluginError> {
     let mut manifest = extism::Manifest::new([extism::Wasm::data(wasm_bytes.to_vec())]);
 
     for host in &permissions.network {
@@ -126,16 +131,17 @@ fn build_manifest(wasm_bytes: &[u8], permissions: &PermissionsConfig, timeout_se
         manifest = manifest.with_allowed_path(host_name, guest_name(path_str));
     }
 
-    for env_var in &permissions.env {
-        let val = std::env::var(env_var).unwrap_or_default();
-        manifest = manifest.with_config_key(env_var, val);
+    // The grant authority is shared with the process runtime, so an unset declared key fails
+    // here instead of reaching the guest as an empty string.
+    for (key, value) in resolve_env_grants(name, &permissions.env)? {
+        manifest = manifest.with_config_key(key, value);
     }
 
     if let Some(secs) = timeout_secs {
         manifest = manifest.with_timeout(Duration::from_secs(secs));
     }
 
-    manifest
+    Ok(manifest)
 }
 
 /// Returns the guest-visible mount name for a granted directory.

@@ -71,6 +71,18 @@ pub enum PluginError {
     },
 
     #[error(
+        "failed to write the invocation envelope to plugin '{name}' stdin while running capability '{capability}': {source}\n  \
+        Where: streaming the IPC request into the plugin process for '{capability}'\n  \
+        Fix: verify the plugin keeps reading stdin until the envelope ends and does not exit early, or raise 'timeout_seconds' in cutver.toml."
+    )]
+    StdinWriteFailed {
+        name: PluginName,
+        capability: String,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error(
         "plugin '{name}' returned invalid IPC JSON payload for capability '{capability}': {source}\n  \
         Where: decoding plugin output from capability '{capability}'\n  \
         Fix: verify the plugin implementation adheres to the Cutver v1 JSON schema specification."
@@ -106,6 +118,13 @@ pub enum PluginError {
         Fix: grant '{resource}' in plugin permissions under [plugins.{name}.permissions] in cutver.toml."
     )]
     PermissionDenied { name: PluginName, resource: String },
+
+    #[error(
+        "plugin '{name}' declares the environment grant '{key}', but cutver cannot read '{key}' from its own environment.\n  \
+        Where: resolving the 'env' list under [plugins.{name}.permissions] before the plugin starts\n  \
+        Fix: set '{key}' in the environment that runs cutver (it must exist and be valid UTF-8), or drop it from that 'env' list in cutver.toml."
+    )]
+    UnsetEnvGrant { name: PluginName, key: String },
 
     #[error(
         "multiple plugins matched manifest '{path}': {}.\n  \

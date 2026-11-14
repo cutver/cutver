@@ -114,9 +114,18 @@ jobs:
       # file. Resolving the URL goes through the Cutver registry, so a plugin version must be
       # indexed there before a release that pins it.
       - name: Restore the declared plugin artifacts
+        # `cutver` resolves the declared `permissions.env` grants while it loads the plugin
+        # configuration, so the key has to exist even for a command that never invokes the plugin.
+        # That resolution happens too early; it is tracked in #300, and this block disappears with it.
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: cutver plugin restore
 
       - name: Doctor
+        # Not a privileged step: the token exists so the declared grant resolves, nothing reads it
+        # here. Once #300 moves resolution to invocation, this block goes away.
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: cutver doctor --check-changelog
 
       # `--defer-publish` is what keeps this job harmless: the bump commit and its branch push are

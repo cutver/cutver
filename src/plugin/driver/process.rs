@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, HashSet};
 use std::io::{Read, Write};
-use std::process::{Child, ChildStderr, ChildStdout, Command, Stdio};
+use std::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, Stdio};
+use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -66,10 +67,14 @@ impl ProcessDriver {
         &self.capabilities
     }
 
-    /// Spawns the child process configured with piped stdio.
+    /// Spawns the child process configured with piped stdio and only the granted environment.
+    ///
+    /// `env_clear` runs first: a native plugin inherits no ambient authority, so an undeclared key
+    /// in the parent environment (a token in CI, say) never reaches the child (Pillar VI.2).
     fn spawn_child(&self) -> Result<Child, PluginError> {
         Command::new(&self.command)
             .args(&self.args)
+            .env_clear()
             .envs(&self.env)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -104,19 +109,31 @@ impl PluginDriver for ProcessDriver {
         })?;
 
         let mut child = self.spawn_child()?;
-        write_stdin(&mut child, &envelope);
+        let writer = spawn_writer_thread(child.stdin.take(), envelope);
 
         let timeout = Duration::from_secs(self.timeout_seconds);
-        wait_with_timeout(child, timeout, &self.name, capability.as_str())
+        wait_with_timeout(child, writer, timeout, &self.name, capability.as_str())
     }
 }
 
-/// Writes payload into child stdin and closes the handle.
-fn write_stdin(child: &mut Child, payload: &[u8]) {
-    if let Some(mut stdin) = child.stdin.take() {
-        let _ = stdin.write_all(payload);
-        let _ = stdin.flush();
-    }
+/// Streams the payload into the child's stdin from its own thread, reporting write failures.
+///
+/// The handle is owned by this thread, so the write runs concurrently with `poll_or_kill`: a
+/// plugin that never reads stdin blocks only this thread, and the kill that `poll_or_kill` issues
+/// on timeout closes the pipe, which releases the write with a broken pipe. The result travels on
+/// a channel rather than a join handle, because joining would let a descendant that inherited the
+/// pipe hold the caller (issue #264).
+fn spawn_writer_thread(stdin: Option<ChildStdin>, payload: Vec<u8>) -> mpsc::Receiver<std::io::Result<()>> {
+    let (sender, receiver) = mpsc::channel();
+    thread::spawn(move || {
+        let result = match stdin {
+            Some(mut stdin) => stdin.write_all(&payload).and_then(|()| stdin.flush()),
+            None => Ok(()),
+        };
+        // A send error only means the caller already returned; the thread ends here either way.
+        let _ = sender.send(result);
+    });
+    receiver
 }
 
 /// Spawns background thread to drain a stream to completion.
@@ -133,41 +150,87 @@ fn spawn_drain_thread<R: Read + Send + 'static>(reader: Option<R>) -> thread::Jo
 /// Waits for child process with timeout isolation, failing closed on timeout.
 fn wait_with_timeout(
     child: Child,
+    writer: mpsc::Receiver<std::io::Result<()>>,
     timeout: Duration,
     name: &PluginName,
     capability: &str,
 ) -> Result<Vec<u8>, PluginError> {
     let child_shared = Arc::new(Mutex::new(child));
-    let stdout_reader = child_shared
-        .lock()
-        .map_err(|_| make_poison_err(name, capability))?
-        .stdout
-        .take();
-    let stderr_reader = child_shared
-        .lock()
-        .map_err(|_| make_poison_err(name, capability))?
-        .stderr
-        .take();
-
+    let (stdout_reader, stderr_reader) = take_output_streams(&child_shared, name, capability)?;
     let stdout_thread = spawn_drain_thread::<ChildStdout>(stdout_reader);
     let stderr_thread = spawn_drain_thread::<ChildStderr>(stderr_reader);
 
+    // One budget covers write, wait and drain. On the timeout path `poll_or_kill` kills only the
+    // direct child, so a descendant that inherited the pipes can still hold them open: joining the
+    // writer or the drain threads there would hand that descendant the caller's thread, which is
+    // exactly what `timeout_seconds` exists to prevent. We return at once and leave those threads
+    // detached; leaking one thread is bounded and rare, blocking the caller is not.
+    let start = Instant::now();
     let status = poll_or_kill(&child_shared, timeout, name, capability)?;
+    let written = await_writer(writer, timeout.saturating_sub(start.elapsed()), capability);
+
     let stdout_bytes = stdout_thread.join().unwrap_or_default();
     let stderr_bytes = stderr_thread.join().unwrap_or_default();
+    finish_outcome(status, &stderr_bytes, written, name, capability)?;
 
-    if status.success() {
-        return Ok(stdout_bytes);
+    Ok(stdout_bytes)
+}
+
+/// Waits for the writer's own report inside the remaining part of the invocation budget.
+///
+/// The child already exited here, so an unfinished write means the plugin, or something it
+/// started, stopped draining stdin and still holds the pipe. That is a write failure, not a
+/// timeout: blaming the child with `Timeout` would hide that it succeeded.
+fn await_writer(
+    writer: mpsc::Receiver<std::io::Result<()>>,
+    remaining: Duration,
+    capability: &str,
+) -> std::io::Result<()> {
+    match writer.recv_timeout(remaining) {
+        Ok(result) => result,
+        Err(RecvTimeoutError::Timeout) => Err(std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            format!(
+                "the plugin (or a process it started) stopped draining stdin, and the {remaining:?} left of the invocation budget for capability '{capability}' expired before the write finished"
+            ),
+        )),
+        Err(RecvTimeoutError::Disconnected) => Err(std::io::Error::other("plugin stdin writer thread panicked")),
+    }
+}
+
+/// Applies the exit-status-over-write-error precedence: the child's own stderr is the better
+/// diagnosis, so it wins over a broken stdin pipe.
+fn finish_outcome(
+    status: std::process::ExitStatus,
+    stderr_bytes: &[u8],
+    written: std::io::Result<()>,
+    name: &PluginName,
+    capability: &str,
+) -> Result<(), PluginError> {
+    if !status.success() {
+        return Err(PluginError::ExecutionFailed {
+            name: name.clone(),
+            capability: capability.to_string(),
+            exit_code: status.code().unwrap_or(-1),
+            stderr: String::from_utf8_lossy(stderr_bytes).trim().to_string(),
+        });
     }
 
-    let exit_code = status.code().unwrap_or(-1);
-    let stderr_str = String::from_utf8_lossy(&stderr_bytes).trim().to_string();
-    Err(PluginError::ExecutionFailed {
+    written.map_err(|source| PluginError::StdinWriteFailed {
         name: name.clone(),
         capability: capability.to_string(),
-        exit_code,
-        stderr: stderr_str,
+        source,
     })
+}
+
+/// Takes both piped output streams before the wait, so a full pipe can never block the child.
+fn take_output_streams(
+    child_shared: &Arc<Mutex<Child>>,
+    name: &PluginName,
+    capability: &str,
+) -> Result<(Option<ChildStdout>, Option<ChildStderr>), PluginError> {
+    let mut guard = child_shared.lock().map_err(|_| make_poison_err(name, capability))?;
+    Ok((guard.stdout.take(), guard.stderr.take()))
 }
 
 /// Polls child for completion or terminates it on timeout.
@@ -230,157 +293,4 @@ fn make_poison_err(name: &PluginName, capability: &str) -> PluginError {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::plugin::types::PluginCall;
-
-    #[test]
-    fn test_unsupported_capability() {
-        let name = PluginName::new("echo-plugin").unwrap();
-        let driver = ProcessDriver::new(name.clone(), "echo", vec![], BTreeMap::new(), 5, HashSet::new());
-        let invocation = PluginInvocation::new(PluginCall::ManifestRead, &serde_json::json!({})).unwrap();
-        let err = driver.invoke(&invocation).unwrap_err();
-        match err {
-            PluginError::UnsupportedCapability {
-                name: err_name,
-                capability,
-            } => {
-                assert_eq!(err_name, name);
-                assert_eq!(capability, "manifest.v1");
-            }
-            other => panic!("expected UnsupportedCapability, got {other:?}"),
-        }
-    }
-
-    #[test]
-    #[cfg_attr(windows, ignore)]
-    fn test_successful_invocation_echo() {
-        let name = PluginName::new("cat-plugin").unwrap();
-        let mut caps = HashSet::new();
-        caps.insert(Capability::ManifestV1);
-
-        let (cmd, args) = if cfg!(windows) {
-            (
-                "cmd".to_string(),
-                vec!["/C".to_string(), "findstr".to_string(), "^".to_string()],
-            )
-        } else {
-            ("cat".to_string(), vec![])
-        };
-
-        let driver = ProcessDriver::new(name, cmd, args, BTreeMap::new(), 5, caps);
-        let invocation = PluginInvocation::new(
-            PluginCall::ManifestWrite,
-            &serde_json::json!({"action": "bump", "version": "1.0.0"}),
-        )
-        .unwrap();
-        let output = driver.invoke(&invocation).unwrap();
-        assert_eq!(output, serde_json::to_vec(&invocation).unwrap());
-    }
-
-    #[test]
-    fn test_execution_failed_non_zero_exit() {
-        let name = PluginName::new("fail-plugin").unwrap();
-        let mut caps = HashSet::new();
-        caps.insert(Capability::LifecycleV1);
-
-        let (cmd, args) = if cfg!(windows) {
-            (
-                "cmd".to_string(),
-                vec!["/C".to_string(), "dir non_existing_file_for_test_12345".to_string()],
-            )
-        } else {
-            (
-                "sh".to_string(),
-                vec!["-c".to_string(), "echo 'failing now' >&2; exit 42".to_string()],
-            )
-        };
-
-        let driver = ProcessDriver::new(name.clone(), cmd, args, BTreeMap::new(), 5, caps);
-        let invocation = PluginInvocation::new(PluginCall::PreBump, &serde_json::json!({})).unwrap();
-        let err = driver.invoke(&invocation).unwrap_err();
-
-        match err {
-            PluginError::ExecutionFailed {
-                name: err_name,
-                capability,
-                exit_code,
-                stderr,
-            } => {
-                assert_eq!(err_name, name);
-                assert_eq!(capability, "lifecycle.v1");
-                if !cfg!(windows) {
-                    assert_eq!(exit_code, 42);
-                    assert!(stderr.contains("failing now"));
-                } else {
-                    assert_ne!(exit_code, 0);
-                }
-            }
-            other => panic!("expected ExecutionFailed, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn test_timeout_isolation() {
-        let name = PluginName::new("sleep-plugin").unwrap();
-        let mut caps = HashSet::new();
-        caps.insert(Capability::ChangelogV1);
-
-        let (cmd, args) = if cfg!(windows) {
-            (
-                "powershell".to_string(),
-                vec!["-Command".to_string(), "Start-Sleep -Seconds 5".to_string()],
-            )
-        } else {
-            ("sleep".to_string(), vec!["5".to_string()])
-        };
-
-        let driver = ProcessDriver::new(name.clone(), cmd, args, BTreeMap::new(), 1, caps);
-        let invocation = PluginInvocation::new(PluginCall::ChangelogRender, &serde_json::json!({})).unwrap();
-        let start = Instant::now();
-        let err = driver.invoke(&invocation).unwrap_err();
-        let elapsed = start.elapsed();
-
-        assert!(elapsed.as_secs() >= 1);
-        assert!(elapsed.as_secs() < 4);
-
-        match err {
-            PluginError::Timeout {
-                name: err_name,
-                capability,
-                timeout_secs,
-            } => {
-                assert_eq!(err_name, name);
-                assert_eq!(capability, "changelog.v1");
-                assert_eq!(timeout_secs, 1);
-            }
-            other => panic!("expected Timeout, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn test_getters_and_debug() {
-        let name = PluginName::new("custom-plugin").unwrap();
-        let mut caps = HashSet::new();
-        caps.insert(Capability::VersioningV1);
-        let mut env = BTreeMap::new();
-        env.insert("FOO".to_string(), "BAR".to_string());
-
-        let driver = ProcessDriver::new(
-            name.clone(),
-            "custom-cmd",
-            vec!["--flag".to_string()],
-            env.clone(),
-            10,
-            caps.clone(),
-        );
-
-        assert_eq!(driver.name(), &name);
-        assert_eq!(driver.command(), "custom-cmd");
-        assert_eq!(driver.args(), &["--flag".to_string()]);
-        assert_eq!(driver.env(), &env);
-        assert_eq!(driver.timeout_seconds(), 10);
-        assert_eq!(driver.capabilities(), &caps);
-        assert!(format!("{driver:?}").contains("custom-cmd"));
-    }
-}
+mod tests;

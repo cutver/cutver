@@ -69,6 +69,10 @@ require_clean_tree = true
 runtime = "process"
 command = "{script_path}"
 capabilities = ["versioning.v1"]
+
+# The driver clears the environment, so the script's `cat` needs the PATH the test runner has.
+[plugins.my-versioning-plugin.permissions]
+env = ["PATH"]
 "#
     );
     fixture.write("cutver.toml", &toml);
@@ -121,6 +125,10 @@ require_clean_tree = true
 runtime = "process"
 command = "{script_path}"
 capabilities = ["versioning.v1"]
+
+# The driver clears the environment, so the script's `cat` needs the PATH the test runner has.
+[plugins.auto-versioning-plugin.permissions]
+env = ["PATH"]
 "#
     );
     fixture.write("cutver.toml", &toml);
@@ -181,6 +189,10 @@ require_clean_tree = true
 runtime = "process"
 command = "{script_path}"
 capabilities = ["versioning.v1"]
+
+# The driver clears the environment, so the script's `cat` needs the PATH the test runner has.
+[plugins.invalid-plugin.permissions]
+env = ["PATH"]
 "#
     );
     fixture.write("cutver.toml", &toml);
@@ -244,6 +256,10 @@ require_clean_tree = true
 runtime = "process"
 command = "{script_path}"
 capabilities = ["versioning.v1"]
+
+# The driver clears the environment, so the script's `cat` needs the PATH the test runner has.
+[plugins.failing-plugin.permissions]
+env = ["PATH"]
 "#
     );
     fixture.write("cutver.toml", &toml);

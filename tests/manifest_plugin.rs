@@ -82,6 +82,10 @@ runtime = "process"
 command = "{script_path}"
 capabilities = ["manifest.v1"]
 manifest_match = ["Chart.yaml", "charts/**/Chart.yaml"]
+
+# The driver clears the environment, so the script's `cat` needs the PATH the test runner has.
+[plugins.helm-adapter.permissions]
+env = ["PATH"]
 "#
     );
 
@@ -151,6 +155,10 @@ runtime = "process"
 command = "{script_path}"
 capabilities = ["manifest.v1"]
 manifest_match = ["Chart.yaml"]
+
+# The driver clears the environment, so the script's `cat` needs the PATH the test runner has.
+[plugins.helm-adapter.permissions]
+env = ["PATH"]
 "#
     );
 

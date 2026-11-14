@@ -67,6 +67,10 @@ require_clean_tree = true
 runtime = "process"
 command = "{script_path}"
 capabilities = ["changelog.v1"]
+
+# The driver clears the environment, so the script's `cat` needs the PATH the test runner has.
+[plugins.my-changelog-plugin.permissions]
+env = ["PATH"]
 "#
     );
     fixture.write("cutver.toml", &toml);
@@ -125,6 +129,10 @@ require_clean_tree = true
 runtime = "process"
 command = "{script_path}"
 capabilities = ["changelog.v1"]
+
+# The driver clears the environment, so the script's `cat` needs the PATH the test runner has.
+[plugins.auto-changelog-plugin.permissions]
+env = ["PATH"]
 "#
     );
     fixture.write("cutver.toml", &toml);
@@ -194,6 +202,10 @@ require_clean_tree = true
 runtime = "process"
 command = "{script_path}"
 capabilities = ["changelog.v1"]
+
+# The driver clears the environment, so the script's `cat` needs the PATH the test runner has.
+[plugins.failing-plugin.permissions]
+env = ["PATH"]
 "#
     );
     fixture.write("cutver.toml", &toml);

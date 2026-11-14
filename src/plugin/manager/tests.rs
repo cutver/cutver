@@ -11,7 +11,9 @@ use crate::plugin::dto::{
     PreBumpPayload, PreBumpResponse,
 };
 use crate::plugin::error::PluginError;
-use crate::plugin::types::{Capability, PluginCall, PluginConfig, PluginName, PluginOperation, RuntimeKind};
+use crate::plugin::types::{
+    Capability, PermissionsConfig, PluginCall, PluginConfig, PluginName, PluginOperation, RuntimeKind,
+};
 
 #[derive(Debug)]
 struct MockEchoDriver {
@@ -108,6 +110,57 @@ fn test_from_config_wasm_registers_driver() {
 
     let manager = PluginManager::from_config(&map).unwrap();
     assert!(manager.driver(&name).is_some());
+}
+
+/// The process runtime resolves `[plugins.<name>.permissions] env` through the shared grant
+/// authority, so an unset grant fails closed when the driver is built instead of the child
+/// inheriting the whole parent environment (issue #264).
+#[test]
+fn test_from_config_process_env_grant_is_resolved() {
+    const KEY: &str = "CUTVER_TEST_UNSET_FACTORY_GRANT";
+    unsafe {
+        std::env::set_var(KEY, "granted-value");
+    }
+
+    let name = PluginName::new("env-grant-plugin").unwrap();
+    let config = PluginConfig {
+        runtime: RuntimeKind::Process,
+        source: None,
+        hash: None,
+        command: Some("env-grant-plugin".to_string()),
+        capabilities: vec![Capability::ManifestV1],
+        events: vec![],
+        manifest_match: vec![],
+        permissions: PermissionsConfig {
+            env: vec![KEY.to_string()],
+            ..Default::default()
+        },
+        timeout_seconds: None,
+        config: None,
+    };
+
+    let mut map = HashMap::new();
+    map.insert(name.clone(), config);
+    assert!(
+        PluginManager::from_config(&map).is_ok(),
+        "a declared grant that is set must resolve"
+    );
+
+    unsafe {
+        std::env::remove_var(KEY);
+    }
+    let err = PluginManager::from_config(&map).unwrap_err();
+
+    match err {
+        PluginError::UnsetEnvGrant {
+            name: err_name,
+            key: err_key,
+        } => {
+            assert_eq!(err_name, name);
+            assert_eq!(err_key, KEY);
+        }
+        other => panic!("expected UnsetEnvGrant, got {other:?}"),
+    }
 }
 
 #[test]

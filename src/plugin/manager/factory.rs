@@ -1,8 +1,8 @@
 //! Factory functions for creating plugin drivers according to their runtime configuration.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::HashSet;
 
-use crate::plugin::driver::{PluginDriver, ProcessDriver};
+use crate::plugin::driver::{PluginDriver, ProcessDriver, resolve_env_grants};
 use crate::plugin::error::PluginError;
 use crate::plugin::types::{PluginConfig, PluginName, RuntimeKind};
 
@@ -66,12 +66,15 @@ fn create_process_driver(name: &PluginName, config: &PluginConfig) -> Result<Box
 
     let timeout_secs = config.timeout_seconds.unwrap_or(DEFAULT_PLUGIN_TIMEOUT_SECS);
     let capabilities = config.capabilities.iter().copied().collect::<HashSet<_>>();
+    // Resolved through the shared grant authority: the child is spawned with a cleared
+    // environment, so this map is the complete set of keys the plugin can read.
+    let granted = resolve_env_grants(name, &config.permissions.env)?;
 
     Ok(Box::new(ProcessDriver::new(
         name.clone(),
         command,
         Vec::new(),
-        BTreeMap::new(),
+        granted,
         timeout_secs,
         capabilities,
     )))

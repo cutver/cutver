@@ -98,22 +98,27 @@ fn render_changelog_node(summary: &Summary, theme: &Theme, is_last: bool) -> Vec
 fn render_git_node(summary: &Summary, theme: &Theme, is_last: bool) -> Vec<String> {
     let mut items = Vec::new();
     items.push(format!("commit: {}", summary.commit_message));
-    if summary.tag_skipped {
-        items.push(format!(
-            "tag: {} {}",
-            theme.accent(&summary.tag),
-            theme.muted("[SKIPPED]")
-        ));
-    } else {
-        items.push(format!("tag: {}", theme.accent(&summary.tag)));
-    }
+    items.push(render_tag_line(summary, theme));
     if let Some(ref ft) = summary.floating_tag {
         items.push(format!("floating tag: {}", theme.accent(ft)));
     }
     render_section_with_items("Git", &items, is_last)
 }
 
-fn render_section_with_items(title: &str, items: &[String], is_last: bool) -> Vec<String> {
+/// States what actually exists: a tag that was created, one a dry run skipped, or one a deferred
+/// run left to `cutver publish` (#259).
+fn render_tag_line(summary: &Summary, theme: &Theme) -> String {
+    let tag = theme.accent(&summary.tag);
+    match (summary.deferred, summary.tag_skipped) {
+        (true, _) => format!("tag: {tag} {}", theme.muted("[DEFERRED]")),
+        (false, true) => format!("tag: {tag} {}", theme.muted("[SKIPPED]")),
+        (false, false) => format!("tag: {tag}"),
+    }
+}
+
+/// Renders one tree section: a title followed by its leaves. Shared by the release plan and the
+/// `cutver publish` outcome so both use the same glyphs.
+pub(crate) fn render_section_with_items(title: &str, items: &[String], is_last: bool) -> Vec<String> {
     if items.is_empty() {
         return Vec::new();
     }
@@ -130,16 +135,21 @@ fn render_section_with_items(title: &str, items: &[String], is_last: bool) -> Ve
     lines
 }
 
-fn render_publish_node(summary: &Summary, _theme: &Theme, is_last: bool) -> Vec<String> {
+fn render_publish_node(summary: &Summary, theme: &Theme, is_last: bool) -> Vec<String> {
     let has_push = summary.publish_push || summary.publish_push_command.is_some();
     let has_cmds = !summary.publish_commands.is_empty();
-    if !has_push && !has_cmds {
+    if !has_push && !has_cmds && !summary.deferred {
         return Vec::new();
     }
 
     let mut lines = Vec::new();
     lines.push(format!("{}Publish", branch_prefix(is_last)));
     let child_prefix = child_indent(is_last);
+
+    if summary.deferred {
+        append_deferred_publication(summary, theme, child_prefix, &mut lines);
+        return lines;
+    }
 
     let push_leaf = branch_prefix(!has_cmds);
     if let Some(cmd) = &summary.publish_push_command {
@@ -152,6 +162,18 @@ fn render_publish_node(summary: &Summary, _theme: &Theme, is_last: bool) -> Vec<
         append_publish_commands(&summary.publish_commands, child_prefix, &mut lines);
     }
     lines
+}
+
+/// The deferred run did push the branch, and names the command that finishes the release, so the
+/// plan never looks like a release that simply skipped its tag (#259).
+fn append_deferred_publication(summary: &Summary, theme: &Theme, child_prefix: &str, lines: &mut Vec<String>) {
+    if let Some(cmd) = &summary.publish_push_command {
+        lines.push(format!("{child_prefix}├── push: {cmd}"));
+    } else if summary.publish_push {
+        lines.push(format!("{child_prefix}├── push: true"));
+    }
+    let finish = format!("cutver publish --tag {}", summary.tag);
+    lines.push(format!("{child_prefix}└── deferred: {}", theme.accent(&finish)));
 }
 
 fn append_publish_commands(commands: &[String], parent_prefix: &str, lines: &mut Vec<String>) {
@@ -173,8 +195,10 @@ fn child_indent(is_last: bool) -> &'static str {
 }
 
 fn collect_tree_sections(summary: &Summary, theme: &Theme) -> Vec<Vec<String>> {
-    let has_publish =
-        summary.publish_push || summary.publish_push_command.is_some() || !summary.publish_commands.is_empty();
+    let has_publish = summary.publish_push
+        || summary.publish_push_command.is_some()
+        || !summary.publish_commands.is_empty()
+        || summary.deferred;
 
     let mut sections = Vec::new();
     if !summary.touched.is_empty() {
@@ -242,6 +266,7 @@ mod tests {
             }],
             changelog: Some("CHANGELOG.md".into()),
             commit_message: "chore(release): v0.9.0 [skip ci]".into(),
+            commit: "abc1234".into(),
             tag: "v0.9.0".into(),
             tag_skipped: false,
             floating_tag: None,
@@ -251,6 +276,7 @@ mod tests {
             publish_push: true,
             publish_push_command: Some("git push origin main --tags".into()),
             publish_commands: vec!["cargo publish".into()],
+            deferred: false,
             rationale: None,
             root_dir: None,
         }

@@ -87,11 +87,12 @@ cutver bump auto             # Compute in memory, apply atomically
 | :--- | :--- | :--- |
 | <kbd>cutver init</kbd> | Scaffolds `cutver.toml` from detected manifests | `--update`, `--force`, `--no-template` |
 | <kbd>cutver doctor</kbd> | Validates manifest sync, changelog drift, and config | `--check-changelog` |
-| <kbd>cutver bump</kbd> | Executes atomic version bumps and Git tagging | `auto`, `patch`, `minor`, `major`, `--dry-run`, `--first-release` |
+| <kbd>cutver bump</kbd> | Executes atomic version bumps and Git tagging | `auto`, `patch`, `minor`, `major`, `--dry-run`, `--first-release`, `--defer-publish` |
+| <kbd>cutver publish</kbd> | Publishes a release the deferred bump prepared | `--tag`, `--commit`, `--notes-file`, `--dry-run` |
 | <kbd>cutver changelog</kbd> | Queries entries or extracts release notes | `latest`, `show <version>`, `--notes-file` |
 | <kbd>cutver plugin</kbd> | Manages sandboxed WebAssembly plugins | `add <name>`, `list`, `remove <name>` |
 
-Every mutating command validates in memory first and then applies **atomically**. Comments, key order, and formatting survive the diff, and a failure before the release commit rolls the workspace back cleanly rather than leaving it half-mutated. Once the release commit succeeds, the tag and publish steps execute deterministically.
+Every mutating command validates in memory first and then applies **atomically**. Comments, key order, and formatting survive the diff, and a failure before the release commit rolls the workspace back cleanly rather than leaving it half-mutated. The tag and the publish commands run in the closing phase, after the artifacts built from that commit pass their verification — or, without `--defer-publish`, as the deterministic tail of the same run ([Release Pipeline Order and Atomic Guarantees](docs/internals/pipeline.md)).
 
 ---
 
@@ -362,7 +363,7 @@ Cutver is a standalone, language-agnostic release engine written in Rust. Unlike
 
 Cutver uses a strict **two-phase atomic execution model**:
 1. **Phase 1 (In-Memory Validation):** Computes new versions, parses commits, checks changelog drift, runs preflight verification, and dry-runs every mutation in memory.
-2. **Phase 2 (Atomic Apply):** Commits, tags, and runs post-hooks only once all validations pass.
+2. **Phase 2 (Atomic Apply):** Commits, tags, and runs post-hooks only once all validations pass. The tag and the publish commands can also be deferred to a closing `cutver publish` run, so CI can verify the built artifacts before anything irreversible happens.
 
 If a failure occurs during preflights or staging, Cutver immediately aborts without touching disk, leaving no uncommitted diffs, no partial manifest bumps, and no orphaned Git tags.
 </details>

@@ -650,6 +650,145 @@ fn test_external_subcommand_not_found() {
     assert_eq!(code, 1);
 }
 
+/// The exact release summary `bump --json` renders: no tree, no banner, one object.
+fn release_summary() -> crate::bump::Summary {
+    crate::bump::Summary {
+        source: "Cargo.toml".into(),
+        current: semver::Version::new(0, 18, 2),
+        next: semver::Version::new(0, 19, 0),
+        dry_run: false,
+        preflight: Vec::new(),
+        touched: Vec::new(),
+        changelog: None,
+        commit_message: "chore(release): v0.19.0".into(),
+        tag: "v0.19.0".into(),
+        tag_skipped: false,
+        floating_tag: Some("v0".into()),
+        commit: "abc1234".into(),
+        pre_bump: None,
+        post_bump: None,
+        warnings: Vec::new(),
+        publish_push: true,
+        publish_push_command: Some("git push origin refs/heads/main".into()),
+        publish_commands: vec!["cargo publish".into()],
+        deferred: false,
+        rationale: None,
+        root_dir: None,
+    }
+}
+
+#[test]
+fn bump_json_renders_one_line_with_the_release_shape() {
+    let json = render_summary_json(&release_summary()).expect("the summary serializes");
+
+    assert_eq!(
+        json,
+        concat!(
+            r#"{"released":true,"deferred":false,"version":"0.19.0","tag":"v0.19.0","commit":"abc1234","#,
+            r#""floating_tag":"v0","publish_push_command":"git push origin refs/heads/main","#,
+            r#""publish_commands":["cargo publish"]}"#
+        )
+    );
+    assert!(!json.contains('\n'), "the object must be a single line: {json}");
+}
+
+#[test]
+fn bump_json_reports_a_dry_run_as_not_released_without_a_commit() {
+    let mut summary = release_summary();
+    summary.dry_run = true;
+    summary.commit = String::new();
+    summary.floating_tag = None;
+    summary.publish_push_command = None;
+
+    let json = render_summary_json(&summary).expect("the summary serializes");
+    let value: serde_json::Value = serde_json::from_str(&json).expect("the output is valid JSON");
+
+    assert_eq!(value["released"], serde_json::Value::Bool(false), "{json}");
+    assert_eq!(value["commit"], serde_json::Value::String(String::new()), "{json}");
+    assert!(value["floating_tag"].is_null(), "optional values are null: {json}");
+    assert!(value["publish_push_command"].is_null(), "{json}");
+}
+
+#[test]
+fn report_file_receives_the_json_object_and_a_trailing_newline_only() {
+    let dir = temp_dir("cutver-report-file");
+    let path = dir.join("release.json");
+    let summary = release_summary();
+
+    write_report(&summary, &path).expect("the report is written");
+
+    let object = render_summary_json(&summary).expect("the summary serializes");
+    assert_eq!(
+        fs::read(&path).expect("the report exists"),
+        format!("{object}\n").into_bytes(),
+        "the file must hold the JSON object plus one trailing newline and no other bytes"
+    );
+    let mut entries: Vec<String> = fs::read_dir(&dir)
+        .expect("the report directory is readable")
+        .map(|entry| {
+            entry
+                .expect("a readable entry")
+                .file_name()
+                .to_string_lossy()
+                .to_string()
+        })
+        .collect();
+    entries.sort();
+    assert_eq!(entries, vec!["release.json"], "no atomic temp file may survive");
+}
+
+#[test]
+fn report_file_from_a_dry_run_reports_not_released() {
+    let dir = temp_dir("cutver-report-dry-run");
+    let path = dir.join("release.json");
+    let mut summary = release_summary();
+    summary.dry_run = true;
+    summary.commit = String::new();
+
+    write_report(&summary, &path).expect("a dry run writes a report too");
+
+    let text = fs::read_to_string(&path).expect("the report exists");
+    let value: serde_json::Value = serde_json::from_str(&text).expect("the report is valid JSON");
+    assert_eq!(value["released"], serde_json::Value::Bool(false), "{text}");
+    assert_eq!(value["commit"], serde_json::Value::String(String::new()), "{text}");
+    assert!(text.ends_with('\n'), "the report ends with one newline: {text:?}");
+}
+
+#[test]
+fn report_write_failure_names_the_path_and_leaves_no_partial_file() {
+    let dir = temp_dir("cutver-report-unwritable");
+    let path = dir.join("missing-subdir").join("release.json");
+
+    let err = write_report(&release_summary(), &path).expect_err("the parent directory does not exist");
+
+    match &err {
+        ReportError::Write {
+            path: reported, tag, ..
+        } => {
+            assert_eq!(reported, &path.display().to_string());
+            assert_eq!(tag, "v0.19.0");
+        }
+        other => panic!("expected a write failure, got: {other:?}"),
+    }
+    let text = err.to_string();
+    assert!(
+        text.contains("Where:") && text.contains("Fix:") && text.contains("atomically"),
+        "the failure must be actionable: {text}"
+    );
+    assert!(!path.exists(), "no report may be left behind");
+    let leftovers: Vec<_> = fs::read_dir(&dir)
+        .expect("the report directory is readable")
+        .map(|entry| {
+            entry
+                .expect("a readable entry")
+                .file_name()
+                .to_string_lossy()
+                .to_string()
+        })
+        .collect();
+    assert!(leftovers.is_empty(), "nothing may be written: {leftovers:?}");
+}
+
 #[test]
 fn test_cli_parsing_external_subcommand() {
     let cli = Cli::try_parse_from(["cutver", "slack", "--channel", "general"]).unwrap();

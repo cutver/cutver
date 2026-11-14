@@ -45,6 +45,30 @@ pub enum Commands {
         /// Initial release without incrementing version strings in manifests (Gradle versionCode still increments)
         #[arg(long = "first-release", visible_alias = "fr")]
         first_release: bool,
+        /// Create the release commit and push the branch, then stop: the tag, its pushes, `[publish] commands` and the post-release plugins wait for `cutver publish`
+        #[arg(long)]
+        defer_publish: bool,
+        /// Print the release result as a single JSON object on stdout instead of the plan tree. The object is the last line cutver writes to stdout; `[preflight]` steps and git subprocesses may print above it — use `--report` when a machine must read the object alone
+        #[arg(long)]
+        json: bool,
+        /// Write the release result to this file as one JSON line, atomically, and nothing else. Applies to real and `--dry-run` runs alike, and is independent of `--json`
+        #[arg(long, value_name = "PATH")]
+        report: Option<PathBuf>,
+    },
+    /// Publish a release `bump --defer-publish` prepared: create the tag, push it, move the floating major tag, and run `[publish] commands`
+    Publish {
+        /// Release tag to publish; it must match the version the manifests declare at HEAD
+        #[arg(long, value_name = "TAG")]
+        tag: String,
+        /// Release commit the caller verified; it must be HEAD
+        #[arg(long, value_name = "SHA")]
+        commit: Option<String>,
+        /// Release notes for the `on_post_release` plugins
+        #[arg(long, value_name = "PATH")]
+        notes_file: Option<PathBuf>,
+        /// Validate and print the plan without creating a tag, pushing anything or running a command
+        #[arg(long)]
+        dry_run: bool,
     },
     /// Validate configuration and report version drift across declared manifests
     Doctor {

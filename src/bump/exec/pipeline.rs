@@ -4,8 +4,10 @@ use std::sync::Arc;
 use semver::Version;
 
 use crate::bump::exec::changelog::{ChangelogPlanParams, apply_changelog, assemble_scope, prepare_changelog};
-use crate::bump::exec::command::{is_known_lockfile, run_publish_command};
+use crate::bump::exec::guard::{build_context, bump_level_name, check_tag_collisions, validate_tag_name};
+use crate::bump::exec::hooks::{run_post_bump_hook, run_pre_bump_hook};
 use crate::bump::exec::manifest::{apply, compute, current_source};
+use crate::bump::exec::publish::{self, Phase, PublicationScope};
 use crate::bump::exec::transaction::MutationTransaction;
 use crate::bump::types::BumpLevel;
 use crate::bump::{Error, Summary};
@@ -14,7 +16,7 @@ use crate::config::Config;
 use crate::conventional;
 use crate::git;
 use crate::plugin::PluginManager;
-use crate::plugin::dto::{PostBumpPayload, PostReleasePayload, PreBumpPayload, VersioningComputeRequest};
+use crate::plugin::dto::{PostBumpPayload, PreBumpPayload, VersioningComputeRequest};
 use crate::plugin::types::PluginName;
 use crate::preflight;
 use crate::semver_bump::{self, Bump};
@@ -34,6 +36,30 @@ pub fn run_with_first_release(
     dry_run: bool,
     skip_preflight: &[String],
     first_release: bool,
+) -> Result<Summary, Error> {
+    run_staged(config, bump_kind, dry_run, skip_preflight, first_release, false)
+}
+
+/// Same as [`run_with_first_release`], but stops after the bump commit and the branch push: the tag,
+/// its pushes, `[publish] commands` and the post-release plugins are left to `cutver publish`, so a
+/// CI job can smoke the artifacts built from that commit first (#259).
+pub fn run_deferred_publish(
+    config: &Config,
+    bump_kind: impl Into<BumpLevel>,
+    dry_run: bool,
+    skip_preflight: &[String],
+    first_release: bool,
+) -> Result<Summary, Error> {
+    run_staged(config, bump_kind, dry_run, skip_preflight, first_release, true)
+}
+
+fn run_staged(
+    config: &Config,
+    bump_kind: impl Into<BumpLevel>,
+    dry_run: bool,
+    skip_preflight: &[String],
+    first_release: bool,
+    defer_publish: bool,
 ) -> Result<Summary, Error> {
     let repo = &config.root_dir;
     git::require_clean_tree(repo, config.git.require_clean_tree)?;
@@ -135,51 +161,29 @@ pub fn run_with_first_release(
     } else {
         git::rev_parse(repo, "HEAD")?
     };
-    let tag_report = git::tag(repo, &tag, &next.to_string(), dry_run).map_err(|source| Error::Tag {
-        tag: tag.clone(),
-        commit: release_commit.clone(),
-        source: Box::new(source),
-    })?;
-    let tag_skipped = tag_report.is_some() && !dry_run;
-
     // Publication is ordered by dependency: the branch, then the release tag, then the floating
     // major tag. Each push names exactly one ref, so a rejected ref can never roll back a ref that
     // already landed, and the floating tag moves only after the release push succeeded (#263).
-    let mut push_commands = Vec::new();
-    if config.publish.push {
-        if let Some(cmd) =
-            git::push(repo, config.git.require_branch.as_deref(), dry_run).map_err(|source| Error::Push {
-                commit: release_commit.clone(),
-                tag: tag.clone(),
-                source: Box::new(source),
-            })?
-        {
-            push_commands.push(cmd);
-        }
-        if let Some(cmd) = git::push_tag(repo, &tag, dry_run).map_err(|source| Error::Push {
-            commit: release_commit.clone(),
-            tag: tag.clone(),
-            source: Box::new(source),
-        })? {
-            push_commands.push(cmd);
-        }
-    }
-    let floating_tag = handle_floating_tag(config, repo, &next, &release_commit, dry_run, &mut push_commands)?;
-    let publish_push_command = if push_commands.is_empty() {
-        None
-    } else {
-        Some(push_commands.join(" && "))
-    };
-    let publish_commands = run_publish_commands(config, &interp_ctx, dry_run, &release_commit, &tag)?;
-
-    run_plugin_post_release(
-        &plugin_manager,
-        repo,
-        &next,
-        &tag,
-        &release_commit,
-        dry_run,
-        release_notes.as_deref(),
+    //
+    // Publishing lives in `publish::finalize` so `cutver publish` can run the very same code from a
+    // separate process once the built artifacts pass their smoke (#259). The branch push is part of
+    // it: the tag must exist before the branch reaches the remote (finding R4-001).
+    let mut push_commands = publish::PushLog::default();
+    let published = publish::finalize(
+        &PublicationScope {
+            config,
+            plugin_manager: plugin_manager.as_ref(),
+            repo,
+            interp_ctx: &interp_ctx,
+            version: &next,
+            tag: &tag,
+            commit: &release_commit,
+            notes: release_notes.as_deref(),
+            dry_run,
+            defer_publish,
+            phase: Phase::Inline,
+        },
+        &mut push_commands,
     )?;
 
     Ok(Summary {
@@ -191,15 +195,17 @@ pub fn run_with_first_release(
         touched,
         changelog: config.changelog.path.clone(),
         commit_message,
+        commit: release_commit.clone(),
         tag,
-        tag_skipped,
-        floating_tag,
+        tag_skipped: published.tag_skipped,
+        floating_tag: published.floating_tag,
         pre_bump: summary_pre_bump,
         post_bump: summary_post_bump,
         warnings: changelog_plan.warnings,
         publish_push: config.publish.push,
-        publish_push_command,
-        publish_commands,
+        publish_push_command: published.publish_push_command,
+        publish_commands: published.publish_commands,
+        deferred: published.deferred,
         rationale,
         root_dir: Some(config.root_dir.clone()),
     })
@@ -294,219 +300,6 @@ fn resolve_next_version(
     Ok((next, previous_tag, auto_commits, rationale))
 }
 
-fn build_context(
-    repo: &Path,
-    current: &Version,
-    next: &Version,
-    tag: &str,
-    prev_tag: Option<&str>,
-    bump_level: BumpLevel,
-    first_release: bool,
-) -> changelog::InterpolationContext {
-    let current_branch = git::current_branch(repo).ok();
-    let repo_url = git::remote_url(repo);
-    let today = changelog::format_date(std::time::SystemTime::now());
-    let bump_str = if first_release {
-        "initial"
-    } else {
-        match bump_level {
-            BumpLevel::Patch => "patch",
-            BumpLevel::Minor => "minor",
-            BumpLevel::Major => "major",
-            BumpLevel::Auto => "auto",
-        }
-    };
-    let prev_ver = if first_release { None } else { Some(current.to_string()) };
-    changelog::InterpolationContext::build(
-        &next.to_string(),
-        prev_ver.as_deref(),
-        tag,
-        prev_tag,
-        bump_str,
-        &today,
-        current_branch.as_deref(),
-        repo_url.as_deref(),
-    )
-}
-
-/// Phase 1 guard: refuses a tag name `git tag` would reject, before the workspace is written.
-///
-/// The name is derived from user configuration, so it is validated with the `TagName` invariants —
-/// the same rule `git tag` relies on — instead of being handed to `git tag` after the commit.
-fn validate_tag_name(prefix: &str, tag: &str) -> Result<(), Error> {
-    git::TagName::parse(tag)
-        .map(|_| ())
-        .map_err(|source| Error::InvalidTagName {
-            tag: tag.to_string(),
-            prefix: prefix.to_string(),
-            source,
-        })
-}
-
-fn check_tag_collisions(repo: &Path, tag: &str, publish_push: bool) -> Result<(), Error> {
-    if git::tag_exists(repo, tag)? {
-        let at = git::rev_parse(repo, &format!("{tag}^{{commit}}"))?;
-        return Err(Error::TagExists {
-            tag: tag.to_string(),
-            commit: at,
-        });
-    }
-    if (git::has_remote(repo, "origin") || publish_push)
-        && let Some(commit) = git::remote_tag_exists(repo, "origin", tag)?
-    {
-        return Err(Error::RemoteTagExists {
-            tag: tag.to_string(),
-            remote: "origin".to_string(),
-            commit,
-        });
-    }
-    Ok(())
-}
-
-fn run_pre_bump_hook(
-    config: &Config,
-    interp_ctx: &changelog::InterpolationContext,
-    dry_run: bool,
-) -> Result<Option<String>, Error> {
-    let Some(raw_pre_bump) = &config.hooks.pre_bump else {
-        return Ok(None);
-    };
-    let cmd = format_command(raw_pre_bump, interp_ctx)?;
-    if dry_run {
-        return Ok(Some(cmd));
-    }
-    let (shell, flag) = if cfg!(windows) { ("cmd", "/C") } else { ("sh", "-c") };
-    let status = std::process::Command::new(shell)
-        .arg(flag)
-        .arg(&cmd)
-        .current_dir(&config.root_dir)
-        .status()
-        .map_err(|e| Error::PreBumpHookSpawn {
-            command: cmd.clone(),
-            source: e,
-        })?;
-    if !status.success() {
-        return Err(Error::PreBumpHookFailed { command: cmd, status });
-    }
-    Ok(Some(cmd))
-}
-
-fn run_post_bump_hook(
-    config: &Config,
-    repo: &Path,
-    interp_ctx: &changelog::InterpolationContext,
-    dry_run: bool,
-    paths_to_stage: &mut Vec<String>,
-) -> Result<Option<String>, Error> {
-    let Some(raw_post_bump) = &config.hooks.post_bump else {
-        return Ok(None);
-    };
-    let cmd = format_command(raw_post_bump, interp_ctx)?;
-    if dry_run {
-        return Ok(Some(cmd));
-    }
-    let (shell, flag) = if cfg!(windows) { ("cmd", "/C") } else { ("sh", "-c") };
-    let status = std::process::Command::new(shell)
-        .arg(flag)
-        .arg(&cmd)
-        .current_dir(&config.root_dir)
-        .status()
-        .map_err(|e| Error::PostBumpHookSpawn {
-            command: cmd.clone(),
-            source: e,
-        })?;
-    if !status.success() {
-        return Err(Error::PostBumpHookFailed { command: cmd, status });
-    }
-    let modified = git::status_files(repo).map_err(Error::Git)?;
-    for f in modified {
-        let rel_f = Path::new(&f);
-        if !is_known_lockfile(rel_f) {
-            continue;
-        }
-        let abs_f = repo.join(rel_f);
-        let already_staged = paths_to_stage.iter().any(|p| {
-            let p_path = Path::new(p);
-            p_path == rel_f || p_path == abs_f
-        });
-        if !already_staged {
-            paths_to_stage.push(f);
-        }
-    }
-    Ok(Some(cmd))
-}
-
-/// Moves the floating major tag and force-pushes it, in that order, and only once the release
-/// push has succeeded. Moving it before the push is what orphaned `v0` in issue #263. The force
-/// refspec lives on this path alone (Pillar II.2).
-fn handle_floating_tag(
-    config: &Config,
-    repo: &Path,
-    next: &Version,
-    release_commit: &str,
-    dry_run: bool,
-    push_commands: &mut Vec<String>,
-) -> Result<Option<String>, Error> {
-    if !config.git.floating_major_tag {
-        return Ok(None);
-    }
-    let f_tag = git::tag_name(&config.git.tag_prefix, &next.major.to_string());
-    git::update_floating_tag(repo, &f_tag, "HEAD", dry_run).map_err(|source| Error::FloatingTag {
-        tag: f_tag.clone(),
-        commit: release_commit.to_string(),
-        source: Box::new(source),
-    })?;
-    if config.publish.push
-        && let Some(cmd) = git::push_tag_force(repo, &f_tag, dry_run).map_err(|source| Error::Push {
-            commit: release_commit.to_string(),
-            tag: f_tag.clone(),
-            source: Box::new(source),
-        })?
-    {
-        push_commands.push(cmd);
-    }
-    Ok(Some(f_tag))
-}
-
-fn run_publish_commands(
-    config: &Config,
-    interp_ctx: &changelog::InterpolationContext,
-    dry_run: bool,
-    release_commit: &str,
-    tag: &str,
-) -> Result<Vec<String>, Error> {
-    let mut publish_commands = Vec::new();
-    for cmd in &config.publish.commands {
-        let formatted = format_command(cmd, interp_ctx)?;
-        if !dry_run {
-            // The last step of a run whose commit and tag already exist, so the failure carries
-            // them: it must never look like a failure before anything landed.
-            run_publish_command(&formatted, &config.root_dir, config.publish.default_timeout).map_err(|source| {
-                Error::PublishAfterCommit {
-                    commit: release_commit.to_string(),
-                    tag: tag.to_string(),
-                    source: Box::new(source),
-                }
-            })?;
-        }
-        publish_commands.push(formatted);
-    }
-    Ok(publish_commands)
-}
-
-pub(crate) fn format_command(template: &str, context: &changelog::InterpolationContext) -> Result<String, Error> {
-    changelog::interpolate_string(template, context).map_err(Error::Changelog)
-}
-
-fn bump_level_name(bump_level: BumpLevel) -> &'static str {
-    match bump_level {
-        BumpLevel::Patch => "patch",
-        BumpLevel::Minor => "minor",
-        BumpLevel::Major => "major",
-        BumpLevel::Auto => "auto",
-    }
-}
-
 fn run_plugin_pre_bump(
     manager: &PluginManager,
     repo: &Path,
@@ -555,46 +348,6 @@ fn run_plugin_post_bump(
     };
     for plugin_name in manager.plugins_for_event("on_post_bump") {
         manager.dispatch_post_bump(plugin_name, &payload)?;
-    }
-    Ok(())
-}
-
-fn run_plugin_post_release(
-    manager: &PluginManager,
-    repo: &Path,
-    next: &Version,
-    tag: &str,
-    release_commit: &str,
-    dry_run: bool,
-    notes: Option<&str>,
-) -> Result<(), Error> {
-    let commit_sha = if dry_run {
-        "0000000000000000000000000000000000000000".to_string()
-    } else {
-        git::rev_parse(repo, "HEAD")?
-    };
-    let payload = PostReleasePayload {
-        root_dir: repo.to_string_lossy().replace('\\', "/"),
-        version: next.to_string(),
-        tag_name: tag.to_string(),
-        commit_sha,
-        dry_run,
-        notes: notes.map(str::to_string),
-    };
-    for plugin_name in manager.plugins_for_event("on_post_release") {
-        manager.dispatch_post_release(plugin_name, &payload).map_err(|source| {
-            if dry_run {
-                // Nothing landed, so the failure must not claim a commit exists.
-                Error::Plugin(source)
-            } else {
-                Error::PostReleasePlugin {
-                    plugin: plugin_name.to_string(),
-                    tag: tag.to_string(),
-                    commit: release_commit.to_string(),
-                    source: Box::new(source),
-                }
-            }
-        })?;
     }
     Ok(())
 }

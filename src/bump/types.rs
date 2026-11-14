@@ -48,6 +48,16 @@ pub enum Error {
         source: Box<crate::git::Error>,
     },
     #[error(
+        "tag '{tag}' failed in the closing phase of the release at commit {commit}: {source}\n  Where: tag creation in `cutver publish`, after `cutver bump --defer-publish` already pushed commit {commit} to the remote branch\n  Fix: tag '{tag}' was not created, so no tag push, no floating tag and no publish command ran. Unlike `cutver bump`, this phase starts after the branch push, so the release commit may already be on the remote without a tag: confirm with `git ls-remote origin` before removing anything. Once the cause is fixed, re-run `cutver publish --tag {tag}`, which creates only the missing tag and repeats the remaining steps; do not re-run `cutver bump`, which would bump again."
+    )]
+    TagInClosingPhase {
+        tag: String,
+        commit: String,
+        // Boxed for the same 128-byte `bump::Error` budget as `Tag` above.
+        #[source]
+        source: Box<crate::git::Error>,
+    },
+    #[error(
         "floating major tag '{tag}' failed after commit {commit} was created: {source}\n  Where: floating major tag update, which runs whether or not `[publish] push` is enabled; only the push of that tag depends on it\n  Fix: the local floating tag was not updated. Whether the branch and the release tag reached the remote depends on `[publish] push`; inspect with `git ls-remote origin` before removing anything, because a published ref stays published until you delete it. Recreate the floating tag by hand once the cause is fixed (`git tag -f -a {tag} {commit}`)."
     )]
     FloatingTag {
@@ -56,6 +66,14 @@ pub enum Error {
         #[source]
         source: Box<crate::git::Error>,
     },
+    #[error(
+        "release tag '{tag}' does not match the version the manifests declare at HEAD ('{declared}')\n  Where: `cutver publish` validation, before the tag, the pushes and the publish commands\n  Fix: publish the tag this commit declares (`cutver publish --tag {declared}`), or check out the release commit you meant to publish. Nothing was written."
+    )]
+    PublishTagMismatch { tag: String, declared: String },
+    #[error(
+        "release commit '{expected}' is not HEAD ('{actual}')\n  Where: `cutver publish` validation, before the tag, the pushes and the publish commands\n  Fix: check out the commit you meant to publish (`git checkout {expected}`) and re-run, or drop `--commit` to publish the current HEAD. Nothing was written."
+    )]
+    PublishCommitMismatch { expected: String, actual: String },
     #[error("release tag {tag} already exists (points at {commit}) — resolve it before re-running")]
     TagExists { tag: String, commit: String },
     #[error(
@@ -178,6 +196,8 @@ pub struct Summary {
     pub touched: Vec<Touched>,
     pub changelog: Option<String>,
     pub commit_message: String,
+    /// The release commit sha, empty on a dry run where no commit is created.
+    pub commit: String,
     pub tag: String,
     pub tag_skipped: bool,
     pub floating_tag: Option<String>,
@@ -187,6 +207,9 @@ pub struct Summary {
     pub publish_push: bool,
     pub publish_push_command: Option<String>,
     pub publish_commands: Vec<String>,
+    /// True when the run stopped before publishing: the tag, its pushes, `[publish] commands` and
+    /// the post-release plugins wait for `cutver publish` (#259).
+    pub deferred: bool,
     pub rationale: Option<crate::conventional::BumpRationale>,
     pub root_dir: Option<std::path::PathBuf>,
 }

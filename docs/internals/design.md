@@ -124,7 +124,7 @@ names what was searched for and not found.
 | Primary manifest (`primary = true`, `current_source`) | Implemented | `src/config/types.rs:71-77` |
 | Conventional Commits and `bump auto` | Implemented | `src/conventional/deduce.rs:51` |
 | Structured changelog categorization | Implemented | `src/changelog/render/body.rs:155-200` |
-| `post_bump` hook and `[publish]` hooks | Implemented | `src/bump/exec/pipeline.rs:272,329` |
+| `post_bump` hook and `[publish]` hooks | Implemented | `src/bump/exec/hooks.rs:39`, `src/bump/exec/publish.rs:283` |
 | `cutver init` | Implemented | `src/init/scaffold/runner.rs:84` |
 | `cutver doctor` version and changelog checks | Implemented | `src/bump/exec/doctor.rs:15,39` |
 | `cutver doctor --fix` | Planned | No `--fix` flag exists; `doctor` runs version and changelog checks (`src/cli/args/commands.rs:50-54`). |

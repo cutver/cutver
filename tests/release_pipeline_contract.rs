@@ -277,9 +277,16 @@ fn the_tag_the_crate_and_the_draft_are_published_after_verification() {
          nobody tested"
     );
     assert!(
-        publish.contains("name: release-notes") && publish.contains("--notes-file RELEASE_NOTES.md"),
-        "the publish job must download the rendered notes and hand them to `cutver publish`: they \
-         are the body `on_post_release` releases, not a second copy of the changelog"
+        publish.contains("name: release-notes"),
+        "the publish job must download the rendered notes: they are the body `on_post_release` \
+         releases, not a second copy of the changelog"
+    );
+    assert!(
+        publish.contains("path: ${{ runner.temp }}")
+            && publish.contains("--notes-file \"${{ runner.temp }}/RELEASE_NOTES.md\""),
+        "the notes must be downloaded outside the checkout and the same path handed to `cutver \
+         publish`: a notes file inside the tree passes the guard `--notes-file` now gets and then \
+         fails `cargo publish`, whose own clean-tree check knows nothing about that exemption"
     );
 }
 

@@ -617,10 +617,15 @@ jobs:
         uses: actions/download-artifact@v5
         with:
           name: release-notes
+          # Outside the workspace on purpose. `--notes-file` names an input, and `[publish].commands`
+          # runs `cargo publish`, whose own clean-tree check knows nothing about the exemption
+          # cutver grants: a notes file inside the checkout passes the first check and fails the
+          # second one (#302).
+          path: ${{ runner.temp }}
 
       - name: Publish the release
         id: publish
-        run: cutver publish --tag "${{ needs.version.outputs.tag }}" --commit "${{ needs.version.outputs.commit }}" --notes-file RELEASE_NOTES.md
+        run: cutver publish --tag "${{ needs.version.outputs.tag }}" --commit "${{ needs.version.outputs.commit }}" --notes-file "${{ runner.temp }}/RELEASE_NOTES.md"
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
           # Declared in permissions.env, so these are the only keys the plugin sees: both the WASM

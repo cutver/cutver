@@ -66,7 +66,8 @@ pub(crate) fn validate_tag_name(prefix: &str, tag: &str) -> Result<(), Error> {
         })
 }
 
-/// Fails closed on an existing local or remote release tag (Pillar II.2).
+/// Fails closed on an existing local or remote release tag (Pillar II.2), and fails closed too when
+/// a configured remote cannot be reached: an unanswered remote check is not "no remote tag" (#262).
 pub(crate) fn check_tag_collisions(repo: &Path, tag: &str, publish_push: bool) -> Result<(), Error> {
     if git::tag_exists(repo, tag)? {
         let at = git::rev_parse(repo, &format!("{tag}^{{commit}}"))?;
@@ -76,7 +77,11 @@ pub(crate) fn check_tag_collisions(repo: &Path, tag: &str, publish_push: bool) -
         });
     }
     if (git::has_remote(repo, "origin") || publish_push)
-        && let Some(commit) = git::remote_tag_exists(repo, "origin", tag)?
+        && let Some(commit) = git::remote_tag_exists(repo, "origin", tag).map_err(|e| Error::RemoteTagCheck {
+            tag: tag.to_string(),
+            remote: e.remote,
+            detail: e.detail,
+        })?
     {
         return Err(Error::RemoteTagExists {
             tag: tag.to_string(),

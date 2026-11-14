@@ -88,6 +88,14 @@ pub enum Error {
         remote: String,
         commit: String,
     },
+    #[error(
+        "could not check release tag '{tag}' on remote '{remote}': {detail}\n  Where: tag collision check, before any file, commit or tag is written\n  Fix: make the remote reachable — offline CI, an expired or missing token, DNS and proxies are the usual causes — and confirm with `git ls-remote {remote}`. Nothing was written, staged, committed or tagged."
+    )]
+    RemoteTagCheck {
+        tag: String,
+        remote: String,
+        detail: String,
+    },
     #[error("write failed for '{path}'; rollback attempted. {rollback}")]
     WriteRollback {
         path: String,

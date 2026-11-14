@@ -1240,3 +1240,28 @@ fn raw_commits_between_keeps_its_unfiltered_contract() {
     let at_tag = super::log::raw_commits_between(dir.path(), None, "v1.0.0").unwrap();
     assert_eq!(messages(&at_tag), vec!["a1"]);
 }
+
+/// #262: an unreachable remote is a typed failure, never "no tag on the remote".
+#[test]
+fn remote_tag_lookup_fails_closed_when_the_remote_is_unreachable() {
+    let dir = tmp_repo();
+    let missing = std::env::temp_dir().join(tmp_id("cutver-missing-remote"));
+    let _ = fs::remove_dir_all(&missing);
+    git(&dir, &["remote", "add", "origin", missing.to_str().unwrap()]);
+
+    let err = remote_tag_exists(&dir, "origin", "v1.0.0").expect_err("an unreachable remote must not answer 'no tag'");
+
+    assert_eq!(err.remote, "origin", "the error must name the remote");
+    assert!(
+        err.detail.contains("does not appear to be a git repository"),
+        "the error must quote git's stderr: {}",
+        err.detail
+    );
+}
+
+/// #262: no remote configured stays a legitimate `Ok(None)`, cross-platform.
+#[test]
+fn remote_tag_lookup_answers_absent_without_a_remote() {
+    let dir = tmp_repo();
+    assert_eq!(remote_tag_exists(&dir, "origin", "v1.0.0").unwrap(), None);
+}

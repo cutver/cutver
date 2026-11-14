@@ -112,7 +112,12 @@ pub fn run_publish(config: &Config, request: &PublishRequest) -> Result<PublishS
     // Runs before any other validation: the declared version is read from the working tree below, so
     // the tree must be the one the tag names — an uncommitted manifest would validate one version
     // and publish another (#259 findings R1-002 and R3-001).
-    git::require_clean_tree(&config.root_dir, config.git.require_clean_tree)?;
+    // The notes file is the only input this invocation declares, and the release workflow renders it
+    // inside the checkout, so the guard is told about it instead of refusing the command's own
+    // argument (#302). Nothing else is excused: another untracked file, or any tracked change, still
+    // aborts.
+    let declared_inputs: Vec<PathBuf> = request.notes_file.iter().cloned().collect();
+    git::status::require_clean_tree_except(&config.root_dir, config.git.require_clean_tree, &declared_inputs)?;
     let plugin_manager = Arc::new(PluginManager::from_config(&config.plugins)?);
     let (version, head) = validate(config, request, &plugin_manager)?;
     publish_prepared(config, request, &version, &head, &plugin_manager)

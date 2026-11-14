@@ -108,7 +108,7 @@ cutver publish --tag <TAG> [OPTIONS]
 | :--- | :--- | :--- |
 | | `--tag <TAG>` | Release tag to publish. It must be a valid git ref, and it must equal the version the manifests declare at `HEAD`, so the tag is derived from the release commit instead of trusted from the command line. The declared version is read from the working tree, so `require_clean_tree` applies here too. |
 | | `--commit <SHA>` | The release commit the caller verified. When given it must be `HEAD`; omit it to publish whatever `HEAD` is. |
-| | `--notes-file <PATH>` | Release notes for the `on_post_release` payload, which is what renders the draft release. |
+| | `--notes-file <PATH>` | Release notes for the `on_post_release` payload, which is what renders the draft release. The file is an input to the command, not a change in the tree: the clean-tree check exempts exactly this path, compared canonically, and nothing else. |
 | | `--dry-run` | Validates and prints the plan without creating a tag, pushing anything or running a command. |
 | `-c <PATH>` | `--config <PATH>` | Explicit path to `cutver.toml`. |
 

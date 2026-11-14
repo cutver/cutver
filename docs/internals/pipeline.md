@@ -84,7 +84,7 @@ Arbitrary untracked files and unstaged edits outside declared manifests and the 
 
 **Publish** — `cutver publish --tag <TAG> [--commit <SHA>] [--notes-file <PATH>] [--dry-run]`, after the caller verified the artifacts:
 
-1. Validate, before anything is written or pushed: the working tree is clean (`require_clean_tree`), the tag is a valid ref, it equals the version the manifests declare at `HEAD`, `--commit` (when given) is `HEAD`, and no release tag exists locally or remotely.
+1. Validate, before anything is written or pushed: the working tree is clean (`require_clean_tree`, with the file named by `--notes-file` exempt because it is the command's input rather than a change in the tree), the tag is a valid ref, it equals the version the manifests declare at `HEAD`, `--commit` (when given) is `HEAD`, and no release tag exists locally or remotely.
 2. Create the annotated tag on `HEAD`.
 3. `git push origin refs/tags/<release tag>`, only when `[publish] push = true`.
 4. Move the floating major tag onto the release commit when `[git] floating_major_tag = true`, and force-push it when `[publish] push` is enabled too.

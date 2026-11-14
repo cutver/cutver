@@ -20,7 +20,6 @@ use std::path::Path;
 
 use common::*;
 use cutver::bump::run as bump_run;
-use cutver::config;
 use cutver::semver_bump::Bump;
 
 const TOML: &str = r#"[version]
@@ -110,7 +109,7 @@ fn a_rejected_release_tag_push_leaves_the_branch_published_and_the_floating_tag_
     run_git_ok(&fixture.dir, &["tag", "-a", "v1", "-m", "v1"]);
     let pre_release_commit = rev(&fixture.dir, "HEAD");
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
 
     // The plan names the same three pushes, in the same order, that the real run sends: the branch,
     // the release tag, then the only forced refspec in the pipeline.

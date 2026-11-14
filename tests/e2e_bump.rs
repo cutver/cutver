@@ -20,7 +20,7 @@ fn bump_minor_happy_path() {
         r#"[preflight]
 check = "true""#,
     );
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
     let summary = bump_run(&cfg, Bump::Minor, false, &[]).unwrap();
     assert_eq!(summary.next.to_string(), "1.3.0");
     assert!(!summary.dry_run);
@@ -53,8 +53,7 @@ check = "true""#,
     let fixture = guard.fixture();
     let sub = fixture.dir.join("src");
     std::fs::create_dir_all(&sub).unwrap();
-    std::env::set_current_dir(&sub).unwrap();
-    let cfg = config::discover(".").unwrap();
+    let cfg = config::discover(&sub).unwrap();
     bump_run(&cfg, Bump::Minor, false, &[]).unwrap();
     assert!(fixture.read("package.json").contains("\"version\": \"1.3.0\""));
     assert!(fixture.read("Cargo.toml").contains("version = \"1.3.0\""));
@@ -73,7 +72,7 @@ fn bump_aborts_when_preflight_fails() {
         r#"[preflight]
 check = "false""#,
     );
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
     assert!(bump_run(&cfg, Bump::Minor, false, &[]).is_err());
     assert_versions_at_123(guard.fixture());
     assert_eq!(commit_count(guard.fixture()), 1);
@@ -92,7 +91,7 @@ fn bump_dry_run_performs_no_mutation() {
         r#"[preflight]
 check = "true""#,
     );
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
     let summary = bump_run(&cfg, Bump::Minor, true, &[]).unwrap();
     assert!(summary.dry_run);
     assert_versions_at_123(guard.fixture());
@@ -136,7 +135,7 @@ check = "true""#,
         .trim()
         .to_string();
     run_git_ok(&fixture.dir, &["tag", "v1.3.0", &first]);
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
     let err = bump_run(&cfg, Bump::Minor, false, &[]).unwrap_err();
     assert!(err.to_string().contains("v1.3.0"));
     assert_versions_at_123(fixture);
@@ -156,7 +155,7 @@ fn bump_aborts_when_preflight_times_out() {
         r#"[preflight]
 check = { command = "sleep 30", timeout = 2 }"#,
     );
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
     let err = bump_run(&cfg, Bump::Minor, false, &[]).unwrap_err();
     assert!(
         err.to_string().contains("timed out"),
@@ -181,7 +180,7 @@ check = "true""#,
     );
     let fixture = guard.fixture();
     run_git_ok(&fixture.dir, &["tag", "v1.3.0", "HEAD"]);
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
     let err = bump_run(&cfg, Bump::Minor, true, &[]).unwrap_err();
     assert!(
         matches!(err, cutver::bump::Error::TagExists { .. }),
@@ -207,9 +206,8 @@ push = true
     );
     let fixture = guard.fixture();
 
-    let remote_dir = std::env::temp_dir().join(format!("cutver-e2e-remote-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&remote_dir);
-    std::fs::create_dir_all(&remote_dir).unwrap();
+    let remote_tmp = tempfile::tempdir().unwrap();
+    let remote_dir = remote_tmp.path().to_path_buf();
     assert!(
         std::process::Command::new("git")
             .current_dir(&remote_dir)
@@ -228,7 +226,7 @@ push = true
     // Verify tag does not exist locally
     assert!(!tag_exists(fixture, "v1.3.0"));
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
     let err = bump_run(&cfg, Bump::Minor, false, &[]).unwrap_err();
 
     assert!(
@@ -274,7 +272,7 @@ check = "true""#,
     std::fs::write(&hook_path, "#!/bin/sh\nexit 1\n").unwrap();
     std::fs::set_permissions(&hook_path, std::fs::Permissions::from_mode(0o755)).unwrap();
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
     let err = bump_run(&cfg, Bump::Minor, false, &[]).unwrap_err();
     assert!(
         matches!(err, cutver::bump::Error::Commit(_)),
@@ -304,7 +302,7 @@ fn bump_rolls_back_manifests_when_stage_fails() {
 check = "touch .git/index.lock""#,
     );
     let fixture = guard.fixture();
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
     let err = bump_run(&cfg, Bump::Minor, false, &[]).unwrap_err();
     assert!(
         matches!(err, cutver::bump::Error::Stage(_)),
@@ -560,7 +558,7 @@ kind = "pyproject"
     init_git_repo(fixture);
     initial_commit(fixture);
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
     let summary = bump_run(&cfg, Bump::Minor, false, &[]).unwrap();
     assert_eq!(summary.next.to_string(), "1.1.0");
     assert!(
@@ -593,7 +591,7 @@ kind = "pyproject"
     init_git_repo(fixture);
     initial_commit(fixture);
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
     let summary = bump_run(&cfg, Bump::Patch, false, &[]).unwrap();
     assert_eq!(summary.next.to_string(), "2.0.1");
     assert!(
@@ -653,7 +651,7 @@ require_clean_tree = true
         &["commit", "--allow-empty", "-m", "feat: initial feature commit"],
     );
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
     let summary = cutver::bump::run_with_first_release(&cfg, cutver::cli::BumpLevel::Auto, false, &[], true).unwrap();
 
     // Resulting version is still 0.1.0
@@ -718,7 +716,7 @@ require_clean_tree = true
     run_git_ok(&fixture.dir, &["add", "."]);
     run_git_ok(&fixture.dir, &["commit", "-m", "feat: exciting new feature"]);
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
     let summary = cutver::bump::run(&cfg, cutver::cli::BumpLevel::Auto, false, &[]).unwrap();
 
     assert_eq!(summary.next.to_string(), "1.1.0");
@@ -765,7 +763,7 @@ require_clean_tree = false
     init_git_repo(fixture);
     initial_commit(fixture);
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
     let summary = cutver::bump::run(&cfg, cutver::cli::BumpLevel::Minor, false, &[]).unwrap();
     assert_eq!(summary.next.to_string(), "1.1.0");
     assert_eq!(summary.commit_message, "chore(release): v1.1.0 [bump: minor]");
@@ -799,7 +797,7 @@ require_clean_tree = false
     init_git_repo(fixture);
     initial_commit(fixture);
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
     let summary = cutver::bump::run(&cfg, cutver::cli::BumpLevel::Patch, false, &[]).unwrap();
     assert_eq!(summary.next.to_string(), "1.0.1");
     assert_eq!(summary.commit_message, "chore(release): v1.0.1 [skip ci]");
@@ -844,7 +842,7 @@ require_clean_tree = false
     run_git_ok(&fixture.dir, &["tag", "v1.0.0"]);
     run_git_ok(&fixture.dir, &["commit", "--allow-empty", "-m", "fix: small bug"]);
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
     let err = cutver::bump::run(&cfg, cutver::cli::BumpLevel::Patch, false, &[]).unwrap_err();
 
     assert!(
@@ -908,7 +906,7 @@ require_clean_tree = false
     run_git_ok(&fixture.dir, &["tag", "v1.0.0"]);
     run_git_ok(&fixture.dir, &["commit", "--allow-empty", "-m", "fix: small bug"]);
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
     let err = cutver::bump::run(&cfg, cutver::cli::BumpLevel::Patch, false, &[]).unwrap_err();
 
     assert!(
@@ -971,7 +969,7 @@ require_clean_tree = false
     run_git_ok(&fixture.dir, &["tag", "v1.0.0"]);
     run_git_ok(&fixture.dir, &["commit", "--allow-empty", "-m", "fix: small bug"]);
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
     let err = cutver::bump::run(&cfg, cutver::cli::BumpLevel::Patch, false, &[]).unwrap_err();
 
     assert!(

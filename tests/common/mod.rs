@@ -1,30 +1,28 @@
 #![allow(dead_code)]
 
-static TMP_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-
-fn tmp_id(prefix: &str) -> String {
-    let n = TMP_SEQ.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-    format!("{}-{}-{}", prefix, std::process::id(), n)
-}
-
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
-use std::sync::Mutex;
-use std::time::SystemTime;
 
-static CWD_LOCK: Mutex<()> = Mutex::new(());
-
+/// A per-test working tree.
+///
+/// Pillar IV.1: each fixture owns a `tempfile::TempDir`, so two tests scheduled concurrently never
+/// share a directory, cleanup is automatic, and nothing is named after the process id. `dir` stays a
+/// plain `PathBuf` copy of the temp-dir path, because every helper takes absolute paths.
 pub struct Fixture {
     pub dir: PathBuf,
+    _tmp: tempfile::TempDir,
 }
 
 impl Fixture {
     pub fn new(name: &str) -> Self {
-        let dir = std::env::temp_dir().join(tmp_id(&format!("cutver-e2e-{name}")));
-        let _ = fs::remove_dir_all(&dir);
+        let tmp = tempfile::Builder::new()
+            .prefix(&format!("cutver-e2e-{name}-"))
+            .tempdir()
+            .expect("failed to create a fixture temp dir");
+        let dir = tmp.path().to_path_buf();
         fs::create_dir_all(&dir).unwrap();
-        Self { dir }
+        Self { dir, _tmp: tmp }
     }
 
     pub fn write(&self, path: impl AsRef<Path>, content: &str) {
@@ -40,39 +38,24 @@ impl Fixture {
     }
 }
 
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.dir);
-    }
-}
-
 pub struct FixtureGuard {
-    _lock: std::sync::MutexGuard<'static, ()>,
-    prev_dir: PathBuf,
     fixture: Fixture,
 }
 
+/// The test-facing handle for a fixture.
+///
+/// It no longer switches the process CWD: that switch was process-global, so a test that resolved a
+/// relative path could observe another test's directory. Everything a test needs is reachable from
+/// `fixture()` as an absolute path.
 impl FixtureGuard {
     pub fn new(name: &str) -> Self {
-        let lock = CWD_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let fixture = Fixture::new(name);
-        let prev_dir = std::env::current_dir().unwrap();
-        std::env::set_current_dir(&fixture.dir).unwrap();
         Self {
-            _lock: lock,
-            prev_dir,
-            fixture,
+            fixture: Fixture::new(name),
         }
     }
 
     pub fn fixture(&self) -> &Fixture {
         &self.fixture
-    }
-}
-
-impl Drop for FixtureGuard {
-    fn drop(&mut self) {
-        let _ = std::env::set_current_dir(&self.prev_dir);
     }
 }
 
@@ -225,6 +208,15 @@ pub fn write_fixture(guard: &FixtureGuard, preflight: &str) {
     initial_commit(fixture);
 }
 
+/// Load the fixture's `cutver.toml` by absolute path.
+///
+/// The process CWD is never a fixture, so a relative path here would resolve against whatever
+/// directory the test binary inherited.
+pub fn load_config(fixture: &Fixture) -> cutver::config::Config {
+    cutver::config::load(fixture.dir.join("cutver.toml"))
+        .unwrap_or_else(|e| panic!("fixture cutver.toml did not load: {e}"))
+}
+
 pub fn assert_versions_at_123(fixture: &Fixture) {
     assert!(fixture.read("package.json").contains("\"version\": \"1.2.3\""));
     assert!(fixture.read("Cargo.toml").contains("version = \"1.2.3\""));
@@ -238,6 +230,43 @@ pub fn assert_bumped(fixture: &Fixture) {
     let gradle = fixture.read("android/build.gradle.kts");
     assert!(gradle.contains("versionName \"1.3.0\"") && gradle.contains("versionCode 43"));
     let changelog = fixture.read("CHANGELOG.md");
-    let today = cutver::changelog::format_date(SystemTime::now());
-    assert!(changelog.contains(&format!("## [v1.3.0] - {today}")));
+    assert_release_heading(&changelog, "v1.3.0");
+}
+
+/// Assert the changelog carries a release heading for `version` carrying an ISO date.
+///
+/// The expected date is deliberately not computed from a second `SystemTime::now()` read: two reads
+/// can straddle midnight and fail a render that was correct. The date value itself is pinned by
+/// `tests/changelog_render_clock.rs`, which injects it into the render core.
+pub fn assert_release_heading(changelog: &str, version: &str) {
+    release_heading_date(changelog, version);
+}
+
+/// The date the render wrote into the release heading for `version`.
+///
+/// Read back from the rendered bytes instead of recomputing `now()`: a second clock read can
+/// straddle midnight and disagree with the render that already happened.
+pub fn release_heading_date<'a>(changelog: &'a str, version: &str) -> &'a str {
+    let prefix = format!("## [{version}] - ");
+    let line = changelog
+        .lines()
+        .find(|line| line.starts_with(&prefix))
+        .unwrap_or_else(|| panic!("no `{prefix}<date>` heading in the rendered changelog:\n{changelog}"));
+    let date = line[prefix.len()..].trim();
+    assert!(
+        is_iso_date(date),
+        "release heading date `{date}` is not YYYY-MM-DD:\n{changelog}"
+    );
+    date
+}
+
+pub fn is_iso_date(date: &str) -> bool {
+    let bytes = date.as_bytes();
+    bytes.len() == 10
+        && bytes[4] == b'-'
+        && bytes[7] == b'-'
+        && bytes
+            .iter()
+            .enumerate()
+            .all(|(i, b)| i == 4 || i == 7 || b.is_ascii_digit())
 }

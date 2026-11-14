@@ -284,7 +284,7 @@ fn an_unreadable_sink_aborts_before_any_write() {
     run_git_ok(&fixture.dir, &["commit", "-m", "chore: unreadable sink"]);
     let cargo_before = fixture.read("Cargo.toml");
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(fixture);
     let err = bump_run(&cfg, Bump::Minor, false, &[]).unwrap_err();
 
     assert!(
@@ -346,7 +346,7 @@ path = "CHANGELOG.md"
         "the fixture must start without the sink"
     );
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(fixture);
     let err = bump_run(&cfg, Bump::Minor, false, &[]).unwrap_err();
     let _ = std::fs::remove_file(fixture.dir.join(".git/index.lock"));
 

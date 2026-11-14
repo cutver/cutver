@@ -1028,7 +1028,7 @@ check = "true""#,
     .unwrap();
     std::fs::set_permissions(&hook_path, std::fs::Permissions::from_mode(0o755)).unwrap();
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(fixture);
     let err = bump_run(&cfg, Bump::Minor, false, &[]).unwrap_err();
     let message = err.to_string();
 

@@ -8,6 +8,7 @@
 mod common;
 
 use std::path::Path;
+use std::process::Command;
 
 use common::*;
 use cutver::bump::{PublishRequest, run as bump_run, run_deferred_publish, run_publish};
@@ -95,6 +96,25 @@ fn publish_request(tag: &str, commit: Option<String>) -> PublishRequest {
         notes_file: None,
         dry_run: false,
     }
+}
+
+/// The invocation the release workflow runs, from inside the worktree: `--notes-file` is spelled the
+/// way the job spells it, relative to the repository it runs in (#302).
+fn publish_from_worktree(fixture: &Fixture, notes: &str, commit: &str) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_cutver"))
+        .current_dir(&fixture.dir)
+        .args(["publish", "--tag", "v1.3.0", "--commit", commit, "--notes-file", notes])
+        .output()
+        .expect("failed to execute cutver publish")
+}
+
+/// What `git status --porcelain` reports, newline-normalised and without the trailing newline.
+fn porcelain(fixture: &Fixture) -> String {
+    let out = run_git(&fixture.dir, &["status", "--porcelain"]);
+    String::from_utf8_lossy(&out.stdout)
+        .replace("\r\n", "\n")
+        .trim_end()
+        .to_string()
 }
 
 /// The baseline order, restored for issue #259's review (finding R4-001): the release tag is created
@@ -282,6 +302,208 @@ fn publish_refuses_a_dirty_working_tree() {
         }
         other => panic!("expected the clean-tree guard, got: {other:?}"),
     }
+    assert!(!tag_exists(fixture, "v1.3.0"), "no tag may be created");
+    assert!(
+        !remote_refs(&remote.dir).contains("refs/tags/"),
+        "nothing may be pushed: {}",
+        remote_refs(&remote.dir)
+    );
+    assert!(
+        !fixture.dir.join("published.txt").exists(),
+        "no publish command may run"
+    );
+}
+
+/// The release workflow renders the notes inside the checkout and hands that file to
+/// `cutver publish` (#302). Refusing it aborted release run 43564101364 before anything was written:
+/// the command rejected its own declared input.
+#[test]
+fn publish_accepts_the_notes_file_the_workflow_hands_it() {
+    let (guard, remote, cfg) = prepared_repo("deferred-publish-notes-file");
+    let fixture = guard.fixture();
+    run_deferred_publish(&cfg, Bump::Minor, false, &[], false).expect("the prepare phase succeeds");
+    let head = rev(&fixture.dir, "HEAD");
+    // Exactly the state the release workflow leaves: the rendered notes are a new file in the
+    // checkout that nothing has committed.
+    fixture.write("RELEASE_NOTES.md", "# v1.3.0\n\n- accepted\n");
+    assert_eq!(
+        porcelain(fixture),
+        "?? RELEASE_NOTES.md",
+        "the notes file must be the untracked input this test is about"
+    );
+
+    let out = publish_from_worktree(fixture, "RELEASE_NOTES.md", &head);
+
+    assert!(
+        out.status.success(),
+        "the declared notes file is this run's own input, so the guard must accept it; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        rev(&fixture.dir, "v1.3.0^{commit}"),
+        head,
+        "the closing phase must tag the release commit"
+    );
+    assert_eq!(
+        rev(&remote.dir, "refs/tags/v1.3.0^{commit}"),
+        head,
+        "the release tag must reach the remote"
+    );
+    assert_eq!(
+        fixture.read("published.txt").trim(),
+        "published 1.3.0",
+        "the publish commands must run"
+    );
+    assert_eq!(
+        fixture.read("RELEASE_NOTES.md"),
+        "# v1.3.0\n\n- accepted\n",
+        "the guard must not touch the input it accepted"
+    );
+}
+
+/// The same file spelled several ways: the exemption is decided on the resolved path, not on the
+/// string the caller typed, so `./RELEASE_NOTES.md` and an absolute path are exempt as well (#302).
+#[test]
+fn publish_accepts_a_dot_prefixed_and_an_absolute_spelling_of_the_notes_file() {
+    for case in ["dot-prefixed", "absolute"] {
+        let (guard, _remote, cfg) = prepared_repo(&format!("deferred-publish-notes-spelling-{case}"));
+        let fixture = guard.fixture();
+        run_deferred_publish(&cfg, Bump::Minor, false, &[], false).expect("the prepare phase succeeds");
+        let head = rev(&fixture.dir, "HEAD");
+        fixture.write("RELEASE_NOTES.md", "# v1.3.0\n");
+        let notes = if case == "absolute" {
+            fixture.dir.join("RELEASE_NOTES.md").to_string_lossy().to_string()
+        } else {
+            "./RELEASE_NOTES.md".to_string()
+        };
+
+        let out = publish_from_worktree(fixture, &notes, &head);
+
+        assert!(
+            out.status.success(),
+            "`{notes}` names the declared notes file, so it must be exempt; stderr:\n{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert_eq!(
+            rev(&fixture.dir, "v1.3.0^{commit}"),
+            head,
+            "`{notes}` must close the release, not just pass the guard"
+        );
+    }
+}
+
+/// A path is a file, not a string. The notes are reached through a tracked symlinked directory, so
+/// git reports `release/RELEASE_NOTES.md` while the caller typed `notes/RELEASE_NOTES.md`, and only
+/// a canonical comparison accepts the same file under both spellings (#302).
+#[cfg(unix)]
+#[test]
+fn publish_accepts_a_notes_file_reached_through_a_symlinked_directory() {
+    let (guard, _remote, cfg) = prepared_repo("deferred-publish-notes-symlink");
+    let fixture = guard.fixture();
+    fixture.write("release/.gitkeep", "");
+    std::os::unix::fs::symlink("release", fixture.dir.join("notes")).expect("symlink the release directory");
+    run_git_ok(&fixture.dir, &["add", "release/.gitkeep", "notes"]);
+    run_git_ok(
+        &fixture.dir,
+        &[
+            "commit",
+            "-q",
+            "-m",
+            "chore: keep the rendered notes in a linked directory",
+        ],
+    );
+    run_deferred_publish(&cfg, Bump::Minor, false, &[], false).expect("the prepare phase succeeds");
+    let head = rev(&fixture.dir, "HEAD");
+    fixture.write("release/RELEASE_NOTES.md", "# v1.3.0\n");
+    assert_eq!(
+        porcelain(fixture),
+        "?? release/RELEASE_NOTES.md",
+        "git must report the real path, not the symlinked spelling"
+    );
+
+    let out = publish_from_worktree(fixture, "notes/RELEASE_NOTES.md", &head);
+
+    assert!(
+        out.status.success(),
+        "the symlinked spelling names the declared notes file; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        rev(&fixture.dir, "v1.3.0^{commit}"),
+        head,
+        "the closing phase must tag the release commit"
+    );
+}
+
+/// Everything else stays strict: the exemption is the declared notes file alone, and the failure
+/// names the untracked entry nobody declared.
+#[test]
+fn publish_still_refuses_a_second_untracked_file_when_a_notes_file_is_declared() {
+    let (guard, remote, cfg) = prepared_repo("deferred-publish-notes-file-plus-one");
+    let fixture = guard.fixture();
+    run_deferred_publish(&cfg, Bump::Minor, false, &[], false).expect("the prepare phase succeeds");
+    let head = rev(&fixture.dir, "HEAD");
+    fixture.write("RELEASE_NOTES.md", "# v1.3.0\n");
+    fixture.write("leftover.txt", "scratch\n");
+
+    let out = publish_from_worktree(fixture, "RELEASE_NOTES.md", &head);
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success(),
+        "an undeclared untracked file must still abort; stdout:\n{}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    assert!(
+        stderr.contains("leftover.txt"),
+        "the guard must name the file that was never declared:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("?? RELEASE_NOTES.md"),
+        "the declared notes file is not an error and must not be listed:\n{stderr}"
+    );
+    assert!(!tag_exists(fixture, "v1.3.0"), "no tag may be created");
+    assert!(
+        !remote_refs(&remote.dir).contains("refs/tags/"),
+        "nothing may be pushed: {}",
+        remote_refs(&remote.dir)
+    );
+    assert!(
+        !fixture.dir.join("published.txt").exists(),
+        "no publish command may run"
+    );
+}
+
+/// Only an untracked entry can be exempted. Naming a tracked file as the notes input excuses no
+/// change to it: the tree must still be the one the tag names.
+#[test]
+fn publish_still_refuses_a_modified_tracked_file_named_as_its_notes_input() {
+    let (guard, remote, cfg) = prepared_repo("deferred-publish-notes-file-tracked");
+    let fixture = guard.fixture();
+    run_deferred_publish(&cfg, Bump::Minor, false, &[], false).expect("the prepare phase succeeds");
+    let head = rev(&fixture.dir, "HEAD");
+    fixture.write(
+        "CHANGELOG.md",
+        &format!("{}\n## Unreleased\n\n- edited by hand\n", fixture.read("CHANGELOG.md")),
+    );
+    assert_eq!(
+        porcelain(fixture),
+        " M CHANGELOG.md",
+        "the notes input must be the modified tracked file this test is about"
+    );
+
+    let out = publish_from_worktree(fixture, "CHANGELOG.md", &head);
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success(),
+        "a modified tracked file must still abort; stdout:\n{}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    assert!(
+        stderr.contains("git guard failed") && stderr.contains("CHANGELOG.md"),
+        "the guard must name the modified tracked file:\n{stderr}"
+    );
     assert!(!tag_exists(fixture, "v1.3.0"), "no tag may be created");
     assert!(
         !remote_refs(&remote.dir).contains("refs/tags/"),

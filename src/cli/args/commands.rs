@@ -63,7 +63,8 @@ pub enum Commands {
         /// Release commit the caller verified; it must be HEAD
         #[arg(long, value_name = "SHA")]
         commit: Option<String>,
-        /// Release notes for the `on_post_release` plugins
+        /// Release notes for the `on_post_release` plugins. The clean-tree check exempts this
+        /// file: it is an input to the command, not a change in the tree
         #[arg(long, value_name = "PATH")]
         notes_file: Option<PathBuf>,
         /// Validate and print the plan without creating a tag, pushing anything or running a command

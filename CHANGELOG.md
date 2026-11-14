@@ -3,24 +3,6 @@
 All notable changes to this project are documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com).
 
-## v0.18.3 — 2026-11-14
-
-### 🐛 Fixes
-- **release**: verify before publishing, with the release split into two phases in [#282](https://github.com/cutver/cutver/pull/282) ([157ea25](https://github.com/cutver/cutver/commit/157ea257993e91bd8fe8c1f443d0993d761bb861)) by @Row0902
-- **bump**: validate the release tag before the commit and name the landed state after it in [#280](https://github.com/cutver/cutver/pull/280) ([7019e02](https://github.com/cutver/cutver/commit/7019e0244d6c029c8056bb0749935dbee1fdf16d)) by @Row0902
-
-### 📚 Documentation
-- mark F-03 fixed in the audit status block in [#283](https://github.com/cutver/cutver/pull/283) ([5989f66](https://github.com/cutver/cutver/commit/5989f66312d0cc0d6a6cdef3d4baa5c7611f6bda)) by @Row0902
-- mark F-09 fixed in the audit status block in [#281](https://github.com/cutver/cutver/pull/281) ([c3198b7](https://github.com/cutver/cutver/commit/c3198b733243ed67397d6bf4596cc69cb894bb8c)) by @Row0902
-- record the 2026-11-13 robustness audit and what has since changed in [#279](https://github.com/cutver/cutver/pull/279) ([5136e1d](https://github.com/cutver/cutver/commit/5136e1dc351f04ba9c13c800d9cd0f65458c8cad)) by @Row0902
-
-### 🛠️ Maintenance
-- **release**: rehearse a red smoke to prove nothing is published in [#284](https://github.com/cutver/cutver/pull/284) ([616bb6b](https://github.com/cutver/cutver/commit/616bb6b29b09aa1ce711197b663313f6b745283d)) by @Row0902
-
-### 👥 Contributors
-@Row0902
-
-[Compare v0.18.2...v0.18.3](https://github.com/cutver/cutver/compare/v0.18.2...v0.18.3)
 ## v0.18.2 — 2026-11-13
 
 ### 🐛 Fixes

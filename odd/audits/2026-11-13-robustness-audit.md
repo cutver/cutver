@@ -22,7 +22,7 @@ record; this block says what has since changed, so nobody implements an already-
 | F-07 tag collision fails open | **Open** — #262 |
 | F-08 force tag ops / `push --tags` | **Fixed** — #263, one named ref per push, force only on the floating tag after success |
 | F-02 container image | **Open** — #258, still broken; v0.18.2 shipped without an image |
-| F-03 publish ordering | **Open** — #259 |
+| F-03 publish ordering | **Fixed** — #259, merged `157ea25`: `bump --defer-publish` stops after the branch push and `cutver publish` creates the tag, publishes the crate and opens the draft only after every smoke job is green; the container build pushes a rehearsal tag and the verified digest is promoted afterwards |
 | F-04 `release-assets.yml` | **Open** — #260 |
 | F-05 dead `Dockerfile` | **Open** — #258 |
 | F-06 rollback writes `""` | **Open** — #261 |

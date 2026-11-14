@@ -19,7 +19,6 @@ use std::path::Path;
 
 use common::*;
 use cutver::bump::run as bump_run;
-use cutver::config;
 use cutver::semver_bump::Bump;
 
 const INVALID_PREFIX_TOML: &str = r#"[version]
@@ -126,7 +125,7 @@ fn an_invalid_tag_prefix_fails_before_the_workspace_is_touched() {
         let head_before = rev(&fixture.dir, "HEAD");
         let commits_before = commit_count(fixture);
 
-        let cfg = config::load("cutver.toml").unwrap();
+        let cfg = common::load_config(guard.fixture());
 
         let dry = bump_run(&cfg, Bump::Minor, true, &[]);
         let dry_text = dry
@@ -211,7 +210,7 @@ fn a_failing_publish_command_names_the_commit_and_the_tag_that_already_landed() 
     run_git_ok(&fixture.dir, &["remote", "add", "origin", remote.dir.to_str().unwrap()]);
     run_git_ok(&fixture.dir, &["push", "origin", "refs/heads/main"]);
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
     let err = bump_run(&cfg, Bump::Minor, false, &[]).expect_err("the publish command exits non-zero");
     let text = err.to_string();
 

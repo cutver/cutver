@@ -5,7 +5,6 @@ mod common;
 use common::*;
 use cutver::bump::run as bump_run;
 use cutver::cli::BumpLevel;
-use cutver::config;
 use std::os::unix::fs::PermissionsExt;
 
 const MOCK_VERSIONING_SCRIPT: &str = r####"#!/bin/sh
@@ -81,7 +80,7 @@ env = ["PATH"]
     init_git_repo(fixture);
     initial_commit(fixture);
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
     let res = bump_run(&cfg, BumpLevel::Auto, false, &[]);
 
     assert!(
@@ -137,7 +136,7 @@ env = ["PATH"]
     init_git_repo(fixture);
     initial_commit(fixture);
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
     let res = bump_run(&cfg, BumpLevel::Auto, false, &[]);
 
     assert!(
@@ -202,7 +201,7 @@ env = ["PATH"]
     init_git_repo(fixture);
     initial_commit(fixture);
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
     let res = bump_run(&cfg, BumpLevel::Auto, false, &[]);
 
     assert!(
@@ -269,7 +268,7 @@ env = ["PATH"]
     init_git_repo(fixture);
     initial_commit(fixture);
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
     let res = bump_run(&cfg, BumpLevel::Auto, false, &[]);
 
     assert!(res.is_err(), "bump should fail when versioning plugin exits non-zero");

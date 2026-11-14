@@ -84,7 +84,7 @@ fn prepared_repo_with(name: &str, toml: &str) -> (FixtureGuard, Fixture, config:
     run_git_ok(&fixture.dir, &["push", "origin", "refs/heads/main"]);
     run_git_ok(&fixture.dir, &["tag", "-a", "v1", "-m", "v1"]);
 
-    let cfg = config::load("cutver.toml").unwrap();
+    let cfg = common::load_config(guard.fixture());
     (guard, remote, cfg)
 }
 

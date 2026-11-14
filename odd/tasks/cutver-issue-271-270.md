@@ -41,13 +41,17 @@ S23. Hard semantics: the injected clock feeds every date in one render (heading 
 
 | ID | Task | Specs | Route | Commit |
 | --- | --- | --- | --- | --- |
-| T1 | Feature document | S1-S23 | inline | chore(docs): track #271 and #270 |
-| T2 | Decompose README into `docs/` submodules, entry point ≤ 200 lines, semantic link text | S5-S7, S21 | writer | docs(readme): decompose README into focused docs submodules (#271) |
-| T3 | CI step asserting the 200-line ceiling for README and `docs/**/*.md` | S8 | writer | ci(docs): fail when README or docs exceed the 200-line ceiling (#271) |
-| T4 | Tests: `tempfile::tempdir()`, no `set_current_dir` | S13 | writer | test: isolate the process CWD in tests (#270) |
-| T5 | Inject the release date into the render core; no re-derived `now()` | S12, S14, S15, S16-S19, S23 | writer | fix(changelog): inject the render clock instead of re-deriving it (#270) |
-| T6 | Gates + verification of documented surface | S20, S21 | inline/verify | — |
+| T1 | Feature document | S1-S23 | inline | `2c0f125` |
+| T2 | Decompose README into `docs/` submodules, entry point <= 200 lines, semantic link text | S5-S7, S21 | inline (writer gate refused the launch) | `cd1cb66` |
+| T3 | CI step asserting the 200-line ceiling for README and `docs/**/*.md` | S8 | inline | `cd1cb66` (same issue, one work-unit commit by assignment) |
+| T4 | Tests: `tempfile::tempdir()`, no `set_current_dir` | S13 | inline | `chore/271-270-docs-tests` #270 commit |
+| T5 | Inject the release date into the render core; no re-derived `now()` | S12, S14, S15, S16-S19, S23 | inline | #270 commit |
+| T6 | Gates + verification of documented surface | S20, S21 | inline | — |
 | T7 | Delivery report: criteria, commits, gate exit codes, omissions | S22 | inline | — |
+
+Slice boundaries: `cd1cb66` closes #271 (docs + its CI ceiling check, one unit as assigned), the #270 commit closes the tests/render-clock unit. Measured at delivery: 840 authored lines for #271.
+
+Follow-up found while delivering S13 (not fixed here, outside this track's surface): a manifest `template` path is validated as repository-relative (`src/config/types.rs:61`) but never resolved against `root_dir` — `src/config/discovery.rs` resolves `manifest.path`, `changelog.path` and `changelog.template_file`, not `[[manifest]].template` — so `src/manifest/dispatch.rs:72` hands the raw relative string to `TemplateEditor`, which reads it against the process CWD. Before S13 the four template-sink tests passed only because the test process chdir'd into the fixture.
 
 ## Log
 
@@ -79,3 +83,7 @@ L1 (2026-03-25, assignment, verbatim):
 
 L2: `#271` body read verbatim (issue acceptance criteria quoted in S1-S8 above). `README.md` measured at 427 lines on `2c1c2b0`; the issue body says 426 on `main@2f8805b` — the difference is drift since that snapshot.
 L3: `#270` body read verbatim (S9-S15 above). Note the conflict between S17/S19 and the issue's own evidence naming `src/bump/exec/pipeline.rs:244`; resolution direction: prefer `src/changelog/**` + `tests/**` only, and report `src/bump/**` as deliberately left out if the injection is correct without it.
+
+L4 (human decision, verbatim): "Sí recomiendas la B pues vamos con esa, aunque me gustaría saber a detalle por qué la B" — i.e. option (b) for the template-sink defect: keep `src/config/**` untouched and drive the real binary with the project as its CWD in `tests/template_manifest.rs`. The +15 lines in `.github/workflows/ci.yml` stay, because criterion S8 is part of #271 and the step sits inside the existing `test` job, so the `gate` job keeps its exact three legs.
+
+L5 (evidence): `git grep -n "set_current_dir\|env::temp_dir" tests/` returns nothing. The render-clock test failed before the fix with heading `## [v1.0.0] - 2026-11-14` against body `1999-12-31`, and passes after `render_heading` reads `context.date`. Gates at delivery: fmt 0, clippy 0 (`--all-targets --features plugins -D warnings`), `cargo test --workspace` 0, `cargo check --all-targets --target x86_64-unknown-linux-gnu` 0 (needed because 12 touched e2e files are `#![cfg(unix)]`).

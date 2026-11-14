@@ -4,7 +4,6 @@ mod common;
 
 use common::*;
 use std::process::Command;
-use std::time::SystemTime;
 
 const CHANGELOG_INITIAL: &str = "# Changelog\n\n## [1.0.0] - 2026-01-01\n\n- Initial release\n";
 
@@ -128,7 +127,7 @@ fn package_sections_render_in_declaration_order_and_group_unowned_commits() {
     assert_bump_succeeded(&output);
 
     let changelog = workspace.fixture().read("CHANGELOG.md");
-    let date = cutver::changelog::format_date(SystemTime::now());
+    let date = common::release_heading_date(&changelog, "v1.1.0");
     let expected_section = format!(
         "## [v1.1.0] - {date}\n\n\
 ### alpha\n\
@@ -171,7 +170,7 @@ fn changelog_without_package_keys_is_byte_identical_to_the_flat_render() {
     assert_bump_succeeded(&output);
 
     let changelog = workspace.fixture().read("CHANGELOG.md");
-    let date = cutver::changelog::format_date(SystemTime::now());
+    let date = common::release_heading_date(&changelog, "v1.1.0");
     let expected = format!(
         "# Changelog\n\n\
 ## [v1.1.0] - {date}\n\n\

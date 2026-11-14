@@ -88,7 +88,13 @@ fn render_heading(
     context: Option<&super::context::ReleaseContext>,
 ) -> Result<String, Error> {
     let Some(ht) = header_template else {
-        return Ok(format!("## [{version}] - {}", format_date(SystemTime::now())));
+        // The date is a value the caller already resolved. Re-reading the wall clock here is what
+        // let the heading and the `{{date}}` body disagree once the two reads straddled midnight.
+        let date = match context.map(|ctx| ctx.date.as_str()) {
+            Some(date) if !date.is_empty() => date.to_string(),
+            _ => format_date(SystemTime::now()),
+        };
+        return Ok(format!("## [{version}] - {date}"));
     };
 
     if let Some(ctx) = context {

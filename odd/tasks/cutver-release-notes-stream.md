@@ -27,11 +27,20 @@ an untracked file — the exemption still applies — and a tracked modified fil
 
 | ID | Spec | What | Route | Commit |
 | --- | --- | --- | --- | --- |
-| T1 | S1 | Accept `-` as the stdin sentinel on `--notes-file`, read the stream, and hand the text to the post-release payload without touching the filesystem. | inline | pending |
-| T2 | S2 | Keep the clean-tree exemption off the streamed path: empty declared inputs, message unchanged when a stray untracked file is present. | inline | pending |
-| T3 | S3 | Reject an empty or whitespace-only stream before any write, with the exact stderr text. | inline | pending |
-| T4 | S4 | Pin the path form with a test that runs the four spellings and the tracked-file refusal. | inline | pending |
-| T5 | S1-S3 | Update `docs/reference/cli.md` and the `publish` help text so the sentinel and the empty-stream refusal are documented. | inline | pending |
+| T1 | S1 | Accept `-` as the stdin sentinel on `--notes-file`, read the stream, and hand the text to the post-release payload without touching the filesystem. | inline | `7535096` |
+| T2 | S2 | Keep the clean-tree exemption off the streamed path: empty declared inputs, message unchanged when a stray untracked file is present. | inline | `7535096` |
+| T3 | S3 | Reject an empty or whitespace-only stream before any write, with the exact stderr text. | inline | `7535096` |
+| T4 | S4 | Pin the path form: the four `#302` spelling tests and the tracked-file refusal stay green in the same run. | inline | `7535096` |
+| T5 | S1-S3 | Update `docs/reference/cli.md`, `docs/internals/pipeline.md` and the `publish` help text. | inline | `7535096` |
+
+Verification for the slice (all green, one run): `cargo fmt --all --check`; `cargo clippy --all-targets --features plugins -- -D warnings`;
+`cargo test --workspace`; `cargo test --workspace --features plugins`. RED was observed first: the four new tests failed
+with `failed to read '-': The system cannot find the file specified. (os error 2)`, then `release_deferred_publish`
+went to 18/18.
+
+Declared limit: the payload content itself is not asserted end to end for the closing phase — the fixture has no
+plugin that echoes `notes`. The bytes are proven by symmetry (a non-empty stream publishes, an empty one is refused)
+and the payload wiring is pinned for the inline phase by `tests/e2e_lifecycle.rs:1014-1039`.
 
 ## Log
 
@@ -48,3 +57,8 @@ L4. Evidence: `src/cli/args/commands.rs:66-69` declares `--notes-file`; `src/bum
 collects it into `declared_inputs` for the clean-tree guard; `src/bump/exec/publish.rs:192-213` reads it
 and yields `Option<String>` notes, `None` when absent; `src/git/status.rs:27-70` documents the #302
 exemption that this feature narrows for the streamed case.
+
+L5. Done in `7535096`. The public API did not change: `PublishRequest.notes_file` keeps its shape and `-`
+is interpreted at read time, so no consumer of the crate breaks. The `.github/workflows/release.yml` step
+that still renders into `RELEASE_NOTES.md` was deliberately left alone: switching CI to the stream is the
+next slice, not this one, because the released binary that cuts a release would not know the sentinel yet.

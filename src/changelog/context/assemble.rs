@@ -1,5 +1,8 @@
+use super::release::ReleaseSection;
 use super::types::{AssembleContextParams, CommitContext, ReleaseContext};
+use crate::changelog::render::{BREAKING_SECTION_HEADING, section_for};
 use crate::conventional::ConventionalCommit;
+use std::collections::BTreeMap;
 
 /// Helper to parse SemVer breakdown components.
 fn parse_semver_components(version: &str) -> (u64, u64, u64, bool, Option<String>, Option<String>) {
@@ -46,6 +49,50 @@ fn init_categories() -> [Category; 8] {
             items: Vec::new(),
         },
     ]
+}
+
+/// Groups the enriched commits into the ordered sections a template iterates.
+///
+/// `SECTIONS`, reached through `crate::changelog::render`, owns the labels and their order, so this
+/// grouping and the `group_by_section` filter cannot drift apart. A breaking commit belongs to the
+/// breaking section and nowhere else, and a section left without entries is not emitted at all.
+fn build_sections(commits: &[CommitContext]) -> Vec<ReleaseSection> {
+    let mut breaking: Vec<CommitContext> = Vec::new();
+    let mut grouped: BTreeMap<String, (usize, Vec<CommitContext>)> = BTreeMap::new();
+
+    for commit in commits {
+        if commit.is_breaking {
+            breaking.push(commit.clone());
+            continue;
+        }
+        let (rank, label) = section_for(&commit.commit_type);
+        grouped
+            .entry(label)
+            .or_insert_with(|| (rank, Vec::new()))
+            .1
+            .push(commit.clone());
+    }
+
+    let mut ordered: Vec<(usize, String, Vec<CommitContext>)> = grouped
+        .into_iter()
+        .map(|(label, (rank, entries))| (rank, label, entries))
+        .collect();
+    ordered.sort_by_key(|(rank, label, _)| (*rank, label.to_ascii_lowercase()));
+
+    let mut sections = Vec::with_capacity(ordered.len() + 1);
+    if !breaking.is_empty() {
+        sections.push(ReleaseSection {
+            heading: BREAKING_SECTION_HEADING.to_string(),
+            entries: breaking,
+            is_breaking: true,
+        });
+    }
+    sections.extend(ordered.into_iter().map(|(_, heading, entries)| ReleaseSection {
+        heading,
+        entries,
+        is_breaking: false,
+    }));
+    sections
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -125,6 +172,8 @@ pub fn build_context_with_raw_and_filter(
         .map(|cat| format!("{}\n{}", cat.header, cat.items.join("\n")))
         .collect();
 
+    let release_sections = build_sections(&commit_contexts);
+
     let all_changes = if sections.is_empty() {
         format!("- {}", fallback_entry.trim())
     } else {
@@ -163,6 +212,7 @@ pub fn build_context_with_raw_and_filter(
         other,
         all_changes,
         commits: commit_contexts,
+        sections: release_sections,
         contributors,
         first_time_contributors,
         major,

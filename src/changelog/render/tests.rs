@@ -635,3 +635,121 @@ fn group_by_section_merges_every_maintenance_type_into_one_heading() {
         "features precede fixes: {out}"
     );
 }
+
+fn flagship_context() -> crate::changelog::ReleaseContext {
+    use crate::changelog::context::build_context_with_raw_and_filter;
+
+    let commits = vec![
+        ConventionalCommit::parse("feat(api)!: rewrite the parser\n\nBREAKING CHANGE: the AST shape changed").unwrap(),
+        ConventionalCommit::parse("feat(cli): add the sections flag").unwrap(),
+        ConventionalCommit::parse("fix(api)!: rename the flag").unwrap(),
+        ConventionalCommit::parse("fix(api): stop dropping scoped commits").unwrap(),
+        ConventionalCommit::parse("perf(core): drop an allocation").unwrap(),
+        ConventionalCommit::parse("refactor(core): split the filter\n\nBREAKING CHANGE: it takes a slice now").unwrap(),
+        ConventionalCommit::parse("docs: explain sections").unwrap(),
+        ConventionalCommit::parse("chore(deps): bump serde").unwrap(),
+        ConventionalCommit::parse("build(cargo): pin the toolchain").unwrap(),
+        ConventionalCommit::parse("style(fmt): normalise imports").unwrap(),
+        ConventionalCommit::parse("wip(api): experiment").unwrap(),
+    ];
+
+    build_context_with_raw_and_filter(
+        "0.19.0",
+        Some("0.18.0"),
+        "v0.19.0",
+        Some("v0.18.0"),
+        "2026-11-12",
+        Some("https://example.test/acme/demo".to_string()),
+        &commits,
+        None,
+        vec!["ana".to_string(), "bo".to_string()],
+        vec!["bo".to_string()],
+        true,
+        "1.99",
+        true,
+        &[],
+    )
+}
+#[test]
+fn flagship_template_renders_the_same_body_it_always_rendered() {
+    use crate::init::scaffold::templates::DEFAULT_RELEASE_TEMPLATE;
+
+    let ctx = flagship_context();
+    // `include_str!` bakes the checkout's line endings into the template, so a Windows checkout with
+    // `autocrlf` hands over CRLF and the body would differ only in newline spelling. What this test
+    // pins is the body, not the newline convention of whoever checked the file out.
+    let out = render_template(DEFAULT_RELEASE_TEMPLATE, &ctx)
+        .expect("the default template must render")
+        .replace("\r\n", "\n");
+
+    // Captured from the pre-`sections` template over this exact context: replacing the hand-rolled
+    // `group_by_section` + `rejectattr("is_breaking")` loop must not move a single byte.
+    let expected = [
+        "## v0.19.0 — 2026-11-12",
+        "",
+        "> [!WARNING]",
+        "> **Breaking changes**",
+        "",
+        "> - **api**: rewrite the parser",
+        ">   > **Migration**: the AST shape changed",
+        "",
+        "> - **api**: rename the flag",
+        ">   > **Migration**: rename the flag",
+        "",
+        "> - **core**: split the filter",
+        ">   > **Migration**: it takes a slice now",
+        "",
+        "### ✨ Features",
+        "- **cli**: add the sections flag",
+        "",
+        "### 🐛 Fixes",
+        "- **api**: stop dropping scoped commits",
+        "",
+        "### ⚡ Performance",
+        "- **core**: drop an allocation",
+        "",
+        "### 📚 Documentation",
+        "- explain sections",
+        "",
+        "### 🛠️ Maintenance",
+        "- **deps**: bump serde",
+        "- **cargo**: pin the toolchain",
+        "- **fmt**: normalise imports",
+        "",
+        "### Wip",
+        "- **api**: experiment",
+        "",
+        "### 🌱 First-time contributors",
+        "@bo",
+        "",
+        "### 👥 Contributors",
+        "@ana \u{00b7} ",
+        "@bo",
+        "",
+        "[Compare v0.18.0...v0.19.0](https://example.test/acme/demo/compare/v0.18.0...v0.19.0)",
+    ]
+    .join("\n");
+
+    assert_eq!(out, expected);
+}
+
+#[test]
+fn sections_reproduce_the_hand_rolled_breaking_exclusion() {
+    let ctx = flagship_context();
+
+    let via_sections = render_template(
+        "{% for section in sections if not section.is_breaking %}{{ section.heading }};{% endfor %}",
+        &ctx,
+    )
+    .unwrap();
+    let via_filter = render_template(
+        "{% for section, cs in commits | group_by_section if cs | rejectattr('is_breaking') | length %}{{ section }};{% endfor %}",
+        &ctx,
+    )
+    .unwrap();
+
+    assert_eq!(
+        via_sections, via_filter,
+        "sections must carry the same headings, in the same order, as the hand-rolled grouping"
+    );
+}

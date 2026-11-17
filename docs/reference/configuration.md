@@ -125,6 +125,19 @@ Declares one target file to update. Multiple `[[manifest]]` blocks can be specif
 | `ignore_scopes` | `list<string>` | `[]` | Exclude commits whose scope matches one of these values. |
 | `new_contributors` | `bool` | `false` | Emit a Level 3 `### New Contributors` section listing first-time authors when non-empty. |
 
+Alongside the per-category strings, a template receives `sections`: the release already grouped, in
+canonical order, so a template can render headings without grouping the flat commit list itself. The
+remaining variables are listed in [Customizing Release Templates](../templates/release-notes.md).
+
+| Key | Type | Description |
+| :--- | :--- | :--- |
+| `section.heading` | `string` | Section heading, for example `"✨ Features"` or `"🛠️ Maintenance"`. |
+| `section.entries` | `list<commit>` | Commits under that heading, with the same fields `commits` entries carry. |
+| `section.is_breaking` | `bool` | `true` only for the breaking section, which holds every breaking entry and no other section holds one. |
+
+A section left with no entries is omitted, so a loop never renders an empty heading. With no commits
+at all, `sections` is empty and `all_changes` keeps rendering `fallback_entry`.
+
 ### `[preflight]`, `[git]`, `[hooks]`, & `[publish]`
 
 | Table | Key | Type | Default | Description |

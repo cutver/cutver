@@ -267,8 +267,9 @@ fn init_default_scaffolds_rich_template() {
 
     let template_content = fixture.read(".github/templates/cutver/RELEASE.md");
     assert!(template_content.contains("## {{ tag }} — {{ date }}"));
-    assert!(template_content.contains("commits | group_by_section"));
-    assert!(template_content.contains("### {{ section }}"));
+    assert!(template_content.contains("{%- for section in sections %}"));
+    assert!(template_content.contains("### {{ section.heading }}"));
+    assert!(template_content.contains("{%- if section.is_breaking %}"));
     assert!(template_content.contains("### 👥 Contributors"));
     assert!(
         template_content.contains("]({{ compare_url }})"),

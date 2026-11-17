@@ -1,5 +1,16 @@
 use super::commit::CommitContext;
 
+/// One section of a release as a template sees it.
+///
+/// `is_breaking` is true for the breaking section and for no other, so a template never has to
+/// infer it from the entries or from the heading text.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ReleaseSection {
+    pub heading: String,
+    pub entries: Vec<CommitContext>,
+    pub is_breaking: bool,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ReleaseContext {
     pub version: String,
@@ -19,6 +30,7 @@ pub struct ReleaseContext {
     pub other: String,
     pub all_changes: String,
     pub commits: Vec<CommitContext>,
+    pub sections: Vec<ReleaseSection>,
     pub contributors: Vec<String>,
     pub first_time_contributors: Vec<String>,
     pub major: u64,
@@ -42,7 +54,7 @@ impl serde::Serialize for ReleaseContext {
         S: serde::Serializer,
     {
         use serde::ser::SerializeMap;
-        let mut map = serializer.serialize_map(Some(35))?;
+        let mut map = serializer.serialize_map(Some(36))?;
         map.serialize_entry("version", &self.version)?;
         map.serialize_entry("previous_version", &self.previous_version)?;
         map.serialize_entry("tag", &self.tag)?;
@@ -60,6 +72,7 @@ impl serde::Serialize for ReleaseContext {
         map.serialize_entry("other", &self.other)?;
         map.serialize_entry("all_changes", &self.all_changes)?;
         map.serialize_entry("commits", &self.commits)?;
+        map.serialize_entry("sections", &self.sections)?;
         map.serialize_entry("contributors", &self.contributors)?;
         map.serialize_entry("first_time_contributors", &self.first_time_contributors)?;
 
@@ -123,6 +136,8 @@ impl<'de> serde::Deserialize<'de> for ReleaseContext {
             all_changes: String,
             #[serde(default)]
             commits: Vec<CommitContext>,
+            #[serde(default)]
+            sections: Vec<ReleaseSection>,
             #[serde(default)]
             contributors: Vec<String>,
             #[serde(default)]
@@ -207,6 +222,7 @@ impl<'de> serde::Deserialize<'de> for ReleaseContext {
             other: h.other,
             all_changes: h.all_changes,
             commits: h.commits,
+            sections: h.sections,
             contributors: h.contributors,
             first_time_contributors: h.first_time_contributors,
             major,

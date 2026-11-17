@@ -136,7 +136,7 @@ cutver doctor [OPTIONS]
 
 | Flag | Long Option | Description |
 | :--- | :--- | :--- |
-| | `--check-changelog` | Verifies that release entries in `CHANGELOG.md` match Git release tags. |
+| | `--check-changelog` | Verifies that release entries in `CHANGELOG.md` match Git release tags. Headings are read through `[git] tag_prefix`, the same as `changelog latest` and `show`, so the commands agree: with `tag_prefix = "release-"`, `## release-1.2.0` is the entry for that tag. A tag whose entry is really absent is still drift, exit code `2`. |
 | `-c <PATH>` | `--config <PATH>` | Explicit path to `cutver.toml`. |
 
 ---
@@ -156,18 +156,15 @@ cutver changelog show <VERSION> [-H/--include-header] [--template <PATH>] [--jso
 cutver changelog open [TARGET] [--print-url] [--browser <BROWSER>]
 ```
 
-`changelog latest` and `show` read the heading prefix from `[git] tag_prefix`: with
-`tag_prefix = "release-"`, `## release-1.2.0` is the entry for `1.2.0` and `changelog show 1.2.0`
-finds it. Exactly one marker is stripped, so a `v`/`V` heading is still accepted by a project on
-another prefix, and a doubled marker is not silently read as a version. `changelog open` does not
-read the changelog: it builds the release URL from the same `[git] tag_prefix`, so `changelog open
-1.2.0` names the `release-1.2.0` tag.
+`changelog latest` and `show` read headings through `[git] tag_prefix`: with `tag_prefix = "release-"`,
+`## release-1.2.0` is the entry for `1.2.0`. Exactly one marker is stripped, so a `v`/`V` heading still
+matches under another prefix and a doubled marker is not read as a version. `changelog open` reads no
+changelog: it builds the release URL from the same prefix.
 
-`--json` and `--template` build their context from git. `--json` fails closed: when the commit
-range behind the entry cannot be read (not a repository, an unknown tag, an unusable `git`), the
-error goes to stderr and the command exits `1` instead of printing `"commits": []`, so a consumer
-can tell an empty range from an unreadable one. `--template` keeps rendering the changelog body
-with an empty commit list.
+`--json` builds its context from git and fails closed: an unreadable commit range (not a repository, an
+unknown tag, an unusable `git`) goes to stderr with exit `1` instead of printing `"commits": []`, so a
+consumer can tell an empty range from an unreadable one. `--template` keeps rendering the body with an
+empty commit list.
 
 ---
 

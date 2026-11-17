@@ -126,14 +126,16 @@ pub fn doctor_changelog(config: &Config) -> Result<ChangelogDrift, Error> {
     };
 
     let content = read(&changelog_path)?;
-    let changelog_versions = changelog::list_versions(&content);
+    let prefix = git::TagPrefix::new(&config.git.tag_prefix);
+    // The same prefix-aware listing the changelog read surface uses: a heading carries the
+    // configured `[git] tag_prefix`, so `## release-1.2.0` names `1.2.0` under `release-`.
+    let changelog_versions = changelog::list_versions_with_prefix(&content, &prefix);
     let git_tags = git::list_tags(&config.root_dir, Some(&config.git.tag_prefix))?;
 
     let changelog_set: HashSet<&str> = changelog_versions.iter().map(String::as_str).collect();
     let mut missing_in_changelog = Vec::new();
     let mut normalized_tags = HashSet::new();
 
-    let prefix = git::TagPrefix::new(&config.git.tag_prefix);
     for tag in &git_tags {
         let Ok(tag_name) = git::TagName::parse(tag) else {
             continue;

@@ -278,3 +278,40 @@ fn the_label_check_reports_the_exact_required_context_on_a_fresh_pull_request() 
          report `{LABEL_CONTEXT}`. Update this list and the ruleset together"
     );
 }
+
+/// `ci.yml` enforces the documentation line ceiling as a shell loop inside the `test` job, where this
+/// file cannot see it as a step, so an over-long document failed only in CI — three times in one day.
+/// This mirrors that loop locally: same ceiling, same file set, no network and no workflow step.
+#[test]
+fn every_document_stays_under_the_line_ceiling() {
+    const CEILING: usize = 200;
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut files = vec![root.join("README.md")];
+    collect_markdown(&root.join("docs"), &mut files);
+
+    let mut over = Vec::new();
+    for file in files {
+        let text = std::fs::read_to_string(&file).expect("a documentation file must be readable");
+        let lines = text.lines().count();
+        if lines > CEILING {
+            let name = file.strip_prefix(root).unwrap_or(&file).display().to_string();
+            over.push(format!("{name} has {lines}"));
+        }
+    }
+    assert!(
+        over.is_empty(),
+        "the ceiling is {CEILING} lines (CONTRACT.md:114); these are over it: {over:?}"
+    );
+}
+
+fn collect_markdown(dir: &std::path::Path, found: &mut Vec<std::path::PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_markdown(&path, found);
+        } else if path.extension().is_some_and(|extension| extension == "md") {
+            found.push(path);
+        }
+    }
+}

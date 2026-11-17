@@ -153,8 +153,21 @@ cutver changelog latest [-H/--include-header] [--template <PATH>] [--json]
 cutver changelog show <VERSION> [-H/--include-header] [--template <PATH>] [--json]
 
 # Dispatch changelog or compare view in default browser
-cutver changelog open
+cutver changelog open [TARGET] [--print-url] [--browser <BROWSER>]
 ```
+
+`changelog latest` and `show` read the heading prefix from `[git] tag_prefix`: with
+`tag_prefix = "release-"`, `## release-1.2.0` is the entry for `1.2.0` and `changelog show 1.2.0`
+finds it. Exactly one marker is stripped, so a `v`/`V` heading is still accepted by a project on
+another prefix, and a doubled marker is not silently read as a version. `changelog open` does not
+read the changelog: it builds the release URL from the same `[git] tag_prefix`, so `changelog open
+1.2.0` names the `release-1.2.0` tag.
+
+`--json` and `--template` build their context from git. `--json` fails closed: when the commit
+range behind the entry cannot be read (not a repository, an unknown tag, an unusable `git`), the
+error goes to stderr and the command exits `1` instead of printing `"commits": []`, so a consumer
+can tell an empty range from an unreadable one. `--template` keeps rendering the changelog body
+with an empty commit list.
 
 ---
 

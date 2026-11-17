@@ -28,6 +28,8 @@ record; this block says what has since changed, so nobody implements an already-
 | F-06 rollback writes `""` | **Open** — #261 |
 | F-09 point of no return | **Fixed** — #265, merged `7019e02`: the tag name is validated in Phase 1 before any write, and the five post-commit errors name the landed commit and assert no remote state at all |
 | F-10 / F-11 plugin authority | **Open** — #264 |
+| F-12 error-swallow sweep, changelog half | **Fixed** — branch `feat/changelog-prefix-authority`: `cutver changelog latest --json` and `changelog show <version> --json` exit `1` with the git error on stderr instead of reporting an empty `"commits"` as success. The `manifest`, `doctor`, `process` and `wasm` reads stay open with the rest of F-12 |
+| F-13 tag/version-prefix authorities | **Fixed** on the changelog read surface — same branch: `git::types` holds both strip rules (the tag-ref form and the heading form), and the extractor plus `changelog show`/`latest` route through them, so a custom `[git] tag_prefix` matches its own headings. `changelog open` never read the changelog and already built its URL from `[git] tag_prefix`, so it was not broken. Still open: `doctor --check-changelog` lists through the legacy hardcoded-`v` path (`bump/exec/doctor.rs:129`) and still reports drift for `tag_prefix = "release-"`, and the versioning path keeps its inline strips |
 | F-12…F-20, pre-registered 2 | **Open** — #266…#272, #268 |
 
 Two facts from this audit were later corrected by measurement, and the corrections are worth keeping:

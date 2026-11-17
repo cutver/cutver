@@ -149,11 +149,17 @@ at all, `sections` is empty and `all_changes` keeps rendering `fallback_entry`.
 | `[git]` | `commit_message` | `string` | `"chore(release): v{version}"` | Release commit message template. |
 | `[git]` | `require_clean_tree` | `bool` | `true` | Abort if uncommitted changes exist. |
 | `[git]` | `require_branch` | `string` | `None` | Single branch name allowed to cut releases. The type is `Option<String>` (`src/config/types.rs:257`); there is no list form. |
-| `[hooks]` | `pre_bump` | `string` | `None` | Shell command executed before manifest edits. Aborts the release cleanly on non-zero exit. |
-| `[hooks]` | `post_bump` | `string` | `None` | Shell command executed after manifest edits, before git staging. |
+| `[hooks]` | `pre_bump` | `string` | `None` | Shell command executed before manifest edits. Aborts the release cleanly on non-zero exit. Bounded by `default_timeout`. |
+| `[hooks]` | `post_bump` | `string` | `None` | Shell command executed after manifest edits, before git staging. Bounded by `default_timeout`. |
+| `[hooks]` | `default_timeout` | `integer` | `None` | Optional timeout in seconds applied to both hooks, the same unit and the same opt-in default as `[preflight] default_timeout` and `[publish] default_timeout`; `0` is rejected. A hook that outlives it is killed together with its child processes and the release fails with an error naming the hook, its command and the limit. The rollback restores the manifest and changelog files cutver wrote — `pre_bump` fails before anything is written, `post_bump` fails before the release commit — but a file the hook itself created is left on disk, because it is not cutver's to delete. Without the key a hook is never killed, which is the pre-existing behavior. |
 | `[publish]` | `push` | `bool` | `false` | When `true`, pushes `refs/heads/<branch>` when the release commit is created, then `refs/tags/<release tag>`, then the floating major tag (when `[git] floating_major_tag` is enabled) — one `git push origin <ref>` per ref, in that order. A single-phase `cutver bump` sends all three in one run; `bump --defer-publish` stops after the branch push and `cutver publish` sends the two tag pushes. No push carries `--tags`, so a rejected tag cannot roll the branch update back. |
 | `[publish]` | `commands` | `list<string>` | `[]` | Shell commands executed after the release tag exists: in the closing phase (`cutver publish`) for a release cut in two phases, in the same run for a single-phase `cutver bump`. |
 | `[publish]` | `default_timeout` | `integer` | `None` | Optional timeout in seconds applied to each publish command. |
+
+A hook runs in its own process group on unix, which is what lets the timeout kill its whole tree. The
+consequence is that an interactive Ctrl-C reaches `cutver`, not the running hook: a hook that reads the
+terminal does not see the interrupt, and may end up in the background until the timeout or the release
+kills it. Hooks that prompt on a terminal therefore need a terminal of their own.
 
 ---
 

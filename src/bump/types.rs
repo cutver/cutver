@@ -134,6 +134,22 @@ pub enum Error {
         source: io::Error,
     },
     #[error(
+        "pre_bump hook '{command}' timed out after {elapsed_ms}ms (limit {timeout}s) and was killed with its process tree\n  Where: `[hooks] pre_bump`, which runs before any file is written\n  Fix: nothing was written, staged, committed or tagged, so there is nothing to unwind. Raise `[hooks] default_timeout` (seconds) if the hook legitimately needs longer, or fix the hook and re-run."
+    )]
+    PreBumpHookTimeout {
+        command: String,
+        timeout: u64,
+        elapsed_ms: u128,
+    },
+    #[error(
+        "post_bump hook '{command}' timed out after {elapsed_ms}ms (limit {timeout}s) and was killed with its process tree\n  Where: `[hooks] post_bump`, after the manifests and the changelog were written and before the release commit\n  Fix: no release commit was created, so nothing has to be reset by hand: the rollback restores the manifest and changelog files cutver wrote, the tag, the pushes and the publish commands never ran, and a file the hook itself created before it hung stays on disk, because it is not cutver's to delete — remove it by hand if the next run must start from a clean tree. Raise `[hooks] default_timeout` (seconds) if the hook legitimately needs longer, or fix the hook and re-run."
+    )]
+    PostBumpHookTimeout {
+        command: String,
+        timeout: u64,
+        elapsed_ms: u128,
+    },
+    #[error(
         "publish push failed: {source}\n  Where: publish push, after commit {commit} and tag '{tag}' exist locally; the refspec that failed is named above and `git push` lists the refs that did land\n  Fix: the refs are pushed one at a time, in order (branch, release tag, floating tag), so nothing after the failed one ran. Inspect the actual remote state with `git ls-remote origin` before removing or reverting anything: a ref this run published stays published until you delete it, and a ref that existed before this run is not yours to delete. Do not re-run `cutver bump` against already-bumped files."
     )]
     Push {

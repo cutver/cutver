@@ -1,14 +1,23 @@
 //! The `[hooks]` shell steps of a release, split out of the pipeline to keep that file inside the
 //! module budget (Pillar V.4). Behavior is unchanged: `pre_bump` runs before any file is written,
 //! `post_bump` runs after the manifests are applied and stages the lockfiles it touched.
+//!
+//! Both hooks run through the shared bounded spawn (audit F-16), so a hook that outlives
+//! `[hooks] default_timeout` is killed together with its process tree instead of holding the
+//! release open forever. No timeout key means no bound, exactly as `[preflight]` and `[publish]`
+//! treat their own `default_timeout`.
 
+use std::io;
 use std::path::Path;
+use std::process::ExitStatus;
+use std::time::Duration;
 
 use crate::bump::Error;
 use crate::bump::exec::command::{format_command, is_known_lockfile};
 use crate::changelog;
 use crate::config::Config;
 use crate::git;
+use crate::preflight::{Ended, run_supervised};
 
 /// Runs `[hooks] pre_bump`, which must precede every write so a failing hook leaves the workspace
 /// untouched. A dry run reports the rendered command instead of running it.
@@ -24,14 +33,16 @@ pub(crate) fn run_pre_bump_hook(
     if dry_run {
         return Ok(Some(cmd));
     }
-    let status = shell(&config.root_dir, &cmd).map_err(|e| Error::PreBumpHookSpawn {
-        command: cmd.clone(),
-        source: e,
-    })?;
-    if !status.success() {
-        return Err(Error::PreBumpHookFailed { command: cmd, status });
+    match run_hook(config, &cmd) {
+        Ok(()) => Ok(Some(cmd)),
+        Err(HookFailure::Spawn(source)) => Err(Error::PreBumpHookSpawn { command: cmd, source }),
+        Err(HookFailure::Status(status)) => Err(Error::PreBumpHookFailed { command: cmd, status }),
+        Err(HookFailure::TimedOut { timeout, elapsed_ms }) => Err(Error::PreBumpHookTimeout {
+            command: cmd,
+            timeout,
+            elapsed_ms,
+        }),
     }
-    Ok(Some(cmd))
 }
 
 /// Runs `[hooks] post_bump` and stages the lockfiles it rewrote, so the release commit carries
@@ -50,15 +61,42 @@ pub(crate) fn run_post_bump_hook(
     if dry_run {
         return Ok(Some(cmd));
     }
-    let status = shell(&config.root_dir, &cmd).map_err(|e| Error::PostBumpHookSpawn {
-        command: cmd.clone(),
-        source: e,
-    })?;
-    if !status.success() {
-        return Err(Error::PostBumpHookFailed { command: cmd, status });
+    match run_hook(config, &cmd) {
+        Ok(()) => {}
+        Err(HookFailure::Spawn(source)) => return Err(Error::PostBumpHookSpawn { command: cmd, source }),
+        Err(HookFailure::Status(status)) => return Err(Error::PostBumpHookFailed { command: cmd, status }),
+        Err(HookFailure::TimedOut { timeout, elapsed_ms }) => {
+            return Err(Error::PostBumpHookTimeout {
+                command: cmd,
+                timeout,
+                elapsed_ms,
+            });
+        }
     }
     stage_modified_lockfiles(repo, paths_to_stage)?;
     Ok(Some(cmd))
+}
+
+/// A hook that did not end in success. The pre/post callers own the wording, so the shared step
+/// only reports which of the three ways it went wrong.
+enum HookFailure {
+    Spawn(io::Error),
+    Status(ExitStatus),
+    TimedOut { timeout: u64, elapsed_ms: u128 },
+}
+
+/// Runs one hook in the workspace root under `[hooks] default_timeout`.
+fn run_hook(config: &Config, command: &str) -> Result<(), HookFailure> {
+    let timeout = config.hooks.default_timeout.map(Duration::from_secs);
+    match run_supervised(command, Some(&config.root_dir), timeout) {
+        Ok(Ended::Exited(status)) if status.success() => Ok(()),
+        Ok(Ended::Exited(status)) => Err(HookFailure::Status(status)),
+        Ok(Ended::TimedOut { timeout, elapsed }) => Err(HookFailure::TimedOut {
+            timeout: timeout.as_secs(),
+            elapsed_ms: elapsed.as_millis(),
+        }),
+        Err(e) => Err(HookFailure::Spawn(e.into_io())),
+    }
 }
 
 /// Collects the lockfiles the post_bump hook rewrote, without duplicating a path already staged.
@@ -76,13 +114,4 @@ fn stage_modified_lockfiles(repo: &Path, paths_to_stage: &mut Vec<String>) -> Re
         }
     }
     Ok(())
-}
-
-fn shell(dir: &Path, command: &str) -> Result<std::process::ExitStatus, std::io::Error> {
-    let (shell, flag) = if cfg!(windows) { ("cmd", "/C") } else { ("sh", "-c") };
-    std::process::Command::new(shell)
-        .arg(flag)
-        .arg(command)
-        .current_dir(dir)
-        .status()
 }

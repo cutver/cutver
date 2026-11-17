@@ -41,6 +41,8 @@ pub enum ConfigError {
     PreflightMissingCommand(String),
     #[error("preflight timeout for '{0}' must be a positive integer")]
     PreflightInvalidTimeout(String),
+    #[error("hooks timeout for '{0}' must be a positive integer")]
+    HooksInvalidTimeout(String),
     #[error("no cutver.toml found in '{0}' or any parent directory.\n  Get started by running:\n    cutver init")]
     NotFound(String),
     #[error("no manifests declared: at least one [[manifest]] entry is required")]
@@ -137,6 +139,10 @@ impl Default for Config {
 pub struct Hooks {
     pub pre_bump: Option<String>,
     pub post_bump: Option<String>,
+    /// `[hooks] default_timeout`: seconds a hook may run before it is killed, in the same unit and
+    /// with the same default as `[preflight] default_timeout` and `[publish] default_timeout`.
+    #[serde(default)]
+    pub default_timeout: Option<u64>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
@@ -426,6 +432,7 @@ kind = "cargo-package"
 [hooks]
 pre_bump = "echo pre"
 post_bump = "cargo check"
+default_timeout = 2
 
 [publish]
 push = true
@@ -435,6 +442,9 @@ default_timeout = 60
         let c = load_str(toml).unwrap();
         assert_eq!(c.hooks.pre_bump.as_deref(), Some("echo pre"));
         assert_eq!(c.hooks.post_bump.as_deref(), Some("cargo check"));
+        // Same unit and the same opt-in default as `[preflight]` and `[publish]`: seconds, unset
+        // means unbounded.
+        assert_eq!(c.hooks.default_timeout, Some(2));
         assert!(c.publish.push);
         assert_eq!(
             c.publish.commands,
@@ -445,9 +455,26 @@ default_timeout = 60
         let default_cfg = load_str(&manifest("cargo-package", "")).unwrap();
         assert_eq!(default_cfg.hooks.pre_bump, None);
         assert_eq!(default_cfg.hooks.post_bump, None);
+        assert_eq!(default_cfg.hooks.default_timeout, None);
         assert!(!default_cfg.publish.push);
         assert!(default_cfg.publish.commands.is_empty());
         assert_eq!(default_cfg.publish.default_timeout, None);
+    }
+
+    /// A zero-second bound can never let a hook run, so it is rejected the way a zero `[preflight]`
+    /// timeout is, instead of killing every hook the moment it starts.
+    #[test]
+    fn hooks_default_timeout_must_be_positive() {
+        let rejected =
+            "[hooks]\ndefault_timeout = 0\n\n[[manifest]]\npath = \"Cargo.toml\"\nkind = \"cargo-package\"\n";
+        match load_str(rejected) {
+            Err(ConfigError::HooksInvalidTimeout(key)) => assert_eq!(key, "default_timeout"),
+            other => panic!("expected the zero hooks timeout to be rejected, got: {other:?}"),
+        }
+
+        let accepted =
+            "[hooks]\ndefault_timeout = 1\n\n[[manifest]]\npath = \"Cargo.toml\"\nkind = \"cargo-package\"\n";
+        assert_eq!(load_str(accepted).unwrap().hooks.default_timeout, Some(1));
     }
 
     #[test]

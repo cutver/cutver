@@ -2,7 +2,8 @@ use crate::config::PreflightCommand;
 use std::collections::HashSet;
 use std::fmt;
 use std::io;
-use std::process::{self, Child, Command};
+use std::path::Path;
+use std::process::{self, Child, Command, ExitStatus};
 use std::thread;
 use std::time::{Duration, Instant};
 use thiserror::Error;
@@ -71,35 +72,88 @@ pub fn run(steps: &[Step]) -> Result<(), Error> {
 
 fn run_step(step: &Step) -> Result<(), Error> {
     let timeout = step.timeout.map(Duration::from_secs);
-    let start = Instant::now();
-    let mut child = spawn(&step.command).map_err(|e| Error::Spawn {
-        name: step.name.clone(),
-        source: e,
-    })?;
-    loop {
-        match child.try_wait().map_err(|e| Error::Spawn {
-            name: step.name.clone(),
-            source: e,
-        })? {
-            Some(status) => {
-                if status.success() {
-                    return Ok(());
-                }
-                return Err(Error::StepFailed {
-                    name: step.name.clone(),
-                    command: step.command.clone(),
-                    status,
-                });
+    // A preflight step runs in the process working directory, which is what it always did: the
+    // bounded spawn only adds the deadline and the process-group kill.
+    match run_supervised(&step.command, None, timeout) {
+        Ok(Ended::Exited(status)) => {
+            if status.success() {
+                return Ok(());
             }
-            None => {
+            Err(Error::StepFailed {
+                name: step.name.clone(),
+                command: step.command.clone(),
+                status,
+            })
+        }
+        Ok(Ended::TimedOut { timeout, elapsed }) => Err(Error::Timeout {
+            name: step.name.clone(),
+            timeout: timeout.as_secs(),
+            elapsed_ms: elapsed.as_millis(),
+        }),
+        Err(e) => Err(Error::Spawn {
+            name: step.name.clone(),
+            source: e.into_io(),
+        }),
+    }
+}
+
+// --------------------------------------------------------------------------------------------
+// Supervised shell commands: the one copy (audit F-16)
+//
+// "Run this shell command, and if it outlives its timeout kill it together with its whole process
+// tree" lived twice, once here and once in `bump::exec::command`, and the `[hooks]` commands had
+// no copy at all, so a hook that never exits held the release open forever. The three call sites
+// now share this one implementation: `[preflight]` steps, `[publish].commands` and the `[hooks]`
+// commands.
+//
+// It lives in this crate-root module because `bump::exec` is private to `bump`, so a helper owned
+// there is unreachable from here; keeping a second copy for that reason is exactly the defect.
+// --------------------------------------------------------------------------------------------
+
+/// How a supervised command ended.
+pub(crate) enum Ended {
+    /// The shell exited on its own, inside the deadline or with no deadline at all.
+    Exited(ExitStatus),
+    /// The deadline passed first. The whole process tree has been killed by then.
+    TimedOut { timeout: Duration, elapsed: Duration },
+}
+
+/// Why a supervised command could not be waited for. The tree is killed before this is returned, so
+/// a failed wait cannot leak a live child either.
+pub(crate) enum SupervisionError {
+    Spawn(io::Error),
+    Wait(io::Error),
+}
+
+impl SupervisionError {
+    pub(crate) fn into_io(self) -> io::Error {
+        match self {
+            Self::Spawn(e) | Self::Wait(e) => e,
+        }
+    }
+}
+
+const POLL: Duration = Duration::from_millis(50);
+
+/// Runs `command` through the platform shell in `dir`, killing the tree at `timeout`.
+pub(crate) fn run_supervised(
+    command: &str,
+    dir: Option<&Path>,
+    timeout: Option<Duration>,
+) -> Result<Ended, SupervisionError> {
+    let start = Instant::now();
+    let mut child = spawn(command, dir).map_err(SupervisionError::Spawn)?;
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return Ok(Ended::Exited(status)),
+            Ok(None) => {
+                let elapsed = start.elapsed();
                 if let Some(limit) = timeout {
-                    let elapsed = start.elapsed();
                     if elapsed >= limit {
                         kill_tree(&mut child);
-                        return Err(Error::Timeout {
-                            name: step.name.clone(),
-                            timeout: limit.as_secs(),
-                            elapsed_ms: elapsed.as_millis(),
+                        return Ok(Ended::TimedOut {
+                            timeout: limit,
+                            elapsed,
                         });
                     }
                     thread::sleep(POLL.min(limit - elapsed));
@@ -107,32 +161,32 @@ fn run_step(step: &Step) -> Result<(), Error> {
                     thread::sleep(POLL);
                 }
             }
+            Err(e) => {
+                kill_tree(&mut child);
+                return Err(SupervisionError::Wait(e));
+            }
         }
     }
 }
 
-const POLL: Duration = Duration::from_millis(50);
-
-fn spawn(command: &str) -> Result<Child, io::Error> {
+fn spawn(command: &str, dir: Option<&Path>) -> Result<Child, io::Error> {
     let (shell, flag) = shell();
+    let mut cmd = Command::new(shell);
+    cmd.arg(flag).arg(command);
+    if let Some(dir) = dir {
+        cmd.current_dir(dir);
+    }
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
         unsafe {
-            Command::new(shell)
-                .arg(flag)
-                .arg(command)
-                .pre_exec(|| {
-                    let _ = setpgid(0, 0);
-                    Ok(())
-                })
-                .spawn()
+            cmd.pre_exec(|| {
+                let _ = setpgid(0, 0);
+                Ok(())
+            });
         }
     }
-    #[cfg(not(unix))]
-    {
-        Command::new(shell).arg(flag).arg(command).spawn()
-    }
+    cmd.spawn()
 }
 
 fn kill_tree(child: &mut Child) {
@@ -283,27 +337,43 @@ mod tests {
         assert!(!marker.exists(), "second step must not run after first failure");
     }
 
+    /// The bounded spawn is shared with `[publish].commands` and `[hooks]` now (audit F-16), so this
+    /// pins that the move kept what a `[preflight]` step already had: a step that outlives its
+    /// timeout is killed and named. It runs on every host: the blocking command is the platform's
+    /// own, because a cfg(unix) test would prove nothing on Windows.
     #[test]
-    #[cfg(unix)]
     fn run_kills_long_command_at_timeout() {
+        let blocking = if cfg!(windows) {
+            "ping -n 11 127.0.0.1"
+        } else {
+            "sleep 10"
+        };
         let start = Instant::now();
         let plan = plan(
             &[(
                 "sleep".into(),
                 PreflightCommand {
-                    command: "sleep 5".into(),
+                    command: blocking.into(),
                     timeout: Some(1),
                 },
             )],
             &[],
         );
         match run(&plan) {
-            Err(Error::Timeout { name, timeout, .. }) => {
+            Err(Error::Timeout {
+                name,
+                timeout,
+                elapsed_ms,
+            }) => {
                 assert_eq!(name, "sleep");
                 assert_eq!(timeout, 1);
+                assert!(elapsed_ms >= 1000, "the elapsed time must be measured, not assumed");
             }
             other => panic!("expected Timeout, got {:?}", other),
         }
-        assert!(start.elapsed() < Duration::from_secs(3), "timeout should fire near 1s");
+        assert!(
+            start.elapsed() < Duration::from_secs(9),
+            "the timeout must fire near 1s instead of waiting for the step"
+        );
     }
 }

@@ -46,3 +46,9 @@ L2. Decision (parent): continue the same defect rather than open a new theme. Th
 `doctor --check-changelog` exits `2` with `Missing in changelog … release-1.1.0, release-1.2.0` while
 `changelog latest` now exits `0`. Two commands disagreeing about the same repository is worse than either
 being wrong alone, so this closes the disagreement before anything else.
+
+L3. CI caught what no local gate covered: the documentation line ceiling. The doctor and changelog additions
+took `docs/reference/cli.md` to 205 lines, and that ceiling is a shell loop inside the `test` job
+(`.github/workflows/ci.yml`), which `tests/ci_workflow_contract.rs` cannot see as a step. Fixed by
+trimming to 197 lines, and closed as a class by mirroring the loop as a local test
+(`every_document_stays_under_the_line_ceiling`), proven to bite at 202 lines and pass at 197.

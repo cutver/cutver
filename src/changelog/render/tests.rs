@@ -675,7 +675,12 @@ fn flagship_template_renders_the_same_body_it_always_rendered() {
     use crate::init::scaffold::templates::DEFAULT_RELEASE_TEMPLATE;
 
     let ctx = flagship_context();
-    let out = render_template(DEFAULT_RELEASE_TEMPLATE, &ctx).expect("the default template must render");
+    // `include_str!` bakes the checkout's line endings into the template, so a Windows checkout with
+    // `autocrlf` hands over CRLF and the body would differ only in newline spelling. What this test
+    // pins is the body, not the newline convention of whoever checked the file out.
+    let out = render_template(DEFAULT_RELEASE_TEMPLATE, &ctx)
+        .expect("the default template must render")
+        .replace("\r\n", "\n");
 
     // Captured from the pre-`sections` template over this exact context: replacing the hand-rolled
     // `group_by_section` + `rejectattr("is_breaking")` loop must not move a single byte.

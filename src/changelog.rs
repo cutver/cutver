@@ -14,7 +14,7 @@ mod sections;
 mod update;
 
 pub use context::{
-    AssembleContextParams, CommitContext, ForgeMetadata, InterpolationContext, ReleaseContext,
+    AssembleContextParams, CommitContext, ForgeMetadata, InterpolationContext, ReleaseContext, ReleaseSection,
     assemble_release_context, build_context, build_context_auto, build_context_with_filter, build_context_with_raw,
     build_context_with_raw_and_filter, enrich_commit_context, filter_commits, parse_repo_forge,
 };

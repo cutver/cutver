@@ -88,11 +88,27 @@ const SECTIONS: &[(&str, &str)] = &[
     ("revert", "🛠️ Maintenance"),
 ];
 
-/// Maps a conventional type to its section label and the section's rank.
-fn section_for(type_str: &str) -> (usize, String) {
+/// Heading of the section that holds the breaking entries, and of no other section.
+///
+/// Breaking is not a conventional type, so [`SECTIONS`] cannot list it; it is published from here
+/// so a template never learns a second label from anywhere else.
+pub(crate) const BREAKING_SECTION_HEADING: &str = "⚠️ Breaking Changes";
+
+/// Maps a conventional type to its section label and that label's rank.
+///
+/// The rank belongs to the label, not to the type: every Maintenance type shares one heading, so a
+/// section sorts where the first of its types appears instead of splitting per literal type.
+pub(crate) fn section_for(type_str: &str) -> (usize, String) {
     let lower = type_str.to_ascii_lowercase();
     match SECTIONS.iter().position(|(known, _)| *known == lower) {
-        Some(index) => (index, SECTIONS[index].1.to_string()),
+        Some(index) => {
+            let label = SECTIONS[index].1;
+            let rank = SECTIONS
+                .iter()
+                .position(|(_, known_label)| *known_label == label)
+                .unwrap_or(index);
+            (rank, label.to_string())
+        }
         None => (usize::MAX, capitalise(type_str)),
     }
 }
@@ -106,18 +122,23 @@ fn capitalise(value: &str) -> String {
 }
 
 fn group_by_section_filter(seq: Vec<Value>) -> Value {
-    let mut sections: BTreeMap<String, Vec<Value>> = BTreeMap::new();
-    let mut ranks: BTreeMap<String, usize> = BTreeMap::new();
+    let mut sections: BTreeMap<String, (usize, Vec<Value>)> = BTreeMap::new();
 
     for item in seq {
         let (rank, label) = section_for(&type_attr(&item));
-        ranks.entry(label.clone()).or_insert(rank);
-        sections.entry(label).or_default().push(item);
+        sections.entry(label).or_insert_with(|| (rank, Vec::new())).1.push(item);
     }
 
-    let mut res: Vec<(String, Vec<Value>)> = sections.into_iter().collect();
-    res.sort_by_key(|(label, _)| (ranks[label], label.to_ascii_lowercase()));
-    Value::from_serialize(res)
+    let mut res: Vec<(usize, String, Vec<Value>)> = sections
+        .into_iter()
+        .map(|(label, (rank, items))| (rank, label, items))
+        .collect();
+    res.sort_by_key(|(rank, label, _)| (*rank, label.to_ascii_lowercase()));
+    Value::from_serialize(
+        res.into_iter()
+            .map(|(_, label, items)| (label, items))
+            .collect::<Vec<_>>(),
+    )
 }
 
 /// Create a configured MiniJinja environment with custom globals.

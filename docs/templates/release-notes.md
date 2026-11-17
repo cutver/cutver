@@ -60,6 +60,25 @@ Pre-formatted bullet points for each Conventional Commit category:
 - `other`: Pre-rendered bullet items for unmapped commits.
 - `all_changes`: Complete standard Keep-a-Changelog section block.
 
+### Sections
+
+`sections` is the grouping the host resolves once, so a template does not have to remember which entries to
+exclude. It differs from the `group_by_section` filter in exactly one way: the filter keeps a breaking entry in
+its own type's section, while `sections` moves every breaking entry into the breaking section. Each section
+carries a `heading`, its `entries` (the same objects `commits` yields), and an `is_breaking` flag that is `true`
+only for the section holding the breaking entries.
+
+```jinja
+{% for section in sections %}
+### {{ section.heading }}
+{% for c in section.entries %}{{ c.line }}
+{% endfor %}{% endfor %}
+```
+
+A breaking entry appears in the breaking section only, never in its own type's section, so a template that
+iterates `sections` cannot render one twice. Sections with no entries are omitted, and a release with no
+commits yields an empty `sections` sequence.
+
 ---
 
 ## Commit Record Fields (`commits`)

@@ -921,6 +921,7 @@ fn test_interpolation_context_build_and_serialization() {
             other: String::new(),
             all_changes: String::new(),
             commits: Vec::new(),
+            sections: Vec::new(),
             contributors: Vec::new(),
             first_time_contributors: Vec::new(),
             major: 1,
@@ -1033,4 +1034,274 @@ fn test_release_context_date_parts() {
     assert_eq!(deserialized.year, 2026);
     assert_eq!(deserialized.month, 4);
     assert_eq!(deserialized.day, 15);
+}
+
+/// Top-level object keys of a JSON document, in serialization order.
+///
+/// `serde_json::Value` keeps no order, so the shape S4 pins is read off the raw bytes here.
+fn top_level_keys(json: &str) -> Vec<String> {
+    fn collect(json: &str) -> Vec<String> {
+        let mut keys = Vec::new();
+        let mut depth = 0usize;
+        let mut in_string = false;
+        let mut escaped = false;
+        let mut expecting_key = false;
+        let mut current = String::new();
+        for ch in json.chars() {
+            if in_string {
+                if escaped {
+                    escaped = false;
+                    current.push(ch);
+                } else if ch == '\\' {
+                    escaped = true;
+                } else if ch == '"' {
+                    in_string = false;
+                    if expecting_key {
+                        keys.push(std::mem::take(&mut current));
+                        expecting_key = false;
+                    }
+                } else {
+                    current.push(ch);
+                }
+                continue;
+            }
+            match ch {
+                '{' => {
+                    depth += 1;
+                    expecting_key = depth == 1;
+                }
+                '[' => depth += 1,
+                '}' | ']' => depth = depth.saturating_sub(1),
+                '"' => {
+                    in_string = true;
+                    current.clear();
+                }
+                ',' if depth == 1 => expecting_key = true,
+                _ => {}
+            }
+        }
+        keys
+    }
+    collect(json)
+}
+
+fn sections_context(messages: &[&str]) -> ReleaseContext {
+    let commits: Vec<ConventionalCommit> = messages
+        .iter()
+        .map(|message| ConventionalCommit::parse(message).expect("test message must parse"))
+        .collect();
+    build_context_with_filter(
+        "1.0.0",
+        Some("0.9.0"),
+        "v1.0.0",
+        Some("v0.9.0"),
+        "2026-03-30",
+        Some("https://example.test/acme/demo".to_string()),
+        &commits,
+        vec!["ana".to_string()],
+        true,
+        "Maintenance and updates.",
+        true,
+        &[],
+    )
+}
+
+fn headings(ctx: &ReleaseContext) -> Vec<&str> {
+    ctx.sections.iter().map(|section| section.heading.as_str()).collect()
+}
+
+#[test]
+fn sections_put_a_breaking_entry_in_the_breaking_section_only() {
+    let ctx = sections_context(&[
+        "feat(api)!: rewrite the parser",
+        "fix(cli): stop dropping scoped commits",
+        "chore(deps): bump serde",
+    ]);
+
+    assert_eq!(
+        headings(&ctx),
+        vec!["⚠️ Breaking Changes", "🐛 Fixes", "🛠️ Maintenance"],
+        "a type section whose only commit is breaking must not exist: {:?}",
+        headings(&ctx)
+    );
+
+    let breaking = &ctx.sections[0];
+    assert!(
+        breaking.is_breaking,
+        "the breaking section must say it is the breaking one"
+    );
+    assert_eq!(breaking.entries.len(), 1);
+    assert_eq!(breaking.entries[0].description, "rewrite the parser");
+    assert!(breaking.entries[0].is_breaking);
+    assert!(
+        ctx.sections[1..].iter().all(|section| !section.is_breaking),
+        "only the breaking section may carry the flag"
+    );
+
+    let appearances = ctx
+        .sections
+        .iter()
+        .flat_map(|section| section.entries.iter())
+        .filter(|entry| entry.description == "rewrite the parser")
+        .count();
+    assert_eq!(
+        appearances,
+        1,
+        "a breaking entry must appear exactly once across sections: {:#?}",
+        headings(&ctx)
+    );
+}
+
+#[test]
+fn sections_follow_the_canonical_heading_order() {
+    let ctx = sections_context(&[
+        "chore(deps): bump serde",
+        "docs(readme): explain the flag",
+        "fix(api): stop dropping commits",
+        "build(cargo): bump the toolchain",
+        "feat(cli): add the flag",
+        "perf(core): drop an allocation",
+        "refactor(core): split the filter",
+        "wip(api): experiment",
+    ]);
+
+    assert_eq!(
+        headings(&ctx),
+        vec![
+            "✨ Features",
+            "🐛 Fixes",
+            "⚡ Performance",
+            "🔄 Refactoring",
+            "📚 Documentation",
+            "🛠️ Maintenance",
+            "Wip",
+        ],
+        "sections must read in canonical order whatever order the commits arrived in"
+    );
+
+    let maintenance = ctx
+        .sections
+        .iter()
+        .find(|section| section.heading == "🛠️ Maintenance")
+        .expect("build and chore share one maintenance section");
+    assert_eq!(
+        maintenance.entries.len(),
+        2,
+        "every maintenance type merges into a single heading"
+    );
+}
+
+#[test]
+fn sections_omit_sections_without_entries() {
+    let ctx = sections_context(&["feat!: drop the old api", "docs: cover it in the guide"]);
+
+    assert_eq!(
+        headings(&ctx),
+        vec!["⚠️ Breaking Changes", "📚 Documentation"],
+        "an empty type section must be omitted entirely"
+    );
+}
+
+#[test]
+fn sections_are_empty_without_commits() {
+    let ctx = sections_context(&[]);
+
+    assert!(ctx.sections.is_empty(), "no commits must yield an empty sequence");
+    assert_eq!(
+        ctx.all_changes, "- Maintenance and updates.",
+        "the fallback entry is all_changes' behaviour and must not move"
+    );
+}
+
+#[test]
+fn section_entries_are_the_same_commit_objects_as_commits() {
+    let ctx = sections_context(&[
+        "feat(api)!: rewrite the parser",
+        "fix(cli): stop dropping scoped commits",
+    ]);
+
+    let commits: Vec<serde_json::Value> = ctx
+        .commits
+        .iter()
+        .map(|commit| serde_json::to_value(commit).unwrap())
+        .collect();
+    let entries: Vec<serde_json::Value> = ctx
+        .sections
+        .iter()
+        .flat_map(|section| section.entries.iter())
+        .map(|entry| serde_json::to_value(entry).unwrap())
+        .collect();
+
+    assert_eq!(entries.len(), ctx.commits.len());
+    for commit in &commits {
+        assert_eq!(
+            entries.iter().filter(|entry| *entry == commit).count(),
+            1,
+            "every commit must appear in exactly one section with the same keys and values"
+        );
+    }
+}
+
+#[test]
+fn release_context_serializes_sections_after_commits_and_keeps_every_other_key() {
+    let ctx = sections_context(&[
+        "feat(api)!: rewrite the parser",
+        "fix(cli): stop dropping scoped commits",
+    ]);
+    let json = serde_json::to_string(&ctx).unwrap();
+
+    assert_eq!(
+        top_level_keys(&json),
+        vec![
+            "version",
+            "previous_version",
+            "tag",
+            "previous_tag",
+            "date",
+            "compare_url",
+            "repository",
+            "features",
+            "fixes",
+            "breaking",
+            "perf",
+            "refactor",
+            "docs",
+            "maintenance",
+            "other",
+            "all_changes",
+            "commits",
+            "sections",
+            "contributors",
+            "first_time_contributors",
+            "major",
+            "minor",
+            "patch",
+            "is_prerelease",
+            "prerelease",
+            "build",
+            "year",
+            "month",
+            "day",
+            "repo_owner",
+            "owner",
+            "repo_name",
+            "repo",
+            "forge",
+            "project_name",
+            "project",
+        ]
+    );
+
+    let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(value["breaking"], "- **api**: rewrite the parser");
+    assert_eq!(value["fixes"], "- **cli**: stop dropping scoped commits");
+    assert_eq!(value["sections"][0]["heading"], "⚠️ Breaking Changes");
+    assert_eq!(value["sections"][0]["is_breaking"], true);
+    assert_eq!(value["sections"][0]["entries"][0]["description"], "rewrite the parser");
+
+    let round_tripped: ReleaseContext = serde_json::from_str(&json).unwrap();
+    assert_eq!(
+        round_tripped.sections, ctx.sections,
+        "sections must survive a round trip"
+    );
 }

@@ -39,6 +39,34 @@
 
 ---
 
+<h3 align="center">See it in action</h3>
+
+<p align="center">57 seconds: four release commands, a dry run that touches nothing until the whole plan validates, and the four typed capability slots.</p>
+
+https://github.com/user-attachments/assets/5567bfea-a752-4ced-96ee-7fd793ce2562
+
+<details>
+<summary><b>Audio description</b> — English</summary>
+
+<br>
+
+https://github.com/user-attachments/assets/157d57c6-0fd8-4271-802a-c0f0fdcc0076
+
+</details>
+
+<details>
+<summary><b>Audiodescripción</b> — español neutro</summary>
+
+<br>
+
+https://github.com/user-attachments/assets/c6a17256-9b18-46d6-a53f-6e4de8504d79
+
+</details>
+
+<p align="center"><sub><a href="docs/accessibility.md">How the described tracks are built, and their transcript</a></sub></p>
+
+---
+
 ## Overview
 
 `cutver` is a standalone, language-agnostic release orchestration engine written in **Rust**. It synchronizes versions across your manifests, runs your preflight checks, renders the changelog, commits, tags, and publishes — driven by one declarative `cutver.toml`. It versions itself, tests itself, generates its own changelogs, and publishes itself.
@@ -107,6 +135,7 @@ Read on: [Architecture and design decisions](docs/internals/design.md) · [Plugi
 | **Guides** | [Getting Started Walkthrough](docs/guides/getting-started.md) | Step-by-step first release workflow and core concepts. |
 | | [Installation Guide](docs/guides/installation.md) | Scoop, Homebrew, Cargo and containers, both builds, and verification. |
 | | [Visual Tour](docs/guides/visual-tour.md) | The release lifecycle as terminal screenshots. |
+| | [Accessibility](docs/accessibility.md) | The 57-second film, both audio-description tracks, and their transcript. |
 | | [Monorepos & Multi-Package Strategies](docs/guides/monorepos.md) | Coordinated releases across polyglot workspaces without drift. |
 | | [Writing a Plugin](docs/guides/plugin-authoring.md) | Scaffold a crate, export `invoke`, build for `wasm32-wasip1`, publish and register it. |
 | | [Frequently Asked Questions](docs/guides/faq.md) | Comparison with other release tools, failure behavior, and the security model. |

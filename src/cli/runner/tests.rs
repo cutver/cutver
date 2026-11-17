@@ -175,6 +175,154 @@ field = "version"
     assert_eq!(run(args), 2);
 }
 
+/// The same repository, read by two commands, must agree: with `tag_prefix = "release-"` the
+/// headings carry the prefix, so doctor lists them the way `changelog latest` already does.
+#[test]
+fn doctor_with_check_changelog_honours_a_custom_tag_prefix() {
+    let dir = temp_dir("cutver-doc-cl-prefix-ok");
+    crate::git::init_test_repo(&dir);
+    write(&dir, "package.json", r#"{"version": "1.2.0"}"#);
+    write(
+        &dir,
+        "CHANGELOG.md",
+        "# Changelog\n\n## [release-1.2.0] - 2026-01-02\n- second\n\n## [release-1.1.0] - 2026-01-01\n- first\n",
+    );
+    write(
+        &dir,
+        "cutver.toml",
+        r#"
+[version]
+current_source = "package.json"
+[git]
+tag_prefix = "release-"
+[[manifest]]
+path = "package.json"
+kind = "json"
+field = "version"
+"#,
+    );
+    git_commit(&dir, "chore: initial");
+    git_tag(&dir, "release-1.1.0");
+    git_tag(&dir, "release-1.2.0");
+
+    let cfg = config::load(dir.join("cutver.toml")).unwrap();
+    let drift = crate::bump::doctor_changelog(&cfg).unwrap();
+    assert!(drift.is_empty(), "expected no changelog drift, got {drift:?}");
+
+    let args = Cli::try_parse_from([
+        "cutver",
+        "-c",
+        &dir.join("cutver.toml").to_string_lossy(),
+        "doctor",
+        "--check-changelog",
+    ])
+    .unwrap();
+    assert_eq!(run(args), 0);
+}
+
+/// The fix widens what matches, never what passes silently: a prefixed tag with no heading of
+/// its own is still drift, named by its tag and reported with the current exit code.
+#[test]
+fn doctor_with_check_changelog_reports_a_missing_version_under_a_custom_prefix() {
+    let dir = temp_dir("cutver-doc-cl-prefix-missing");
+    crate::git::init_test_repo(&dir);
+    write(&dir, "package.json", r#"{"version": "1.2.0"}"#);
+    write(
+        &dir,
+        "CHANGELOG.md",
+        "# Changelog\n\n## [release-1.1.0] - 2026-01-01\n- first\n",
+    );
+    write(
+        &dir,
+        "cutver.toml",
+        r#"
+[version]
+current_source = "package.json"
+[git]
+tag_prefix = "release-"
+[[manifest]]
+path = "package.json"
+kind = "json"
+field = "version"
+"#,
+    );
+    git_commit(&dir, "chore: initial");
+    git_tag(&dir, "release-1.1.0");
+    git_tag(&dir, "release-1.2.0");
+
+    let cfg = config::load(dir.join("cutver.toml")).unwrap();
+    let drift = crate::bump::doctor_changelog(&cfg).unwrap();
+    assert_eq!(drift.missing_in_changelog, vec!["release-1.2.0".to_string()]);
+    assert!(drift.orphan_sections.is_empty(), "unexpected orphans: {drift:?}");
+
+    let args = Cli::try_parse_from([
+        "cutver",
+        "-c",
+        &dir.join("cutver.toml").to_string_lossy(),
+        "doctor",
+        "--check-changelog",
+    ])
+    .unwrap();
+    assert_eq!(run(args), 2);
+}
+
+/// With the default `v` prefix the rendered drift block is byte-identical to what doctor printed
+/// before the prefix-aware listing.
+#[test]
+fn doctor_with_check_changelog_default_prefix_output_is_unchanged() {
+    let dir = temp_dir("cutver-doc-cl-default-prefix");
+    crate::git::init_test_repo(&dir);
+    write(&dir, "package.json", r#"{"version": "1.1.0"}"#);
+    write(
+        &dir,
+        "CHANGELOG.md",
+        "# Changelog\n\n## [1.0.0] - 2026-01-01\n- initial\n",
+    );
+    write(
+        &dir,
+        "cutver.toml",
+        r#"
+[version]
+current_source = "package.json"
+[[manifest]]
+path = "package.json"
+kind = "json"
+field = "version"
+"#,
+    );
+    git_commit(&dir, "chore: initial");
+    git_tag(&dir, "v1.0.0");
+    git_tag(&dir, "v1.1.0");
+
+    let cfg = config::load(dir.join("cutver.toml")).unwrap();
+    let drift = crate::bump::doctor_changelog(&cfg).unwrap();
+    assert_eq!(drift.missing_in_changelog, vec!["v1.1.0".to_string()]);
+    assert!(drift.orphan_sections.is_empty(), "unexpected orphans: {drift:?}");
+
+    let rendered = crate::cli::doctor::render_changelog_drift(&drift, &crate::cli::style::Theme::new(false));
+    assert_eq!(
+        rendered,
+        concat!(
+            "✖ Changelog drift detected:\n",
+            "\n  Missing in changelog (Git tag exists):\n",
+            "    • v1.1.0\n",
+            "\nSuggested next steps:\n",
+            "  • Add missing release sections to CHANGELOG.md or query with 'cutver changelog show <version>'.\n",
+            "  • Check if orphan versions were tagged with a different prefix or not yet pushed.\n",
+        )
+    );
+
+    let args = Cli::try_parse_from([
+        "cutver",
+        "-c",
+        &dir.join("cutver.toml").to_string_lossy(),
+        "doctor",
+        "--check-changelog",
+    ])
+    .unwrap();
+    assert_eq!(run(args), 2);
+}
+
 #[test]
 fn doctor_with_check_changelog_orphan_section() {
     let dir = temp_dir("cutver-doc-cl-main-orphan");

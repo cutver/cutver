@@ -136,8 +136,13 @@ cutver doctor [OPTIONS]
 
 | Flag | Long Option | Description |
 | :--- | :--- | :--- |
-| | `--check-changelog` | Verifies that release entries in `CHANGELOG.md` match Git release tags. |
+| | `--check-changelog` | Verifies that release entries in `CHANGELOG.md` match Git release tags, reading headings through `[git] tag_prefix` like `changelog latest` does. |
 | `-c <PATH>` | `--config <PATH>` | Explicit path to `cutver.toml`. |
+
+`--check-changelog` reads headings through the same `[git] tag_prefix` as `changelog latest` and
+`changelog show`: with `tag_prefix = "release-"`, `## release-1.2.0` is the entry for the
+`release-1.2.0` tag, so the two commands agree on the same repository. A tag whose entry is really
+absent is still reported as drift, with exit code `2`.
 
 ---
 

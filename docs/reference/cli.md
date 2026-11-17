@@ -108,7 +108,7 @@ cutver publish --tag <TAG> [OPTIONS]
 | :--- | :--- | :--- |
 | | `--tag <TAG>` | Release tag to publish. It must be a valid git ref, and it must equal the version the manifests declare at `HEAD`, so the tag is derived from the release commit instead of trusted from the command line. The declared version is read from the working tree, so `require_clean_tree` applies here too. |
 | | `--commit <SHA>` | The release commit the caller verified. When given it must be `HEAD`; omit it to publish whatever `HEAD` is. |
-| | `--notes-file <PATH>` | Release notes for the `on_post_release` payload, which is what renders the draft release. The file is an input to the command, not a change in the tree: the clean-tree check exempts exactly this path, compared canonically, and nothing else. |
+| | `--notes-file <PATH>` | Release notes for the `on_post_release` payload, which is what renders the draft release. The file is an input to the command, not a change in the tree: the clean-tree check exempts exactly this path, compared canonically, and nothing else. Pass `-` to read the notes from standard input instead: that declares no input at all, so nothing transient has to exist in the worktree. An empty stream — or one carrying only whitespace — is refused before the tag, the pushes and the commands, because a release published with no notes cannot be corrected by re-running. |
 | | `--dry-run` | Validates and prints the plan without creating a tag, pushing anything or running a command. |
 | `-c <PATH>` | `--config <PATH>` | Explicit path to `cutver.toml`. |
 
@@ -118,6 +118,8 @@ Validation fails closed before anything is written or pushed: a tag name `git` w
 cutver bump minor --defer-publish --report .cutver-release.json
 # build and smoke the artifacts from the reported commit
 cutver publish --tag v1.3.0 --commit "$(git rev-parse HEAD)" --notes-file RELEASE_NOTES.md
+# or hand the notes over a stream, leaving nothing behind in the worktree
+cutver changelog latest --include-header | cutver publish --tag v1.3.0 --commit "$(git rev-parse HEAD)" --notes-file -
 ```
 
 `[publish] push` decides the pushes, not the rest: with `push = false` the closing phase still creates the local tag and runs the commands. `[git] floating_major_tag` decides whether the floating major tag is moved. Without `--defer-publish` the same closing steps run inside the bump process, so the split is a choice at cut time, not a new default. The order both phases run in, and the invariant behind the split, live in [Release Pipeline Order and Atomic Guarantees](../internals/pipeline.md).

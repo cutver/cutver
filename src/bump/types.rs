@@ -10,6 +10,10 @@ pub enum Error {
     #[error("failed to read '{path}': {source}")]
     Read { path: String, source: io::Error },
     #[error(
+        "release notes on stdin were empty\n  Where: `cutver publish --notes-file -`, before the tag, the pushes and the publish commands\n  Fix: pipe the rendered notes into the command (`cutver changelog latest --include-header | cutver publish --tag <tag> --notes-file -`). A release published with no notes cannot be corrected by re-running, so this fails closed. Nothing was written."
+    )]
+    EmptyNotesStream,
+    #[error(
         "could not read '{path}' to record the bytes rollback would restore: {source}\n  Where: Phase 1, taking the pre-write snapshot, before anything was written\n  Fix: make the file readable again (its permissions, its encoding or the I/O path), then re-run. An unreadable target cannot be backed up, so nothing was written, staged, committed or tagged."
     )]
     ReadUnreadable { path: String, source: io::Error },

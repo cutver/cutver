@@ -108,6 +108,28 @@ fn publish_from_worktree(fixture: &Fixture, notes: &str, commit: &str) -> std::p
         .expect("failed to execute cutver publish")
 }
 
+/// The streamed invocation (#306): `--notes-file -` hands the notes over stdin, so nothing transient
+/// has to exist in the worktree the clean-tree guard is checking.
+fn publish_from_stdin(fixture: &Fixture, notes: &str, commit: &str) -> std::process::Output {
+    use std::io::Write;
+    use std::process::Stdio;
+    let mut child = Command::new(env!("CARGO_BIN_EXE_cutver"))
+        .current_dir(&fixture.dir)
+        .args(["publish", "--tag", "v1.3.0", "--commit", commit, "--notes-file", "-"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("failed to execute cutver publish");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin must be piped to the child")
+        .write_all(notes.as_bytes())
+        .expect("failed to write the notes to the child");
+    child.wait_with_output().expect("failed to wait for cutver publish")
+}
+
 /// What `git status --porcelain` reports, newline-normalised and without the trailing newline.
 fn porcelain(fixture: &Fixture) -> String {
     let out = run_git(&fixture.dir, &["status", "--porcelain"]);
@@ -682,5 +704,122 @@ fn publish_refuses_a_tag_the_manifests_do_not_declare() {
     assert!(
         !fixture.dir.join("published.txt").exists(),
         "no publish command may run"
+    );
+}
+
+/// #306: the notes travel as a stream, so the invocation that carries them declares no worktree
+/// input at all — and leaves none behind.
+#[test]
+fn publish_takes_its_notes_from_a_stream_and_leaves_no_file_behind() {
+    let (guard, remote, cfg) = prepared_repo("deferred-publish-notes-stream");
+    let fixture = guard.fixture();
+    run_deferred_publish(&cfg, Bump::Minor, false, &[], false).expect("the prepare phase succeeds");
+    let head = rev(&fixture.dir, "HEAD");
+    assert_eq!(
+        porcelain(fixture),
+        "",
+        "nothing may be untracked before the streamed run"
+    );
+
+    let out = publish_from_stdin(fixture, "# v1.3.0\n\n- streamed\n", &head);
+
+    assert!(
+        out.status.success(),
+        "a non-empty stream is this run's notes input; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        rev(&fixture.dir, "v1.3.0^{commit}"),
+        head,
+        "the closing phase must tag the release commit"
+    );
+    assert_eq!(
+        rev(&remote.dir, "refs/tags/v1.3.0^{commit}"),
+        head,
+        "the release tag must reach the remote"
+    );
+    assert_eq!(
+        fixture.read("published.txt").trim(),
+        "published 1.3.0",
+        "the publish commands must run"
+    );
+    assert_eq!(
+        porcelain(fixture),
+        "?? published.txt",
+        "a streamed run must not create a notes file in the tree"
+    );
+}
+
+/// An empty stream must fail closed before the tag, the pushes and the publish commands: the
+/// alternative is a published release with no notes.
+#[test]
+fn publish_refuses_an_empty_notes_stream_before_it_writes_anything() {
+    let (guard, remote, cfg) = prepared_repo("deferred-publish-notes-stream-empty");
+    let fixture = guard.fixture();
+    run_deferred_publish(&cfg, Bump::Minor, false, &[], false).expect("the prepare phase succeeds");
+    let head = rev(&fixture.dir, "HEAD");
+
+    let out = publish_from_stdin(fixture, "", &head);
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success(),
+        "an empty stream must not publish; stdout:\n{}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    assert!(
+        stderr.contains("release notes on stdin were empty"),
+        "the refusal must name the empty stream; stderr:\n{stderr}"
+    );
+    let tags = run_git(&fixture.dir, &["tag", "-l", "v1.3.0"]);
+    assert!(
+        String::from_utf8_lossy(&tags.stdout).trim().is_empty(),
+        "no release tag may be created"
+    );
+    assert!(
+        !remote_refs(&remote.dir).contains("refs/tags/v1.3.0"),
+        "the release tag must not reach the remote"
+    );
+    assert!(
+        !fixture.dir.join("published.txt").exists(),
+        "no publish command may run"
+    );
+}
+
+/// Whitespace is not notes: a stream of blanks is empty for this rule.
+#[test]
+fn publish_refuses_a_whitespace_only_notes_stream() {
+    let (guard, _remote, cfg) = prepared_repo("deferred-publish-notes-stream-blank");
+    let fixture = guard.fixture();
+    run_deferred_publish(&cfg, Bump::Minor, false, &[], false).expect("the prepare phase succeeds");
+    let head = rev(&fixture.dir, "HEAD");
+
+    let out = publish_from_stdin(fixture, "   \n\n", &head);
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(!out.status.success(), "a blank stream must not publish");
+    assert!(
+        stderr.contains("release notes on stdin were empty"),
+        "a blank stream is an empty stream; stderr:\n{stderr}"
+    );
+}
+
+/// The streamed path exempts nothing: another untracked file still aborts, exactly as it does when
+/// the notes come from a declared file.
+#[test]
+fn publish_still_refuses_a_stray_untracked_file_when_the_notes_come_from_stdin() {
+    let (guard, _remote, cfg) = prepared_repo("deferred-publish-notes-stream-stray");
+    let fixture = guard.fixture();
+    run_deferred_publish(&cfg, Bump::Minor, false, &[], false).expect("the prepare phase succeeds");
+    let head = rev(&fixture.dir, "HEAD");
+    fixture.write("stray.txt", "not this run's input\n");
+
+    let out = publish_from_stdin(fixture, "# v1.3.0\n", &head);
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(!out.status.success(), "a stray untracked file must still abort");
+    assert!(
+        stderr.contains("uncommitted changes") && stderr.contains("stray.txt"),
+        "the refusal must name the change it found; stderr:\n{stderr}"
     );
 }

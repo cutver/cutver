@@ -1,9 +1,11 @@
 use super::io::{read_latest, read_version};
 use super::parser::{
-    extract_heading_version, extract_latest, extract_version, is_release_heading, list_versions, normalize_version,
+    extract_heading_version, extract_latest, extract_latest_with_prefix, extract_version, extract_version_with_prefix,
+    is_release_heading, list_versions, list_versions_with_prefix, normalize_version,
 };
 use crate::changelog::Error;
 use crate::changelog::extract::release_notes;
+use crate::git::TagPrefix;
 use std::fs;
 
 static TMP_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -401,19 +403,142 @@ fn test_read_version_file() {
 
 #[test]
 fn test_heading_helpers_internal() {
-    assert!(is_release_heading(" [1.0.0] - 2026-01-01"));
-    assert!(is_release_heading("v2.1.0"));
-    assert!(!is_release_heading("[Unreleased]"));
-    assert!(!is_release_heading("Unreleased"));
-    assert!(!is_release_heading("unknown-section"));
+    let none = TagPrefix::default();
+    assert!(is_release_heading(" [1.0.0] - 2026-01-01", &none));
+    assert!(is_release_heading("v2.1.0", &none));
+    assert!(!is_release_heading("[Unreleased]", &none));
+    assert!(!is_release_heading("Unreleased", &none));
+    assert!(!is_release_heading("unknown-section", &none));
 
-    assert_eq!(normalize_version("v1.2.3"), "1.2.3");
-    assert_eq!(normalize_version("V1.2.3"), "1.2.3");
-    assert_eq!(normalize_version("1.2.3"), "1.2.3");
+    assert_eq!(normalize_version("v1.2.3", &none), "1.2.3");
+    assert_eq!(normalize_version("V1.2.3", &none), "1.2.3");
+    assert_eq!(normalize_version("1.2.3", &none), "1.2.3");
 
     assert_eq!(extract_heading_version("[1.0.0] - date"), Some("1.0.0"));
     assert_eq!(extract_heading_version("1.0.0: date"), Some("1.0.0"));
     assert_eq!(extract_heading_version(""), None);
+}
+
+/// `[git] tag_prefix` names the project's tags, so the same prefix decides what a heading carries:
+/// with `release-`, the entry for `1.2.0` is `## release-1.2.0`.
+#[test]
+fn test_extract_version_honours_a_configured_prefix() {
+    let changelog = "\
+# Changelog
+
+## [release-1.2.0] - 2026-03-01
+- New work
+
+## [release-1.1.0] - 2026-02-01
+- Older work
+";
+    let prefix = TagPrefix::new("release-");
+
+    assert_eq!(
+        extract_version_with_prefix(changelog, "1.2.0", false, &prefix).as_deref(),
+        Some("- New work")
+    );
+    assert_eq!(
+        extract_version_with_prefix(changelog, "release-1.1.0", true, &prefix).as_deref(),
+        Some("## [release-1.1.0] - 2026-02-01\n- Older work")
+    );
+
+    // The prefix is what decides: the default (empty) prefix does not know `release-`.
+    assert_eq!(extract_version(changelog, "1.2.0", false), None);
+}
+
+#[test]
+fn test_extract_latest_honours_a_configured_prefix() {
+    let changelog = "\
+# Changelog
+
+## release-1.2.0
+- New work
+
+## release-1.1.0
+- Older work
+";
+    let prefix = TagPrefix::new("release-");
+
+    assert_eq!(
+        extract_latest_with_prefix(changelog, true, &prefix).as_deref(),
+        Some("## release-1.2.0\n- New work")
+    );
+    assert_eq!(
+        extract_latest_with_prefix(changelog, false, &prefix).as_deref(),
+        Some("- New work")
+    );
+    assert_eq!(extract_latest(changelog, true), None);
+}
+
+#[test]
+fn test_list_versions_honours_a_configured_prefix() {
+    let changelog = "\
+# Changelog
+
+## [Unreleased]
+- WIP
+
+## [release-1.3.0] - 2026-03-01
+- Third
+
+## release-1.2.0 - 2026-02-15
+- Second
+";
+    assert_eq!(
+        list_versions_with_prefix(changelog, &TagPrefix::new("release-")),
+        vec!["1.3.0", "1.2.0"]
+    );
+    // Without the prefix the same headings name no release version at all.
+    assert!(list_versions(changelog).is_empty());
+}
+
+/// S4: the default `v` prefix strips exactly one legacy marker, so a doubled marker does not
+/// silently become a release version.
+#[test]
+fn default_v_prefix_does_not_double_strip_a_marker() {
+    let changelog = "## vv1.2.0\n- doubled marker\n\n## [1.0.0] - 2026-01-01\n- real\n";
+    assert_eq!(
+        list_versions_with_prefix(changelog, &TagPrefix::new("v")),
+        vec!["1.0.0"]
+    );
+}
+
+/// A project on the default `v` prefix keeps reading exactly what it read before: the prefix-aware
+/// surface and the legacy one agree byte for byte.
+#[test]
+fn test_default_prefix_output_is_unchanged() {
+    let changelog = "\
+# Changelog
+
+## [v1.3.0] - 2026-11-12
+### Features
+- a new capability
+
+## [V1.2.0] - 2026-10-01
+- older
+";
+    let v_prefix = TagPrefix::new("v");
+
+    assert_eq!(
+        extract_latest_with_prefix(changelog, true, &v_prefix),
+        extract_latest(changelog, true)
+    );
+    assert_eq!(
+        extract_version_with_prefix(changelog, "v1.2.0", false, &v_prefix),
+        extract_version(changelog, "v1.2.0", false)
+    );
+    assert_eq!(
+        list_versions_with_prefix(changelog, &v_prefix),
+        list_versions(changelog)
+    );
+
+    assert_eq!(
+        extract_latest(changelog, true).as_deref(),
+        Some("## [v1.3.0] - 2026-11-12\n### Features\n- a new capability")
+    );
+    assert_eq!(list_versions(changelog), vec!["1.3.0", "1.2.0"]);
+    assert_eq!(extract_version(changelog, "1.2.0", false).as_deref(), Some("- older"));
 }
 
 /// The entry handed to a publishing plugin is the same text the changelog holds, heading included:

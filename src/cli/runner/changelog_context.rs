@@ -1,6 +1,17 @@
 use std::path::Path;
 
 use crate::config;
+use crate::git::types::{strip_one_version_marker, strip_version_prefix};
+use crate::git::{TagName, TagPrefix};
+
+/// The prefix this read surface strips from headings and builds tags with.
+///
+/// The configured `[git] tag_prefix` is the authority. With no configuration there is nothing
+/// declared, so the empty prefix is used: a heading may still carry the historical `v`/`V` marker,
+/// and `git::types` stays the one module that decides what to strip.
+pub fn resolve_prefix(cfg: Option<&config::Config>) -> TagPrefix {
+    cfg.map(|c| TagPrefix::new(&c.git.tag_prefix)).unwrap_or_default()
+}
 
 pub fn load_template_file(config_override: Option<&Path>, template_path: &Path) -> Result<String, String> {
     let resolved = if template_path.is_absolute() {
@@ -25,8 +36,8 @@ pub fn load_template_file(config_override: Option<&Path>, template_path: &Path) 
         .map_err(|e| format!("failed to read template file '{}': {e}", template_path.display()))
 }
 
-pub fn extract_heading_date(content: &str, target_ver: &str) -> Option<String> {
-    let target_norm = target_ver.trim_start_matches(['v', 'V']);
+pub fn extract_heading_date(content: &str, target_ver: &str, prefix: &TagPrefix) -> Option<String> {
+    let target_norm = strip_one_version_marker(target_ver, prefix);
     for line in content.lines() {
         if let Some(heading) = line.strip_prefix("## ") {
             let after_h2 = heading.trim_start();
@@ -35,7 +46,7 @@ pub fn extract_heading_date(content: &str, target_ver: &str) -> Option<String> {
                 continue;
             }
             if let Some((ver_part, date_part)) = after_h2.split_once(" - ") {
-                let v = ver_part.trim().trim_matches(['[', ']']).trim_start_matches(['v', 'V']);
+                let v = strip_one_version_marker(ver_part.trim().trim_matches(['[', ']']), prefix);
                 if v == target_norm {
                     let d = date_part.trim();
                     if !d.is_empty() {
@@ -48,8 +59,8 @@ pub fn extract_heading_date(content: &str, target_ver: &str) -> Option<String> {
     None
 }
 
-pub fn find_raw_heading_version<'a>(content: &'a str, target_ver: &str) -> Option<&'a str> {
-    let target_norm = target_ver.trim_start_matches(['v', 'V']);
+pub fn find_raw_heading_version<'a>(content: &'a str, target_ver: &str, prefix: &TagPrefix) -> Option<&'a str> {
+    let target_norm = strip_one_version_marker(target_ver, prefix);
     for line in content.lines() {
         if let Some(heading) = line.strip_prefix("## ") {
             let after_h2 = heading.trim_start();
@@ -66,7 +77,7 @@ pub fn find_raw_heading_version<'a>(content: &'a str, target_ver: &str) -> Optio
                     .map(|s| s.trim_end_matches(':').trim())
             };
             if let Some(raw) = raw_ver
-                && raw.trim_start_matches(['v', 'V']) == target_norm
+                && strip_one_version_marker(raw, prefix) == target_norm
             {
                 return Some(raw);
             }
@@ -81,32 +92,33 @@ pub fn resolve_release_tag_and_prefix(
     content: &str,
     version: &str,
 ) -> (crate::git::TagName, crate::git::TagPrefix) {
-    let clean_ver = crate::git::TagName::parse(version)
-        .map(|t| t.normalize_version(&crate::git::TagPrefix::default()).to_string())
-        .unwrap_or_else(|_| version.trim_start_matches(['v', 'V']).to_string());
+    let prefix = resolve_prefix(cfg);
+    let clean_ver = TagName::parse(version)
+        .map(|t| t.normalize_version(&prefix).to_string())
+        .unwrap_or_else(|_| strip_version_prefix(version, &prefix).to_string());
 
-    if let Some(c) = cfg {
-        let prefix = crate::git::TagPrefix::new(&c.git.tag_prefix);
-        let tag = prefix.format_tag(&clean_ver);
-        return (tag, prefix);
+    if cfg.is_some() {
+        return (prefix.format_tag(&clean_ver), prefix);
     }
 
-    let v_prefix = crate::git::TagPrefix::new("v");
-    let v_tag = v_prefix.format_tag(&clean_ver);
-    if crate::git::tag_exists(root_dir, v_tag.as_str()).unwrap_or(false) {
-        return (v_tag, v_prefix);
+    // Nothing is declared, so the default prefix a project without a config gets is the candidate
+    // to probe first, followed by a bare tag, and finally the marker the heading itself carried.
+    let default_prefix = TagPrefix::new(crate::config::Git::default().tag_prefix);
+    let default_tag = default_prefix.format_tag(&clean_ver);
+    if crate::git::tag_exists(root_dir, default_tag.as_str()).unwrap_or(false) {
+        return (default_tag, default_prefix);
     }
 
-    let empty_prefix = crate::git::TagPrefix::default();
+    let empty_prefix = TagPrefix::default();
     let bare_tag = empty_prefix.format_tag(&clean_ver);
     if crate::git::tag_exists(root_dir, bare_tag.as_str()).unwrap_or(false) {
         return (bare_tag, empty_prefix);
     }
 
-    if let Some(raw) = find_raw_heading_version(content, &clean_ver)
-        && raw.starts_with(['v', 'V'])
+    if let Some(raw) = find_raw_heading_version(content, &clean_ver, &empty_prefix)
+        && strip_one_version_marker(raw, &empty_prefix) != raw
     {
-        return (v_tag, v_prefix);
+        return (default_tag, default_prefix);
     }
 
     (bare_tag, empty_prefix)

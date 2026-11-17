@@ -455,6 +455,10 @@ path = "CHANGELOG.md"
 
 #[test]
 fn changelog_latest_cli_json_export() {
+    assert!(
+        git_available(),
+        "git CLI is required for e2e tests but was not found in PATH"
+    );
     let guard = FixtureGuard::new("changelog-latest-json");
     let fixture = guard.fixture();
     let cutver_toml = r#"[version]
@@ -478,6 +482,10 @@ path = "CHANGELOG.md"
 - **cli**: add json support (#66)
 "#;
     fixture.write("CHANGELOG.md", changelog_content);
+
+    // `--json` fails closed when the commit range is unreadable, so the fixture is a real repo.
+    init_git_repo(fixture);
+    initial_commit(fixture);
 
     let output = Command::new(env!("CARGO_BIN_EXE_cutver"))
         .current_dir(&fixture.dir)
@@ -506,6 +514,10 @@ path = "CHANGELOG.md"
 
 #[test]
 fn changelog_show_cli_json_export() {
+    assert!(
+        git_available(),
+        "git CLI is required for e2e tests but was not found in PATH"
+    );
     let guard = FixtureGuard::new("changelog-show-json");
     let fixture = guard.fixture();
     let cutver_toml = r#"[version]
@@ -539,6 +551,23 @@ path = "CHANGELOG.md"
 - bug fix
 "#;
     fixture.write("CHANGELOG.md", changelog_content);
+
+    // `--json` fails closed when the commit range is unreadable: the range it reads is
+    // `v1.1.0..v1.2.0`, so both tags have to exist.
+    init_git_repo(fixture);
+    initial_commit(fixture);
+    run_git_ok(&fixture.dir, &["tag", "v1.1.0"]);
+    run_git_ok(
+        &fixture.dir,
+        &[
+            "commit",
+            "--allow-empty",
+            "-q",
+            "-m",
+            "feat(cli): add json support (#66)",
+        ],
+    );
+    run_git_ok(&fixture.dir, &["tag", "v1.2.0"]);
 
     let output = Command::new(env!("CARGO_BIN_EXE_cutver"))
         .current_dir(&fixture.dir)

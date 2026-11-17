@@ -113,6 +113,40 @@ impl From<String> for TagPrefix {
     }
 }
 
+/// Strips `prefix` from `text` when it carries it, then a single legacy `v`/`V` marker.
+///
+/// This is the tag-ref form of the strip: a tag built as `release-v1.2.0` names `1.2.0`. A changelog
+/// heading names a version rather than a ref and must strip exactly one marker, so it uses
+/// [`strip_one_version_marker`] instead.
+pub fn strip_version_prefix<'a>(text: &'a str, prefix: &TagPrefix) -> &'a str {
+    let mut norm = text;
+    if !prefix.is_empty()
+        && let Some(rest) = norm.strip_prefix(prefix.as_str())
+    {
+        norm = rest;
+    }
+    if let Some(rest) = norm.strip_prefix(['v', 'V']) {
+        norm = rest;
+    }
+    norm
+}
+
+/// Strips exactly one marker from `text`: the configured `prefix` when it carries it, otherwise a
+/// single legacy `v`/`V`.
+///
+/// Both forms live here so one module decides how a tag or a heading is stripped. The heading form
+/// never strips twice: on the default `v` prefix a doubled marker keeps the version it always had
+/// (`## vv1.2.0` stays `v1.2.0`, so it is not a release version), and a `## [v1.2.0]` heading is
+/// still read by a project whose `[git] tag_prefix` is something else.
+pub fn strip_one_version_marker<'a>(text: &'a str, prefix: &TagPrefix) -> &'a str {
+    if !prefix.is_empty()
+        && let Some(rest) = text.strip_prefix(prefix.as_str())
+    {
+        return rest;
+    }
+    text.strip_prefix(['v', 'V']).unwrap_or(text)
+}
+
 /// TagName domain newtype wrapping a validated Git tag ref string.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct TagName(String);
@@ -137,16 +171,7 @@ impl TagName {
     }
 
     pub fn normalize_version<'a>(&'a self, prefix: &TagPrefix) -> &'a str {
-        let mut norm = self.0.as_str();
-        if !prefix.is_empty()
-            && let Some(rest) = norm.strip_prefix(prefix.as_str())
-        {
-            norm = rest;
-        }
-        if let Some(rest) = norm.strip_prefix(['v', 'V']) {
-            norm = rest;
-        }
-        norm
+        strip_version_prefix(&self.0, prefix)
     }
 
     pub fn is_floating_major(&self, prefix: &TagPrefix) -> bool {

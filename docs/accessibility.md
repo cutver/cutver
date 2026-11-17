@@ -2,8 +2,8 @@
 
 The 57-second Cutver film ships in three versions. All of them are 1920x1080, 30 fps, 57.0 s,
 H.264 video with AAC audio, and all three share the same picture, byte for byte. The original is
-embedded in the [README](../README.md); the two described tracks sit behind a disclosure there and
-are linked below.
+embedded in the [project overview](../README.md); the two described tracks sit behind a
+disclosure there and are linked below.
 
 | Version | What it is | Open |
 | --- | --- | --- |

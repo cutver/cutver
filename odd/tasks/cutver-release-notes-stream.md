@@ -23,6 +23,11 @@ S4. The path form is unchanged. `cutver publish --notes-file RELEASE_NOTES.md` b
 did before this feature for a relative path, `./RELEASE_NOTES.md`, an absolute path and a symlink to
 an untracked file — the exemption still applies — and a tracked modified file still aborts.
 
+S5. The release workflow is a consumer of the stream, not of a path. The `publish` job downloads the
+`release-notes` artifact outside the workspace and pipes it into `cutver publish … --notes-file -`, so
+no step hands the clean-tree guard a notes path. A missing or empty artifact therefore fails the job
+with `release notes on stdin were empty` instead of publishing a release with an empty body.
+
 ## Tasks
 
 | ID | Spec | What | Route | Commit |
@@ -32,6 +37,7 @@ an untracked file — the exemption still applies — and a tracked modified fil
 | T3 | S3 | Reject an empty or whitespace-only stream before any write, with the exact stderr text. | inline | `7535096` |
 | T4 | S4 | Pin the path form: the four `#302` spelling tests and the tracked-file refusal stay green in the same run. | inline | `7535096` |
 | T5 | S1-S3 | Update `docs/reference/cli.md`, `docs/internals/pipeline.md` and the `publish` help text. | inline | `7535096` |
+| T6 | S5 | Stream the artifact into `cutver publish` from the `publish` job, and pin the stream in `tests/release_pipeline_contract.rs` instead of the notes path. | inline | `dd72345` |
 
 Verification for the slice (all green, one run): `cargo fmt --all --check`; `cargo clippy --all-targets --features plugins -- -D warnings`;
 `cargo test --workspace`; `cargo test --workspace --features plugins`. RED was observed first: the four new tests failed
@@ -59,6 +65,11 @@ and yields `Option<String>` notes, `None` when absent; `src/git/status.rs:27-70`
 exemption that this feature narrows for the streamed case.
 
 L5. Done in `7535096`. The public API did not change: `PublishRequest.notes_file` keeps its shape and `-`
-is interpreted at read time, so no consumer of the crate breaks. The `.github/workflows/release.yml` step
-that still renders into `RELEASE_NOTES.md` was deliberately left alone: switching CI to the stream is the
-next slice, not this one, because the released binary that cuts a release would not know the sentinel yet.
+is interpreted at read time, so no consumer of the crate breaks.
+
+L6. User, verbatim: «Sí, hazlo y encadena el siguiente slice» — so the workflow consumer ships in the same
+branch. It can: a release is cut by the CLI built from the released commit (#254), so the sentinel is
+available to the workflow that lands with it. The artifact stays as transport because it crosses jobs and
+`download-artifact` cannot pipe; only the last hop becomes a stream. The version job still renders the
+entry into `RELEASE_NOTES.md` and saves it as the artifact: that render is the single owner of the body,
+and the file never enters the checkout.

@@ -1,20 +1,18 @@
 ## {{ tag }} — {{ date }}
-{%- if breaking %}
+{%- for section in sections %}
+{%- if section.is_breaking %}
 
 > [!WARNING]
 > **Breaking changes**
-{%- for c in commits if c.is_breaking %}
+{%- for c in section.entries %}
 
 > - {{ c.line }}{% if c.breaking_description %}
 >   > **Migration**: {{ c.breaking_description }}{% endif %}
 {%- endfor %}
-{%- endif %}
-{%- for section, section_commits in commits | group_by_section %}
-{%- set visible = section_commits | rejectattr("is_breaking") %}
-{%- if visible %}
+{%- else %}
 
-### {{ section }}
-{%- for c in visible %}
+### {{ section.heading }}
+{%- for c in section.entries %}
 - {{ c.line }}
 {%- endfor %}
 {%- endif %}

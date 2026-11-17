@@ -64,7 +64,8 @@ pub enum Commands {
         #[arg(long, value_name = "SHA")]
         commit: Option<String>,
         /// Release notes for the `on_post_release` plugins. The clean-tree check exempts this
-        /// file: it is an input to the command, not a change in the tree
+        /// file: it is an input to the command, not a change in the tree. Pass `-` to read the
+        /// notes from standard input, which declares no input at all
         #[arg(long, value_name = "PATH")]
         notes_file: Option<PathBuf>,
         /// Validate and print the plan without creating a tag, pushing anything or running a command

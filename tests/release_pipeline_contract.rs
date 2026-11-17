@@ -283,10 +283,12 @@ fn the_tag_the_crate_and_the_draft_are_published_after_verification() {
     );
     assert!(
         publish.contains("path: ${{ runner.temp }}")
-            && publish.contains("--notes-file \"${{ runner.temp }}/RELEASE_NOTES.md\""),
-        "the notes must be downloaded outside the checkout and the same path handed to `cutver \
-         publish`: a notes file inside the tree passes the guard `--notes-file` now gets and then \
-         fails `cargo publish`, whose own clean-tree check knows nothing about that exemption"
+            && publish.contains("cat \"${{ runner.temp }}/RELEASE_NOTES.md\" | cutver publish")
+            && publish.contains("--notes-file -"),
+        "the notes must be downloaded outside the checkout and streamed into `cutver publish`: \
+         handing the guard a notes path makes it the one input it has to excuse, and `cargo publish` \
+         in `[publish].commands` runs its own clean-tree check that knows nothing about that \
+         exemption (#302, #306)"
     );
 }
 
@@ -317,7 +319,8 @@ fn the_closing_job_prepares_the_cli_it_runs() {
         built < on_path && on_path < restored && restored < notes && notes < closing,
         "the publish job must build the CLI, put it on PATH and restore the declared plugins before \
          `cutver publish` runs: every step in between shells out to whatever `cutver` resolves, and \
-         `cutver publish` needs RELEASE_NOTES.md from the `release-notes` artifact"
+         `cutver publish` needs RELEASE_NOTES.md from the `release-notes` artifact to stream as its \
+         notes"
     );
 }
 
@@ -419,7 +422,7 @@ fn publish_steps_pass_gh_token_and_tag() {
 }
 
 /// The version job renders the entry once and saves it as an artifact. The publish job downloads it
-/// and hands the path to `cutver publish`, whose `on_post_release` plugin creates the draft from it;
+/// and streams it into `cutver publish`, whose `on_post_release` plugin creates the draft from it;
 /// the promotion that follows only flips the draft state. Repeating the body there gave the release
 /// a second owner — that is how `title_template` once came out dead.
 #[test]

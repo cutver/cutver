@@ -6,6 +6,7 @@
 //! the built artifacts were smoked, which is why the sequence lives here instead of inline in the
 //! pipeline: one authority, two entry points.
 
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -86,9 +87,19 @@ pub struct PublishRequest {
     pub tag: String,
     /// The release commit the caller verified; when given it must be HEAD.
     pub commit: Option<String>,
-    /// Release notes for the `on_post_release` payload.
+    /// Release notes for the `on_post_release` payload. The value `-` means standard input.
     pub notes_file: Option<PathBuf>,
     pub dry_run: bool,
+}
+
+/// `--notes-file -` names standard input, not a file called `-`: the notes never have to exist in the
+/// worktree the clean-tree guard is checking, which is what makes a transient render impossible to
+/// mistake for a change (#306).
+pub const NOTES_STDIN: &str = "-";
+
+/// Whether this invocation carries its notes over a stream instead of naming a file.
+fn notes_are_streamed(request: &PublishRequest) -> bool {
+    request.notes_file.as_deref() == Some(Path::new(NOTES_STDIN))
 }
 
 /// What the closing phase did, for `cutver publish` to print.
@@ -114,9 +125,14 @@ pub fn run_publish(config: &Config, request: &PublishRequest) -> Result<PublishS
     // and publish another (#259 findings R1-002 and R3-001).
     // The notes file is the only input this invocation declares, and the release workflow renders it
     // inside the checkout, so the guard is told about it instead of refusing the command's own
-    // argument (#302). Nothing else is excused: another untracked file, or any tracked change, still
-    // aborts.
-    let declared_inputs: Vec<PathBuf> = request.notes_file.iter().cloned().collect();
+    // argument (#302). A streamed invocation declares nothing: it reads stdin, so there is no path to
+    // excuse and every untracked entry still aborts (#306). Nothing else is excused: another
+    // untracked file, or any tracked change, still aborts.
+    let declared_inputs: Vec<PathBuf> = if notes_are_streamed(request) {
+        Vec::new()
+    } else {
+        request.notes_file.iter().cloned().collect()
+    };
     git::status::require_clean_tree_except(&config.root_dir, config.git.require_clean_tree, &declared_inputs)?;
     let plugin_manager = Arc::new(PluginManager::from_config(&config.plugins)?);
     let (version, head) = validate(config, request, &plugin_manager)?;
@@ -189,7 +205,8 @@ fn publish_prepared(
     })
 }
 
-/// The interpolation context `[publish].commands` render against, plus the notes file when given.
+/// The interpolation context `[publish].commands` render against, plus the notes when this
+/// invocation carried any.
 fn publish_context(
     config: &Config,
     request: &PublishRequest,
@@ -208,8 +225,30 @@ fn publish_context(
         BumpLevel::Auto,
         false,
     );
-    let notes = request.notes_file.as_ref().map(read).transpose()?;
+    let notes = read_notes(request)?;
     Ok((context, notes))
+}
+
+/// The release notes this invocation carries: the declared file, or the stream when the path is `-`.
+///
+/// A stream that carries nothing is an error rather than `Some("")`: the closing phase publishes a
+/// release nobody can correct afterwards, so empty notes are a refusal, not a default (#306).
+fn read_notes(request: &PublishRequest) -> Result<Option<String>, Error> {
+    match request.notes_file.as_deref() {
+        None => Ok(None),
+        Some(_) if notes_are_streamed(request) => {
+            let mut notes = String::new();
+            io::stdin().read_to_string(&mut notes).map_err(|source| Error::Read {
+                path: NOTES_STDIN.to_string(),
+                source,
+            })?;
+            if notes.trim().is_empty() {
+                return Err(Error::EmptyNotesStream);
+            }
+            Ok(Some(notes))
+        }
+        Some(path) => Ok(Some(read(path)?)),
+    }
 }
 
 /// The version the previous tag names, so the closing phase renders `previous_version` the way the

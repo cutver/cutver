@@ -82,9 +82,9 @@ Arbitrary untracked files and unstaged edits outside declared manifests and the 
 2. `git push origin refs/heads/<branch>`, only when `[publish] push = true`. It is the only push the prepare phase makes, and it is what makes the release commit reachable by the jobs that build and smoke it.
 3. Stop. The summary tree marks the tag `[DEFERRED]` and names the `cutver publish --tag <TAG>` command that finishes the release.
 
-**Publish** — `cutver publish --tag <TAG> [--commit <SHA>] [--notes-file <PATH>] [--dry-run]`, after the caller verified the artifacts:
+**Publish** — `cutver publish --tag <TAG> [--commit <SHA>] [--notes-file <PATH|->] [--dry-run]`, after the caller verified the artifacts:
 
-1. Validate, before anything is written or pushed: the working tree is clean (`require_clean_tree`, with the file named by `--notes-file` exempt because it is the command's input rather than a change in the tree), the tag is a valid ref, it equals the version the manifests declare at `HEAD`, `--commit` (when given) is `HEAD`, and no release tag exists locally or remotely.
+1. Validate, before anything is written or pushed: the working tree is clean (`require_clean_tree`, with the file named by `--notes-file` exempt because it is the command's input rather than a change in the tree — `--notes-file -` reads the notes from standard input instead, which exempts nothing because nothing has to exist in the tree, and an empty stream is refused here), the tag is a valid ref, it equals the version the manifests declare at `HEAD`, `--commit` (when given) is `HEAD`, and no release tag exists locally or remotely.
 2. Create the annotated tag on `HEAD`.
 3. `git push origin refs/tags/<release tag>`, only when `[publish] push = true`.
 4. Move the floating major tag onto the release commit when `[git] floating_major_tag = true`, and force-push it when `[publish] push` is enabled too.

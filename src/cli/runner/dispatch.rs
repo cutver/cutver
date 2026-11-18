@@ -10,6 +10,7 @@ use super::changelog::run_changelog;
 use super::doctor::run_doctor;
 use super::external::run_external;
 use super::open::run_open;
+use super::plan::run_plan;
 use super::plugin::run_plugin;
 use super::publish::run_publish;
 
@@ -84,6 +85,18 @@ pub fn run(args: Cli) -> i32 {
                 defer_publish,
                 BumpOutput { json, report },
             )
+        }
+        Commands::Plan {
+            level,
+            json,
+            skip_preflight,
+            first_release,
+        } => {
+            let config = match load_config(args.config) {
+                Ok(c) => c,
+                Err(code) => return code,
+            };
+            run_plan(&config, level, &skip_preflight, first_release, json)
         }
         Commands::Publish {
             tag,

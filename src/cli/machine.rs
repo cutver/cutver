@@ -33,6 +33,7 @@ pub fn is_machine() -> bool {
 pub fn wants_machine(command: &Commands) -> bool {
     match command {
         Commands::Bump { json, report, .. } => *json || report.is_some(),
+        Commands::Plan { json, .. } => *json,
         Commands::Doctor { json, .. } => *json,
         Commands::Changelog { command } => matches!(
             command,
@@ -70,6 +71,7 @@ pub enum FailureCode {
     External,
     Init,
     Open,
+    Plan,
     Plugin,
     Publish,
     Report,
@@ -87,6 +89,7 @@ impl FailureCode {
             Self::External => "external",
             Self::Init => "init",
             Self::Open => "open",
+            Self::Plan => "plan",
             Self::Plugin => "plugin",
             Self::Publish => "publish",
             Self::Report => "report",
@@ -171,6 +174,15 @@ mod tests {
         }
     }
 
+    fn plan(json: bool) -> Commands {
+        Commands::Plan {
+            level: BumpLevel::Auto,
+            json,
+            skip_preflight: Vec::new(),
+            first_release: false,
+        }
+    }
+
     fn plugin(command: PluginCommands) -> Commands {
         Commands::Plugin { command }
     }
@@ -182,6 +194,17 @@ mod tests {
         assert_eq!(
             json,
             r#"{"schemaVersion":1,"error":{"code":"config","exitCode":1,"message":"no cutver.toml found"}}"#
+        );
+    }
+
+    #[test]
+    fn the_plan_surface_has_its_own_failure_class() {
+        let json =
+            render_failure(FailureCode::Plan, "could not render the release entry").expect("the envelope renders");
+
+        assert_eq!(
+            json,
+            r#"{"schemaVersion":1,"error":{"code":"plan","exitCode":1,"message":"could not render the release entry"}}"#
         );
     }
 
@@ -209,6 +232,7 @@ mod tests {
             (FailureCode::External, "external"),
             (FailureCode::Init, "init"),
             (FailureCode::Open, "open"),
+            (FailureCode::Plan, "plan"),
             (FailureCode::Plugin, "plugin"),
             (FailureCode::Publish, "publish"),
             (FailureCode::Report, "report"),
@@ -230,6 +254,7 @@ mod tests {
             FailureCode::External,
             FailureCode::Init,
             FailureCode::Open,
+            FailureCode::Plan,
             FailureCode::Plugin,
             FailureCode::Publish,
             FailureCode::Report,
@@ -242,6 +267,7 @@ mod tests {
     fn a_command_that_asks_for_machine_output_selects_the_envelope() {
         assert!(wants_machine(&bump(true, None)), "`bump --json`");
         assert!(wants_machine(&bump(false, Some("release.json"))), "`bump --report`");
+        assert!(wants_machine(&plan(true)), "`plan --json`");
         assert!(wants_machine(&Commands::Doctor {
             check_changelog: false,
             json: true
@@ -279,6 +305,7 @@ mod tests {
     #[test]
     fn a_command_that_asks_for_human_output_keeps_the_human_line() {
         assert!(!wants_machine(&bump(false, None)), "`bump`");
+        assert!(!wants_machine(&plan(false)), "`plan`");
         assert!(!wants_machine(&Commands::Doctor {
             check_changelog: false,
             json: false

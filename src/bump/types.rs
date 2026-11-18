@@ -213,6 +213,14 @@ pub enum Error {
         plugin: crate::plugin::PluginName,
         reason: String,
     },
+    #[error(
+        "cutver plan cannot compute this release: {what}\n  Where: `cutver plan`, before it reports anything; the command dispatches no plugin code at all, because its only promise is that it changes nothing. Nothing was written.\n  Fix: {fix}"
+    )]
+    PlanNeedsPlugin { what: String, fix: String },
+    #[error(
+        "cutver plan cannot report the notes for '{tag}': {reason}\n  Where: rendering the entry a real bump would prepend to '{path}', before anything is written (`cutver plan` writes nothing, and it fails closed instead of printing `notes: null`)\n  Fix: give the project a renderable changelog — declare `[changelog] path` in cutver.toml, make that file readable, fix the template it names — and remove any existing '## [{tag}]' entry, which makes the prepend a no-op. Then re-run `cutver plan`."
+    )]
+    PlanNotes { path: String, tag: String, reason: String },
 }
 
 #[derive(Debug)]

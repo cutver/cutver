@@ -144,6 +144,8 @@ The six runtime rows carry `Where:` and `Fix:` lines naming where the failure ha
   what `timeout_seconds` does and does not kill: [The Process Runtime](plugin-process-runtime.md).
 - **The `[plugins.<name>.config]` table**, which the host parses and never reads: it is a reserved
   table for the plugin itself, described in the [configuration reference](../reference/configuration.md).
+- **The reference plugin, end to end.** The declaration this repository releases with, the
+  draft-then-promote workflow and its failure modes: [the reference plugin](plugin-github-publish.md).
 - **Why the engine looks like this:** [RFC 0001](../rfcs/0001-wasm-plugin-architecture.md).
 - **Not documented anywhere yet:** a plugin entry's `command` is only checked for being non-empty at
   load time, so a missing executable is reported at the first call; and no grant on the process

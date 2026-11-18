@@ -2,15 +2,10 @@
 
 Comprehensive command-line interface documentation for `cutver`.
 
-All commands support the `--help` flag for quick reference:
+Every command supports `--help` for quick reference; each section below lists the same flags.
+
 ```bash
 cutver --help
-cutver bump --help
-cutver publish --help
-cutver doctor --help
-cutver init --help
-cutver changelog --help
-cutver plugin --help
 ```
 
 ---
@@ -48,7 +43,7 @@ cutver init [OPTIONS]
 
 ### `cutver bump`
 
-Calculates SemVer updates, runs preflights, applies atomic manifest changes, updates the changelog, commits, and tags. Add `--defer-publish` to stop after the branch push and close the release later with `cutver publish`.
+Calculates SemVer updates, runs preflights, applies atomic manifest changes, updates the changelog, commits, and tags. Add `--defer-publish` to stop after the branch push and close the release later with `cutver publish` ([Release Pipeline Order and Atomic Guarantees](../internals/pipeline.md)).
 
 ```bash
 cutver bump [LEVEL] [OPTIONS]
@@ -80,8 +75,6 @@ cutver bump auto --skip-preflight lint
 cutver bump minor --defer-publish
 ```
 
-A deferred run marks the tag `[DEFERRED]` in the summary tree and names the `cutver publish --tag <TAG>` command that finishes the release.
-
 #### Machine-readable result
 
 `--json` and `--report` are independent: either, both, or neither. Both describe a real and a `--dry-run` run alike, and a failed run writes no report. The object holds `released`, `deferred`, `version`, `tag`, `commit`, `floating_tag`, `publish_push_command` and `publish_commands`; field order is part of the contract.
@@ -98,7 +91,7 @@ A deferred run marks the tag `[DEFERRED]` in the summary tree and names the `cut
 
 ### `cutver publish`
 
-Closes a release that `bump --defer-publish` prepared. Every input is validated first, so a mistyped tag, a stale commit or a dirty working tree fails with the workspace untouched; only then does it create the annotated tag, push it, move the floating major tag, run `[publish].commands` and dispatch the `on_post_release` plugins.
+Closes a release that `bump --defer-publish` prepared: it creates the annotated tag, pushes it, moves the floating major tag, runs `[publish].commands` and dispatches the `on_post_release` plugins. Validation fails closed before any of that, naming the command that resolves the problem and stating that nothing was written; an existing-tag error names the commit it points at (`src/bump/types.rs:85-88`). Which inputs are validated, and why the split exists, live in [Release Pipeline Order and Atomic Guarantees](../internals/pipeline.md).
 
 ```bash
 cutver publish --tag <TAG> [OPTIONS]
@@ -106,23 +99,16 @@ cutver publish --tag <TAG> [OPTIONS]
 
 | Flag | Long Option | Description |
 | :--- | :--- | :--- |
-| | `--tag <TAG>` | Release tag to publish. It must be a valid git ref, and it must equal the version the manifests declare at `HEAD`, so the tag is derived from the release commit instead of trusted from the command line. The declared version is read from the working tree, so `require_clean_tree` applies here too. |
+| | `--tag <TAG>` | Release tag to publish. It must be a valid git ref, and it must equal the version the manifests declare at `HEAD`, so the tag is derived from the release commit instead of trusted from the command line. |
 | | `--commit <SHA>` | The release commit the caller verified. When given it must be `HEAD`; omit it to publish whatever `HEAD` is. |
-| | `--notes-file <PATH>` | Release notes for the `on_post_release` payload, which is what renders the draft release. The file is an input to the command, not a change in the tree: the clean-tree check exempts exactly this path, compared canonically, and nothing else. Pass `-` to read the notes from standard input instead: that declares no input at all, so nothing transient has to exist in the worktree. An empty stream — or one carrying only whitespace — is refused before the tag, the pushes and the commands, because a release published with no notes cannot be corrected by re-running. |
+| | `--notes-file <PATH>` | Release notes for the `on_post_release` payload, which is what renders the draft release. The file is the command's input rather than a change in the tree; `-` reads the notes from standard input instead. An empty stream — or one carrying only whitespace — is refused before the tag, the pushes and the commands, because a release published with no notes cannot be corrected by re-running. |
 | | `--dry-run` | Validates and prints the plan without creating a tag, pushing anything or running a command. |
 | `-c <PATH>` | `--config <PATH>` | Explicit path to `cutver.toml`. |
 
-Validation fails closed before anything is written or pushed: a tag name `git` would reject, a tag the manifests at `HEAD` do not declare, a `--commit` that is not `HEAD`, or a release tag that already exists locally or remotely. The mismatch errors name the command that resolves them and state that nothing was written; an existing tag error names the commit it points at.
-
 ```bash
 cutver bump minor --defer-publish --report .cutver-release.json
-# build and smoke the artifacts from the reported commit
 cutver publish --tag v1.3.0 --commit "$(git rev-parse HEAD)" --notes-file RELEASE_NOTES.md
-# or hand the notes over a stream, leaving nothing behind in the worktree
-cutver changelog latest --include-header | cutver publish --tag v1.3.0 --commit "$(git rev-parse HEAD)" --notes-file -
 ```
-
-`[publish] push` decides the pushes, not the rest: with `push = false` the closing phase still creates the local tag and runs the commands. `[git] floating_major_tag` decides whether the floating major tag is moved. Without `--defer-publish` the same closing steps run inside the bump process, so the split is a choice at cut time, not a new default. The order both phases run in, and the invariant behind the split, live in [Release Pipeline Order and Atomic Guarantees](../internals/pipeline.md).
 
 ---
 

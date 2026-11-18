@@ -9,6 +9,7 @@ mod common;
 
 use std::path::Path;
 use std::process::Command;
+use std::time::{Duration, Instant};
 
 use common::*;
 use cutver::bump::{PublishRequest, run as bump_run, run_deferred_publish, run_publish};
@@ -821,5 +822,398 @@ fn publish_still_refuses_a_stray_untracked_file_when_the_notes_come_from_stdin()
     assert!(
         stderr.contains("uncommitted changes") && stderr.contains("stray.txt"),
         "the refusal must name the change it found; stderr:\n{stderr}"
+    );
+}
+
+// ------------------------------------------------------------------------------------------------
+// `[hooks]` are bounded (audit F-16)
+//
+// `pre_bump` and `post_bump` used to be spawned with `.status()`, so a hook that never exits held
+// the release open forever and left its process tree alive. They now run through the same bounded
+// spawn as `[preflight]` steps and `[publish].commands`, with the limit taken from
+// `[hooks] default_timeout`.
+// ------------------------------------------------------------------------------------------------
+
+/// A hook command that outlives every timeout configured below, spelled with a program both
+/// supported hosts already ship: no test here may depend on a binary the CI image happens to lack.
+fn blocking_hook() -> &'static str {
+    if cfg!(windows) {
+        "ping -n 11 127.0.0.1"
+    } else {
+        "sleep 10"
+    }
+}
+
+/// The same, with a descendant of the shell writing a marker a few seconds in: if only the direct
+/// child were killed, the marker appears and this file fails.
+///
+/// The descendant lives in a script file rather than in the command string. On Windows
+/// `Command::arg` escapes an embedded `"` as `\"`, which `cmd` does not understand, so
+/// `start /b cmd /c "…"` never started anything and the tree-kill test passed with nothing to kill;
+/// a batch file hands the quoting to `cmd`'s own parser.
+fn blocking_hook_with_descendant() -> &'static str {
+    if cfg!(windows) {
+        "descendant-hook.cmd"
+    } else {
+        "sh descendant-hook.sh"
+    }
+}
+
+/// Writes and commits the script `blocking_hook_with_descendant()` runs. The fixture requires a
+/// clean tree, and the script belongs to the fixture, not to the release.
+fn install_descendant_hook(fixture: &Fixture) {
+    if cfg!(windows) {
+        fixture.write(
+            "descendant-hook.cmd",
+            "@echo off\r\nstart /b \"\" cmd /c \"ping -n 5 127.0.0.1 >nul & echo late > marker.txt\"\r\nping -n 11 127.0.0.1\r\n",
+        );
+    } else {
+        fixture.write("descendant-hook.sh", "(sleep 4; echo late > marker.txt) & sleep 10\n");
+    }
+    run_git_ok(&fixture.dir, &["add", "-A"]);
+    run_git_ok(
+        &fixture.dir,
+        &["commit", "-q", "-m", "chore: add the descendant hook script"],
+    );
+}
+
+/// A hook that writes a file of its own and then outlives the timeout. What the failure owns is
+/// cutver's own writes; the hook's own file is not cutver's to delete.
+fn hook_that_writes_and_blocks() -> &'static str {
+    if cfg!(windows) {
+        "echo partial> stray.txt & ping -n 11 127.0.0.1"
+    } else {
+        "echo partial > stray.txt; sleep 10"
+    }
+}
+
+/// The deferred-publish fixture with a `[hooks]` table appended, so a test configures only the hook
+/// it is about.
+fn hook_toml(hooks: &str) -> String {
+    format!("{TOML}\n\n[hooks]\n{hooks}\n")
+}
+
+/// S2: the descendant helper must really spawn a descendant; without this,
+/// `a_hook_timeout_kills_the_whole_process_tree` passes on Windows with nothing to kill.
+#[test]
+fn the_descendant_helper_really_spawns_a_descendant() {
+    let (guard, _remote, cfg) = prepared_repo_with(
+        "hook-descendant-runs",
+        &hook_toml(&format!("pre_bump = '{}'", blocking_hook_with_descendant())),
+    );
+    let fixture = guard.fixture();
+    install_descendant_hook(fixture);
+
+    bump_run(&cfg, Bump::Minor, false, &[]).expect("a hook with no timeout finishes on its own");
+
+    let marker = std::fs::read_to_string(fixture.dir.join("marker.txt")).ok();
+    assert!(
+        marker.is_some(),
+        "the descendant helper must spawn a process that writes marker.txt; got: {marker:?}"
+    );
+}
+
+/// S4: without `[hooks] default_timeout` a hook is never killed (unbounded default).
+#[test]
+fn a_hook_is_unbounded_without_the_timeout_key() {
+    let slow = if cfg!(windows) {
+        "ping -n 3 127.0.0.1"
+    } else {
+        "sleep 2"
+    };
+    let (guard, _remote, cfg) =
+        prepared_repo_with("hook-unbounded-default", &hook_toml(&format!("pre_bump = '{slow}'")));
+    let fixture = guard.fixture();
+    let start = Instant::now();
+
+    bump_run(&cfg, Bump::Minor, false, &[]).expect("no [hooks] default_timeout means no bound");
+
+    assert!(
+        start.elapsed() >= Duration::from_secs(2),
+        "the hook must be allowed to finish: {:?}",
+        start.elapsed()
+    );
+    assert!(fixture.read("package.json").contains("\"version\": \"1.3.0\""));
+}
+
+/// S1/S4: a `pre_bump` that outlives `[hooks] default_timeout` is killed and the release fails with
+/// an error naming the hook, its command and the limit — in seconds, the unit the sibling tables use.
+#[test]
+fn a_pre_bump_hook_that_outlives_its_timeout_is_killed_and_named() {
+    let (guard, _remote, cfg) = prepared_repo_with(
+        "hook-timeout-pre-bump",
+        &hook_toml(&format!("pre_bump = '{}'\ndefault_timeout = 1", blocking_hook())),
+    );
+    let fixture = guard.fixture();
+    let before = rev(&fixture.dir, "HEAD");
+    let start = Instant::now();
+
+    let err = bump_run(&cfg, Bump::Minor, false, &[])
+        .expect_err("a pre_bump hook that outlives its timeout must fail the release");
+
+    let elapsed = start.elapsed();
+    assert!(
+        elapsed < Duration::from_secs(9),
+        "the release must stop at the timeout instead of waiting for the hook: {elapsed:?}"
+    );
+    assert!(
+        elapsed >= Duration::from_secs(1),
+        "the hook must be given its full second: {elapsed:?}"
+    );
+    match &err {
+        cutver::bump::Error::PreBumpHookTimeout {
+            command,
+            timeout,
+            elapsed_ms,
+        } => {
+            assert_eq!(
+                command.as_str(),
+                blocking_hook(),
+                "the failure must name the command it killed"
+            );
+            assert_eq!(*timeout, 1, "the limit is `[hooks] default_timeout`, in seconds");
+            assert!(
+                *elapsed_ms >= 1000,
+                "the failure must report how long the hook really ran"
+            );
+        }
+        other => panic!("expected a pre_bump timeout, got: {other:?}"),
+    }
+    let text = err.to_string();
+    assert!(
+        text.contains("pre_bump hook"),
+        "the failure must name the hook it killed: {text}"
+    );
+    assert!(text.contains("(limit 1s)"), "the failure must name the limit: {text}");
+    assert!(
+        text.contains("Where:") && text.contains("Fix:"),
+        "the timeout must say where it happened and what to do: {text}"
+    );
+    assert_eq!(rev(&fixture.dir, "HEAD"), before, "no commit may be created");
+    assert!(
+        fixture.read("package.json").contains("\"version\": \"1.2.3\""),
+        "pre_bump precedes every write"
+    );
+    assert!(!tag_exists(fixture, "v1.3.0"), "no tag may be created");
+    assert_eq!(porcelain(fixture), "", "the killed run must leave no change behind");
+}
+
+/// S2: the kill reaches the whole process tree, not just the shell that was spawned.
+#[test]
+fn a_hook_timeout_kills_the_whole_process_tree() {
+    let (guard, _remote, cfg) = prepared_repo_with(
+        "hook-timeout-process-tree",
+        &hook_toml(&format!(
+            "pre_bump = '{}'\ndefault_timeout = 1",
+            blocking_hook_with_descendant()
+        )),
+    );
+    let fixture = guard.fixture();
+    install_descendant_hook(fixture);
+
+    let err =
+        bump_run(&cfg, Bump::Minor, false, &[]).expect_err("the hook outlives its timeout, so the release must fail");
+
+    assert!(err.to_string().contains("timed out"), "expected a timeout, got: {err}");
+    // The descendant was mid-wait when the timeout fired. Waiting past its own deadline is the
+    // point: a killed tree writes nothing, while a surviving descendant writes the marker.
+    std::thread::sleep(Duration::from_secs(7));
+    assert!(
+        !fixture.dir.join("marker.txt").exists(),
+        "a descendant of the killed hook must not survive the timeout: {:?}",
+        std::fs::read_to_string(fixture.dir.join("marker.txt")).ok()
+    );
+}
+
+/// S1/S5: a `post_bump` timeout names what already happened. `post_bump` runs after the manifests
+/// and the changelog were written and before the release commit, so the error has to state that no
+/// commit exists and that the rollback restores the files — a release must never look successful
+/// when the last step was killed.
+#[test]
+fn a_post_bump_hook_that_outlives_its_timeout_reports_what_already_happened() {
+    let (guard, _remote, cfg) = prepared_repo_with(
+        "hook-timeout-post-bump",
+        &hook_toml(&format!(
+            "post_bump = '{}'\ndefault_timeout = 1",
+            hook_that_writes_and_blocks()
+        )),
+    );
+    let fixture = guard.fixture();
+    let before = rev(&fixture.dir, "HEAD");
+
+    let err = bump_run(&cfg, Bump::Minor, false, &[])
+        .expect_err("a post_bump hook that outlives its timeout must fail the release");
+
+    match &err {
+        cutver::bump::Error::PostBumpHookTimeout { command, timeout, .. } => {
+            assert_eq!(
+                command.as_str(),
+                hook_that_writes_and_blocks(),
+                "the failure must name the command it killed"
+            );
+            assert_eq!(*timeout, 1, "the limit is `[hooks] default_timeout`, in seconds");
+        }
+        other => panic!("expected a post_bump timeout, got: {other:?}"),
+    }
+    let text = err.to_string();
+    assert!(
+        text.contains("post_bump hook"),
+        "the failure must name the hook it killed: {text}"
+    );
+    assert!(text.contains("(limit 1s)"), "the failure must name the limit: {text}");
+    assert!(
+        text.contains("no release commit was created"),
+        "the failure must state that no commit exists: {text}"
+    );
+    assert!(
+        text.contains("Where:") && text.contains("Fix:"),
+        "the timeout must say where it happened and what to do: {text}"
+    );
+    assert_eq!(rev(&fixture.dir, "HEAD"), before, "no commit may be created");
+    assert!(
+        fixture.read("package.json").contains("\"version\": \"1.2.3\"")
+            && fixture.read("Cargo.toml").contains("version = \"1.2.3\""),
+        "the rollback must restore the files cutver wrote"
+    );
+    // The hook's own file is not cutver's to remove, and the failure says so: only the files cutver
+    // wrote are rolled back.
+    assert_eq!(
+        fixture.read("stray.txt").trim(),
+        "partial",
+        "a file the hook created before it hung must be left untouched"
+    );
+    assert_eq!(porcelain(fixture), "?? stray.txt", "no cutver write may stay applied");
+    assert!(!tag_exists(fixture, "v1.3.0"), "no tag may be created");
+}
+
+/// S3: a hook that exits non-zero keeps its error and its exit code — only the never-exiting case
+/// gains a failure.
+#[test]
+fn a_pre_bump_hook_that_exits_non_zero_keeps_its_failure() {
+    let (guard, _remote, cfg) = prepared_repo_with(
+        "hook-exit-non-zero-pre-bump",
+        &hook_toml("pre_bump = 'exit 3'\ndefault_timeout = 30"),
+    );
+    let fixture = guard.fixture();
+    let before = rev(&fixture.dir, "HEAD");
+
+    let err = bump_run(&cfg, Bump::Minor, false, &[]).expect_err("a failing pre_bump must abort the release");
+
+    match &err {
+        cutver::bump::Error::PreBumpHookFailed { command, status } => {
+            assert_eq!(command, "exit 3");
+            assert_eq!(status.code(), Some(3), "the hook's own exit code must survive");
+        }
+        other => panic!("expected a pre_bump failure, got: {other:?}"),
+    }
+    assert_eq!(rev(&fixture.dir, "HEAD"), before, "no commit may be created");
+    assert!(
+        fixture.read("package.json").contains("\"version\": \"1.2.3\""),
+        "pre_bump precedes every write"
+    );
+}
+
+/// S3: the same for a `post_bump`, whose writes the transaction rolls back.
+#[test]
+fn a_post_bump_hook_that_exits_non_zero_keeps_its_failure_and_rolls_back() {
+    let (guard, _remote, cfg) = prepared_repo_with(
+        "hook-exit-non-zero-post-bump",
+        &hook_toml("post_bump = 'exit 3'\ndefault_timeout = 30"),
+    );
+    let fixture = guard.fixture();
+    let before = rev(&fixture.dir, "HEAD");
+
+    let err = bump_run(&cfg, Bump::Minor, false, &[]).expect_err("a failing post_bump must abort the release");
+
+    match &err {
+        cutver::bump::Error::PostBumpHookFailed { command, status } => {
+            assert_eq!(command, "exit 3");
+            assert_eq!(status.code(), Some(3), "the hook's own exit code must survive");
+        }
+        other => panic!("expected a post_bump failure, got: {other:?}"),
+    }
+    assert_eq!(rev(&fixture.dir, "HEAD"), before, "no commit may be created");
+    assert!(
+        fixture.read("package.json").contains("\"version\": \"1.2.3\"")
+            && fixture.read("Cargo.toml").contains("version = \"1.2.3\""),
+        "the rollback must restore every file the run wrote"
+    );
+    assert_eq!(porcelain(fixture), "", "the transaction must leave nothing applied");
+}
+
+/// S3/S4: a hook that finishes inside its timeout behaves exactly as it did before the bound
+/// existed — both hooks run, their rendered commands are reported, and the release completes.
+#[test]
+fn a_hook_that_finishes_inside_its_timeout_is_unchanged() {
+    let (guard, _remote, cfg) = prepared_repo_with(
+        "hook-inside-its-timeout",
+        &hook_toml("default_timeout = 30\npre_bump = 'echo pre > pre.txt'\npost_bump = 'echo post > post.txt'"),
+    );
+    let fixture = guard.fixture();
+    let before = rev(&fixture.dir, "HEAD");
+
+    let summary = bump_run(&cfg, Bump::Minor, false, &[]).expect("both hooks finish inside their timeout");
+
+    assert_eq!(summary.pre_bump.as_deref(), Some("echo pre > pre.txt"));
+    assert_eq!(summary.post_bump.as_deref(), Some("echo post > post.txt"));
+    assert_eq!(fixture.read("pre.txt").trim(), "pre", "pre_bump must still run");
+    assert_eq!(fixture.read("post.txt").trim(), "post", "post_bump must still run");
+    assert_ne!(rev(&fixture.dir, "HEAD"), before, "the release must still be committed");
+    assert!(
+        fixture.read("package.json").contains("\"version\": \"1.3.0\""),
+        "the bump must still be applied"
+    );
+    assert_eq!(rev(&fixture.dir, "v1.3.0^{commit}"), rev(&fixture.dir, "HEAD"));
+}
+
+/// The bounded spawn the hooks now share was `[publish].commands`'s own, so that path has to keep
+/// exactly what it had: a command that outlives `[publish] default_timeout` is killed and named.
+#[test]
+fn a_publish_command_that_outlives_its_timeout_keeps_its_failure() {
+    let toml = TOML.replace(
+        "commands = [\"echo published {version} > published.txt\"]",
+        &format!("commands = ['{}']\ndefault_timeout = 1", blocking_hook()),
+    );
+    let (guard, _remote, cfg) = prepared_repo_with("publish-command-timeout", &toml);
+    let fixture = guard.fixture();
+    let before = rev(&fixture.dir, "HEAD");
+
+    let err = bump_run(&cfg, Bump::Minor, false, &[])
+        .expect_err("a publish command that outlives its timeout must fail the release");
+
+    match &err {
+        cutver::bump::Error::PublishAfterCommit { commit, tag, source } => {
+            assert_eq!(tag, "v1.3.0");
+            assert_eq!(
+                commit,
+                &rev(&fixture.dir, "HEAD"),
+                "the failure must name the release commit"
+            );
+            match source.as_ref() {
+                cutver::bump::Error::PublishCommandTimeout { command, timeout, .. } => {
+                    assert_eq!(
+                        command.as_str(),
+                        blocking_hook(),
+                        "the failure must name the command it killed"
+                    );
+                    assert_eq!(*timeout, 1, "the limit is `[publish] default_timeout`, in seconds");
+                }
+                other => panic!("expected a publish command timeout, got: {other:?}"),
+            }
+        }
+        other => panic!("expected a publish command timeout after the commit, got: {other:?}"),
+    }
+    assert!(
+        err.to_string().contains("timed out"),
+        "the killed command must be reported as a timeout: {err}"
+    );
+    assert_ne!(
+        rev(&fixture.dir, "HEAD"),
+        before,
+        "publish commands run after the release commit, so it exists by then"
+    );
+    assert!(
+        !fixture.dir.join("published.txt").exists(),
+        "the killed command must not have produced its output"
     );
 }

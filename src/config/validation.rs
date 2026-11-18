@@ -79,6 +79,11 @@ pub(crate) fn validate(config: &Config) -> Result<(), ConfigError> {
             path: sink.path.to_string(),
         });
     }
+    // `[preflight]` rejects a zero timeout because it can never let a step run; the hook bound is
+    // new in this slice, so it must not ship with the same footgun.
+    if config.hooks.default_timeout == Some(0) {
+        return Err(ConfigError::HooksInvalidTimeout("default_timeout".into()));
+    }
     for m in &config.manifest {
         if let ManifestKind::Template {
             template: Some(template),
@@ -170,7 +175,7 @@ const GIT_KEYS: &[&str] = &[
     "require_branch",
     "floating_major_tag",
 ];
-const HOOKS_KEYS: &[&str] = &["pre_bump", "post_bump"];
+const HOOKS_KEYS: &[&str] = &["pre_bump", "post_bump", "default_timeout"];
 const PUBLISH_KEYS: &[&str] = &["push", "commands", "default_timeout"];
 const PLUGIN_KEYS: &[&str] = &[
     "runtime",

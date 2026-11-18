@@ -1,11 +1,9 @@
 use std::fs;
-use std::io;
 use std::path::Path;
-use std::process::Child;
-use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use crate::bump::Error;
+use crate::preflight::{Ended, run_supervised};
 
 pub fn read(path: impl AsRef<Path>) -> Result<String, Error> {
     let path = path.as_ref();
@@ -43,114 +41,24 @@ pub fn format_command(template: &str, context: &crate::changelog::InterpolationC
     crate::changelog::interpolate_string(template, context).map_err(Error::Changelog)
 }
 
-const POLL: Duration = Duration::from_millis(50);
-
+/// Runs one `[publish]` command through the shared bounded spawn, so a command that outlives
+/// `timeout_secs` is killed with its whole process tree instead of holding the release open.
 pub fn run_publish_command(command: &str, current_dir: &Path, timeout_secs: Option<u64>) -> Result<(), Error> {
     let timeout = timeout_secs.map(Duration::from_secs);
-    let start = Instant::now();
-    let mut child = spawn_command(command, current_dir).map_err(|e| Error::PublishCommandSpawn {
-        command: command.to_string(),
-        source: e,
-    })?;
-
-    loop {
-        match child.try_wait().map_err(|e| Error::PublishCommandSpawn {
+    match run_supervised(command, Some(current_dir), timeout) {
+        Ok(Ended::Exited(status)) if status.success() => Ok(()),
+        Ok(Ended::Exited(status)) => Err(Error::PublishCommandFailed {
             command: command.to_string(),
-            source: e,
-        })? {
-            Some(status) => {
-                if status.success() {
-                    return Ok(());
-                }
-                return Err(Error::PublishCommandFailed {
-                    command: command.to_string(),
-                    status,
-                });
-            }
-            None => {
-                if let Some(limit) = timeout {
-                    let elapsed = start.elapsed();
-                    if elapsed >= limit {
-                        kill_tree(&mut child);
-                        return Err(Error::PublishCommandTimeout {
-                            command: command.to_string(),
-                            timeout: limit.as_secs(),
-                            elapsed_ms: elapsed.as_millis(),
-                        });
-                    }
-                    thread::sleep(POLL.min(limit - elapsed));
-                } else {
-                    thread::sleep(POLL);
-                }
-            }
-        }
+            status,
+        }),
+        Ok(Ended::TimedOut { timeout, elapsed }) => Err(Error::PublishCommandTimeout {
+            command: command.to_string(),
+            timeout: timeout.as_secs(),
+            elapsed_ms: elapsed.as_millis(),
+        }),
+        Err(e) => Err(Error::PublishCommandSpawn {
+            command: command.to_string(),
+            source: e.into_io(),
+        }),
     }
-}
-
-pub fn spawn_command(command: &str, current_dir: &Path) -> Result<Child, io::Error> {
-    let (shell, flag) = shell();
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        unsafe {
-            std::process::Command::new(shell)
-                .arg(flag)
-                .arg(command)
-                .current_dir(current_dir)
-                .pre_exec(|| {
-                    let _ = setpgid(0, 0);
-                    Ok(())
-                })
-                .spawn()
-        }
-    }
-    #[cfg(not(unix))]
-    {
-        std::process::Command::new(shell)
-            .arg(flag)
-            .arg(command)
-            .current_dir(current_dir)
-            .spawn()
-    }
-}
-
-pub fn kill_tree(child: &mut Child) {
-    #[cfg(unix)]
-    unsafe {
-        let _ = killpg(child.id() as i32, SIGKILL);
-    }
-    #[cfg(windows)]
-    {
-        let pid = child.id().to_string();
-        let _ = std::process::Command::new("taskkill")
-            .args(["/F", "/T", "/PID", pid.as_str()])
-            .output();
-        let _ = child.kill();
-    }
-    #[cfg(not(any(unix, windows)))]
-    {
-        let _ = child.kill();
-    }
-    let _ = child.wait();
-}
-
-#[cfg(unix)]
-const SIGKILL: i32 = 9;
-#[cfg(unix)]
-unsafe extern "C" {
-    fn setpgid(pid: i32, pgid: i32) -> i32;
-    fn killpg(pgrp: i32, sig: i32) -> i32;
-}
-
-#[cfg(unix)]
-pub fn shell() -> (&'static str, &'static str) {
-    ("sh", "-c")
-}
-#[cfg(windows)]
-pub fn shell() -> (&'static str, &'static str) {
-    ("cmd", "/C")
-}
-#[cfg(not(any(unix, windows)))]
-pub fn shell() -> (&'static str, &'static str) {
-    ("sh", "-c")
 }

@@ -22,7 +22,7 @@ cutver plugin --help
 | Code | Meaning | Common Scenarios |
 | :---: | :--- | :--- |
 | `0` | **Success** | Release finished successfully, doctor checks passed, or notes emitted. |
-| `1` | **General Error** | Configuration parse error, missing file, preflight test failure, `cutver publish` validation failure, or git safety violation. |
+| `1` | **General Error** | Configuration parse error, missing file, preflight test failure, a hook or publish command that outlives its timeout, `cutver publish` validation failure, or git safety violation. |
 | `2` | **Drift Detected** | `cutver doctor` detected manifest version drift across packages or mismatch between tags and changelog. |
 
 ---

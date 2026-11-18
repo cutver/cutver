@@ -85,7 +85,7 @@ pub enum ReportError {
 }
 
 /// Renders the release result as compact JSON. Field order is part of the contract, so the shape is
-/// a struct rather than a map.
+/// a struct rather than a map; `src/cli/json.rs` owns the `schemaVersion` this object opens with.
 pub fn render_summary_json(summary: &Summary) -> Result<String, ReportError> {
     let version = summary.next.to_string();
     let fields = SummaryJson {
@@ -98,7 +98,8 @@ pub fn render_summary_json(summary: &Summary) -> Result<String, ReportError> {
         publish_push_command: summary.publish_push_command.as_deref(),
         publish_commands: &summary.publish_commands,
     };
-    serde_json::to_string(&fields).map_err(|source| ReportError::Serialize { source })
+    serde_json::to_string(&crate::cli::json::Versioned::new(&fields))
+        .map_err(|source| ReportError::Serialize { source })
 }
 
 /// Writes the same object `--json` prints to `path`: one line, one trailing newline, nothing else.

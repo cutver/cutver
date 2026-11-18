@@ -10,6 +10,12 @@ use crate::plugin::types::PluginName;
 
 const INFO_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// The machine form of `plugin info`: the entry's own keys behind the schema version every JSON
+/// surface opens with (see `src/cli/json.rs`).
+fn render_info_json(entry: &crate::plugin::registry::RegistryEntryJson<'_>) -> Result<String, serde_json::Error> {
+    serde_json::to_string_pretty(&crate::cli::json::Versioned::new(&entry))
+}
+
 /// Runs `cutver plugin info` in a plugin-enabled build.
 pub fn run_info(args: &PluginInfoArgs) -> i32 {
     let name = match PluginName::new(&args.name) {
@@ -43,10 +49,10 @@ pub fn run_info(args: &PluginInfoArgs) -> i32 {
 
     if args.json {
         let json_repr = crate::plugin::registry::RegistryEntryJson::from(&entry);
-        match serde_json::to_string_pretty(&json_repr) {
+        match render_info_json(&json_repr) {
             Ok(json_str) => println!("{json_str}"),
             Err(err) => {
-                eprintln!("Failed to format JSON: {err}");
+                print_error(format!("failed to serialize the plugin entry to JSON: {err}"));
                 return 1;
             }
         }
@@ -75,4 +81,39 @@ pub fn run_info(args: &PluginInfoArgs) -> i32 {
     }
 
     0
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::plugin::registry::{RegistryEntryJson, RegistryReleaseJson};
+
+    use super::*;
+
+    #[test]
+    fn the_entry_is_a_versioned_object_with_the_entry_keys_in_order() {
+        let entry = RegistryEntryJson {
+            name: "github-publish",
+            description: "Publish a GitHub release",
+            author: "cutver",
+            tier: "official",
+            repository: "https://github.com/cutver/plugins",
+            capabilities: vec!["on_post_release"],
+            releases: vec![RegistryReleaseJson {
+                version: "0.2.1".into(),
+                url: "https://example.invalid/github-publish-0.2.1.wasm",
+                sha256: "abc",
+            }],
+        };
+
+        let json = render_info_json(&entry).expect("the entry serializes");
+
+        assert!(
+            json.trim_start().starts_with("{\n  \"schemaVersion\": 1,"),
+            "the schema version is the first key: {json}"
+        );
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("the entry is valid JSON");
+        assert_eq!(parsed["schemaVersion"], 1, "{json}");
+        assert_eq!(parsed["name"], "github-publish", "{json}");
+        assert_eq!(parsed["releases"][0]["version"], "0.2.1", "{json}");
+    }
 }

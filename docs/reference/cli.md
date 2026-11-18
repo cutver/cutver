@@ -20,6 +20,9 @@ cutver --help
 | `1` | **General Error** | Configuration parse error, missing file, preflight test failure, a hook or publish command that outlives its timeout, `cutver publish` validation failure, or git safety violation. |
 | `2` | **Drift Detected** | `cutver doctor` detected manifest version drift across packages or mismatch between tags and changelog. |
 
+Every JSON surface reports the same outcome and opens with `schemaVersion`; see the
+[machine contract](../internals/machine-contract.md) for the surfaces, their keys and the compatibility rule.
+
 ---
 
 ## Commands
@@ -77,7 +80,7 @@ cutver bump minor --defer-publish
 
 #### Machine-readable result
 
-`--json` and `--report` are independent: either, both, or neither. Both describe a real and a `--dry-run` run alike, and a failed run writes no report. The object holds `released`, `deferred`, `version`, `tag`, `commit`, `floating_tag`, `publish_push_command` and `publish_commands`; field order is part of the contract.
+`--json` and `--report` are independent: either, both, or neither. Both describe a real and a `--dry-run` run alike, and a failed run writes no report. The object opens with `schemaVersion` and then holds `released`, `deferred`, `version`, `tag`, `commit`, `floating_tag`, `publish_push_command` and `publish_commands`; field order is part of the contract.
 
 ```json
 {"released":true,"deferred":false,"version":"0.19.0","tag":"v0.19.0","commit":"abc1234","floating_tag":"v0","publish_push_command":null,"publish_commands":["cargo publish"]}
@@ -117,12 +120,13 @@ cutver publish --tag v1.3.0 --commit "$(git rev-parse HEAD)" --notes-file RELEAS
 Validates configuration syntax, verifies declared manifest files, and detects **version drift** across packages.
 
 ```bash
-cutver doctor [OPTIONS]
+cutver doctor [--check-changelog] [--json]
 ```
 
 | Flag | Long Option | Description |
 | :--- | :--- | :--- |
 | | `--check-changelog` | Verifies that release entries in `CHANGELOG.md` match Git release tags. Headings are read through `[git] tag_prefix`, the same as `changelog latest` and `show`, so the commands agree: with `tag_prefix = "release-"`, `## release-1.2.0` is the entry for that tag. A tag whose entry is really absent is still drift, exit code `2`. |
+| | `--json` | Prints the diagnosis as one JSON object on stdout — `ok`, a `checks` entry per check (`ok`/`drift`/`skipped`) and the drift arrays — and renders no dashboard or drift text. The exit code still reports the outcome: `0` clean, `2` drift, `1` a check could not run. See the [machine contract](../internals/machine-contract.md). |
 | `-c <PATH>` | `--config <PATH>` | Explicit path to `cutver.toml`. |
 
 ---
@@ -150,7 +154,8 @@ changelog: it builds the release URL from the same prefix.
 `--json` builds its context from git and fails closed: an unreadable commit range (not a repository, an
 unknown tag, an unusable `git`) goes to stderr with exit `1` instead of printing `"commits": []`, so a
 consumer can tell an empty range from an unreadable one. `--template` keeps rendering the body with an
-empty commit list.
+empty commit list. The object opens with `schemaVersion` and then the release context keys, including
+`version` — the release version, not the schema one.
 
 ---
 
@@ -174,10 +179,16 @@ mismatch, an unknown capability, or a declaration that already exists. The insta
 trust model, the cache layout and the `[plugins.<name>]` keys live in the
 [plugin reference](plugins.md).
 
+Every `plugin` JSON surface opens with `schemaVersion`. `plugin list` and `plugin search` wrap their
+entries in an object — `{"schemaVersion": 1, "plugins": [...]}` — because a bare array has no room
+for a version; `plugin search` used to print a bare array, which the
+[machine contract](../internals/machine-contract.md) records as the one breaking change.
+
 ---
 
 ## Related Documentation
 
 - [Getting Started with cutver](../guides/getting-started.md): Walkthrough of your first release.
+- [Machine Contract](../internals/machine-contract.md): `schemaVersion`, every JSON surface, and exit codes.
 - [Complete cutver.toml Configuration Reference](configuration.md): Reference for all configuration keys.
 - [Language Manifests and Surgical Diff Guarantees](manifests.md): How cutver updates each file kind.

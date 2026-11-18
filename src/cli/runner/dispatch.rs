@@ -32,12 +32,12 @@ pub fn run(args: Cli) -> i32 {
             }
         },
         Commands::Changelog { command } => run_changelog(args.config.as_deref(), command),
-        Commands::Doctor { check_changelog } => {
+        Commands::Doctor { check_changelog, json } => {
             let config = match load_config(args.config) {
                 Ok(c) => c,
                 Err(code) => return code,
             };
-            run_doctor(&config, check_changelog)
+            run_doctor(&config, check_changelog, json)
         }
         Commands::Bump {
             level,

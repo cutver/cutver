@@ -134,7 +134,15 @@ fn run_remove(config_override: Option<PathBuf>, name: &str, keep_artifact: bool)
 
 #[cfg(feature = "plugins")]
 fn print_json(statuses: &[PluginStatus]) -> i32 {
-    let payload = serde_json::json!({ "plugins": statuses });
+    /// The machine form of `plugin list`: the statuses live under `plugins`, behind the schema
+    /// version every JSON surface opens with.
+    #[derive(serde::Serialize)]
+    struct PluginListJson<'a> {
+        plugins: &'a [PluginStatus],
+    }
+
+    let list = PluginListJson { plugins: statuses };
+    let payload = crate::cli::json::Versioned::new(&list);
     match serde_json::to_string_pretty(&payload) {
         Ok(text) => {
             println!("{text}");

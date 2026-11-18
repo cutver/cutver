@@ -1253,6 +1253,7 @@ fn release_context_serializes_sections_after_commits_and_keeps_every_other_key()
     assert_eq!(
         top_level_keys(&json),
         vec![
+            "schemaVersion",
             "version",
             "previous_version",
             "tag",

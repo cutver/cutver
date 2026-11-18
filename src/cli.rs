@@ -1,6 +1,7 @@
 pub mod args;
 pub mod changelog;
 pub mod doctor;
+pub mod json;
 pub mod link;
 pub mod open;
 pub mod path;

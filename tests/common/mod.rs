@@ -92,6 +92,12 @@ pub fn init_git_repo(fixture: &Fixture) {
     run_git_ok(dir, &["config", "user.name", "Test User"]);
     run_git_ok(dir, &["config", "commit.gpgsign", "false"]);
     run_git_ok(dir, &["config", "tag.gpgsign", "false"]);
+    // Keep the fixture quiescent. `git commit` triggers automatic maintenance, and on macOS it detaches
+    // (`maintenance.autoDetach` defaults to true there, while Windows git does not): the background process
+    // holds `.git/objects/maintenance.lock` and removes it moments later. Any test that snapshots the
+    // workspace right after `initial_commit` would race it, and the delta would look like a mutation.
+    run_git_ok(dir, &["config", "maintenance.autoDetach", "false"]);
+    run_git_ok(dir, &["config", "gc.auto", "0"]);
 }
 
 pub fn initial_commit(fixture: &Fixture) {

@@ -519,3 +519,28 @@ fn a_plugin_driven_version_is_refused_instead_of_dispatched() {
     assert!(stderr.contains("cutver bump --dry-run"), "{stderr}");
     assert_eq!(local_tags(fixture), "", "nothing was tagged");
 }
+
+/// The snapshot above is only honest if the fixture is quiescent: `git commit` triggers automatic
+/// maintenance, and git detaches it on macOS (`maintenance.autoDetach` defaults to true there), so a
+/// background process can hold `.git/objects/maintenance.lock` when `before` is taken and release it
+/// before `after` — a removal no plan can cause. `tests/common::init_git_repo` disables it; this pins
+/// that, so the acceptance criterion keeps failing for real mutations and never for git's bookkeeping.
+#[test]
+fn the_fixture_never_carries_a_background_maintenance_lock() {
+    let guard = fixture("plan-quiescent", &armed_config());
+    let fixture = guard.fixture();
+
+    let config = fixture.read(".git/config");
+    assert!(
+        config.contains("autoDetach = false"),
+        "background maintenance must be off in the fixture or the snapshot races it: {config}"
+    );
+
+    for _ in 0..50 {
+        assert!(
+            !fixture.dir.join(".git/objects/maintenance.lock").exists(),
+            "`git commit` left a background `git maintenance` lock in the fixture"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+}

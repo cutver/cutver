@@ -137,6 +137,8 @@ Read on: [Architecture and design decisions](docs/internals/design.md) · [Plugi
 | | [Visual Tour](docs/guides/visual-tour.md) | The release lifecycle as terminal screenshots. |
 | | [Accessibility](docs/accessibility.md) | The 57-second film, both audio-description tracks, and their transcript. |
 | | [Monorepos & Multi-Package Strategies](docs/guides/monorepos.md) | Coordinated releases across polyglot workspaces without drift. |
+| | [Plugin Overview](docs/guides/plugin-overview.md) | What a plugin is, the lifecycle slots, and one worked request and answer. |
+| | [The Process Runtime](docs/guides/plugin-process-runtime.md) | `command`, stdin/stdout, env grants and the timeout, for the runtime with no sandbox. |
 | | [Writing a Plugin](docs/guides/plugin-authoring.md) | Scaffold a crate, export `invoke`, build for `wasm32-wasip1`, publish and register it. |
 | | [Frequently Asked Questions](docs/guides/faq.md) | Comparison with other release tools, failure behavior, and the security model. |
 | **Reference** | [cutver.toml Configuration Reference](docs/reference/configuration.md) | Canonical reference for every table, preflight timeout, and hook. |

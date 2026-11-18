@@ -181,7 +181,7 @@ one untouched (`src/plugin/manage/update.rs:1-6`): it is the only table in `cutv
 `cutver` neither validates nor reads.
 
 The reference implementation is `github-publish`, in this repository's own `cutver.toml`, which records
-why each key is there (`cutver.toml:84-96`):
+why each key is there (`cutver.toml:84-94`):
 
 ```toml
 [plugins.github-publish.config]

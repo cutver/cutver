@@ -140,6 +140,7 @@ Read on: [Architecture and design decisions](docs/internals/design.md) · [Plugi
 | | [Plugin Overview](docs/guides/plugin-overview.md) | What a plugin is, the lifecycle slots, and one worked request and answer. |
 | | [The Process Runtime](docs/guides/plugin-process-runtime.md) | `command`, stdin/stdout, env grants and the timeout, for the runtime with no sandbox. |
 | | [Writing a Plugin](docs/guides/plugin-authoring.md) | Scaffold a crate, export `invoke`, build for `wasm32-wasip1`, publish and register it. |
+| | [The Reference Plugin](docs/guides/plugin-github-publish.md) | The `github-publish` declaration this repository releases with, and its draft-then-promote flow. |
 | | [Frequently Asked Questions](docs/guides/faq.md) | Comparison with other release tools, failure behavior, and the security model. |
 | **Reference** | [cutver.toml Configuration Reference](docs/reference/configuration.md) | Canonical reference for every table, preflight timeout, and hook. |
 | | [Language Manifests & Diff Guarantees](docs/reference/manifests.md) | Format-preserving byte-span scanner and AST editor guarantees. |

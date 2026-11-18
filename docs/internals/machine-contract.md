@@ -55,6 +55,57 @@ and nothing is rendered for a human to scrape.
 
 ---
 
+## Errors
+
+When an invocation asked for machine output, its failure is machine output too: one compact object on
+**stderr**, nothing added to stdout. `--json` selects it, and so does `--report <PATH>` for `bump` — the
+flag a machine needs to read the object alone, so its failure has to be readable alone; no second flag
+has to be remembered in CI.
+
+```json
+{"schemaVersion":1,"error":{"code":"config","exitCode":1,"message":"no cutver.toml found …"}}
+```
+
+- `code` names the failure class, never the message: a consumer branches on it instead of matching
+  prose. A new `code` is additive and does not bump `schemaVersion`.
+- `exitCode` always equals the process exit code, so the code and the object cannot disagree. It is
+  `1`: `2` is drift, and drift is an outcome `doctor` reports as data rather than a failure.
+- `message` is the text the human path prints, without the coloured `Error:` marker, newlines
+  included — `Where:` and `Fix:` lines stay inside the string. The two sites that print their own
+  marker (`Error loading config:`, `Error checking changelog:`) keep it, so the diagnosis reads alike.
+
+The message is escaped, so the envelope is one JSON line however long the human text is.
+
+| `code` | Failure |
+| :--- | :--- |
+| `bump` | The release run: preflight, manifests, git, the plan itself. |
+| `changelog` | Reading the changelog, resolving a release, rendering notes. |
+| `changelog_check` | `doctor --check-changelog` could not compare entries with tags. |
+| `config` | Discovering, loading or parsing `cutver.toml`. |
+| `doctor` | A `doctor` check could not run, or its JSON could not be rendered. |
+| `external` | A `cutver-<name>` subcommand could not be resolved or executed. |
+| `init` | Scaffolding the configuration. |
+| `open` | Resolving the URL or launching the browser. |
+| `plugin` | Any `plugin` subcommand: cache, registry, digest, the plugin feature. |
+| `publish` | The closing phase prepared by `bump --defer-publish`. |
+| `report` | Serializing or writing the `--json`/`--report` result after the release finished. |
+
+`init` and `external` have no machine surface today, so their failures still render for a human; the
+codes are reserved so a `--json` on them later does not have to invent one.
+
+### Limits
+
+- A degradation warning (`warning: …`) stays human prose: it is not a failure. The command continues
+  and exits `0`, so a consumer that got an envelope knows the run failed.
+- A `cutver-<name>` external subcommand's own stderr and exit code pass through unwrapped: cutver does
+  not own that output, and the exit code is the child's.
+- Clap usage errors — a missing argument, an unknown flag — exit before this code runs and are never
+  enveloped.
+- Without machine mode nothing changes: the human path keeps `Error: …` on stderr, the unchanged exit
+  codes, and the same rendered tree, dashboard and notes.
+
+---
+
 ## `doctor --json`
 
 `doctor` writes the diagnosis to stdout instead of the dashboard, and the human path is untouched: no

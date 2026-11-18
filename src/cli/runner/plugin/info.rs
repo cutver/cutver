@@ -3,6 +3,7 @@
 use std::time::Duration;
 
 use crate::cli::args::PluginInfoArgs;
+use crate::cli::machine::FailureCode;
 use crate::cli::runner::dispatch::print_error;
 use crate::cli::style::Theme;
 use crate::plugin::registry::{RegistryIndexUrl, UreqTransport, get_plugin_info};
@@ -21,7 +22,7 @@ pub fn run_info(args: &PluginInfoArgs) -> i32 {
     let name = match PluginName::new(&args.name) {
         Ok(n) => n,
         Err(err) => {
-            print_error(err);
+            print_error(FailureCode::Plugin, err);
             return 1;
         }
     };
@@ -30,7 +31,7 @@ pub fn run_info(args: &PluginInfoArgs) -> i32 {
         Some(base) => match RegistryIndexUrl::parse(base) {
             Ok(idx) => idx,
             Err(err) => {
-                print_error(err);
+                print_error(FailureCode::Plugin, err);
                 return 1;
             }
         },
@@ -42,7 +43,7 @@ pub fn run_info(args: &PluginInfoArgs) -> i32 {
     let entry = match get_plugin_info(&name, &index, &transport) {
         Ok(entry) => entry,
         Err(err) => {
-            print_error(err);
+            print_error(FailureCode::Plugin, err);
             return 1;
         }
     };
@@ -52,7 +53,10 @@ pub fn run_info(args: &PluginInfoArgs) -> i32 {
         match render_info_json(&json_repr) {
             Ok(json_str) => println!("{json_str}"),
             Err(err) => {
-                print_error(format!("failed to serialize the plugin entry to JSON: {err}"));
+                print_error(
+                    FailureCode::Plugin,
+                    format!("failed to serialize the plugin entry to JSON: {err}"),
+                );
                 return 1;
             }
         }

@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use crate::cli::args::PluginRestoreArgs;
+use crate::cli::machine::FailureCode;
 use crate::cli::runner::dispatch::{load_config, print_error};
 use crate::cli::style::Theme;
 use crate::plugin::cache::PluginCacheRoot;
@@ -28,7 +29,7 @@ pub fn run_restore(config_override: Option<PathBuf>, args: &PluginRestoreArgs) -
         Some(base) => match RegistryIndexUrl::parse(base) {
             Ok(index) => index,
             Err(err) => {
-                print_error(err);
+                print_error(FailureCode::Plugin, err);
                 return 1;
             }
         },
@@ -38,7 +39,7 @@ pub fn run_restore(config_override: Option<PathBuf>, args: &PluginRestoreArgs) -
     let cache = match PluginCacheRoot::resolve() {
         Ok(cache) => cache,
         Err(err) => {
-            print_error(err);
+            print_error(FailureCode::Plugin, err);
             return 1;
         }
     };
@@ -49,7 +50,7 @@ pub fn run_restore(config_override: Option<PathBuf>, args: &PluginRestoreArgs) -
     let report = match restore_plugins(&config, &options, &index, &cache, &transport) {
         Ok(report) => report,
         Err(err) => {
-            print_error(err);
+            print_error(FailureCode::Plugin, err);
             return 1;
         }
     };

@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::cli::args::{Cli, Commands};
+use crate::cli::machine::{self, FailureCode};
 use crate::cli::style::Theme;
 use crate::config;
 
@@ -12,12 +13,34 @@ use super::open::run_open;
 use super::plugin::run_plugin;
 use super::publish::run_publish;
 
-pub fn print_error(msg: impl std::fmt::Display) {
+/// Reports a failure.
+///
+/// When the invocation asked for machine output, the failure is one JSON envelope on stderr; when
+/// it did not, the rendered line is byte-for-byte the one this command always printed.
+pub fn print_error(code: FailureCode, msg: impl std::fmt::Display) {
+    let text = msg.to_string();
+    if machine::try_emit_failure(code, &text) {
+        return;
+    }
     let theme = Theme::stderr();
-    eprintln!("{} {}", theme.error("Error:"), msg);
+    eprintln!("{} {}", theme.error("Error:"), text);
+}
+
+/// Reports a failure whose human line carries its own marker instead of `Error:`.
+///
+/// The machine path folds the marker into `error.message`, so the diagnosis reads the same in both
+/// channels; the human path keeps the exact line it printed before.
+pub fn print_error_prefixed(code: FailureCode, prefix: &str, msg: impl std::fmt::Display) {
+    let text = msg.to_string();
+    if machine::try_emit_failure(code, &format!("{prefix} {text}")) {
+        return;
+    }
+    let theme = Theme::stderr();
+    eprintln!("{} {}", theme.error(prefix), text);
 }
 
 pub fn run(args: Cli) -> i32 {
+    machine::select(&args.command);
     match args.command {
         Commands::Init {
             update,
@@ -27,7 +50,7 @@ pub fn run(args: Cli) -> i32 {
         } => match crate::init::run_init(path, update, force, no_template) {
             Ok(()) => 0,
             Err(e) => {
-                print_error(e);
+                print_error(FailureCode::Init, e);
                 1
             }
         },
@@ -114,7 +137,10 @@ pub fn load_config_with_path(config_path: Option<PathBuf>) -> Result<(config::Co
             let start_dir = match std::env::current_dir() {
                 Ok(dir) => dir,
                 Err(e) => {
-                    print_error(format!("unable to determine current directory: {e}"));
+                    print_error(
+                        FailureCode::Config,
+                        format!("unable to determine current directory: {e}"),
+                    );
                     return Err(1);
                 }
             };
@@ -137,8 +163,7 @@ fn absolute_config_path(path: PathBuf) -> PathBuf {
 }
 
 fn report_config_error(error: config::ConfigError) -> i32 {
-    let theme = Theme::stderr();
-    eprintln!("{} {error}", theme.error("Error loading config:"));
+    print_error_prefixed(FailureCode::Config, "Error loading config:", error);
     1
 }
 
@@ -152,7 +177,10 @@ pub fn resolve_changelog_path(config_override: Option<&Path>, path: Option<PathB
         None => match std::env::current_dir() {
             Ok(dir) => config::discover(dir),
             Err(e) => {
-                print_error(format!("unable to determine current directory: {e}"));
+                print_error(
+                    FailureCode::Changelog,
+                    format!("unable to determine current directory: {e}"),
+                );
                 return Err(1);
             }
         },
@@ -176,7 +204,10 @@ pub fn resolve_changelog_path(config_override: Option<&Path>, path: Option<PathB
                     if fallback.exists() {
                         Ok(fallback)
                     } else {
-                        print_error("no changelog path configured and CHANGELOG.md not found");
+                        print_error(
+                            FailureCode::Changelog,
+                            "no changelog path configured and CHANGELOG.md not found",
+                        );
                         Err(1)
                     }
                 }
@@ -187,7 +218,7 @@ pub fn resolve_changelog_path(config_override: Option<&Path>, path: Option<PathB
             if fallback.exists() {
                 Ok(fallback)
             } else {
-                print_error(e);
+                print_error(FailureCode::Changelog, e);
                 Err(1)
             }
         }

@@ -13,6 +13,7 @@ pub use super::changelog_context::{
 };
 use super::dispatch::{print_error, resolve_changelog_path};
 use super::open::run_open;
+use crate::cli::machine::FailureCode;
 
 pub struct ReleaseTargetInfo {
     pub version: String,
@@ -56,7 +57,7 @@ fn read_raw_commits(
         Ok(commits) => Ok(commits),
         Err(_) if on_failure == GitHistoryFailure::Degrade => Ok(Vec::new()),
         Err(err) => {
-            print_error(git_history_error(&err));
+            print_error(FailureCode::Changelog, git_history_error(&err));
             Err(1)
         }
     }
@@ -76,7 +77,10 @@ pub fn resolve_latest_target_info(
     let mut versions = crate::changelog::list_versions_with_prefix(content, &resolve_prefix(cfg));
     if versions.is_empty() {
         let display_path = relativize_path(&target_path.to_string_lossy(), Some(root_dir));
-        print_error(format!("no release section found in changelog '{display_path}'"));
+        print_error(
+            FailureCode::Changelog,
+            format!("no release section found in changelog '{display_path}'"),
+        );
         return Err(1);
     }
 
@@ -110,9 +114,10 @@ pub fn resolve_show_target_info(
         .position(|v| strip_one_version_marker(v, &prefix) == target_norm)
     else {
         let display_path = relativize_path(&target_path.to_string_lossy(), Some(root_dir));
-        print_error(format!(
-            "version '{requested_version}' not found in changelog '{display_path}'"
-        ));
+        print_error(
+            FailureCode::Changelog,
+            format!("version '{requested_version}' not found in changelog '{display_path}'"),
+        );
         return Err(1);
     };
 
@@ -221,7 +226,7 @@ pub fn execute_changelog_output(
                 Err(code) => return code,
             };
             if let Err(e) = changelog::print_release_context_json(&ctx) {
-                print_error(e);
+                print_error(FailureCode::Changelog, e);
                 return 1;
             }
             0
@@ -230,7 +235,7 @@ pub fn execute_changelog_output(
             let template_str = match load_template_file(config_override, t_path) {
                 Ok(s) => s,
                 Err(e) => {
-                    print_error(e);
+                    print_error(FailureCode::Changelog, e);
                     return 1;
                 }
             };
@@ -244,7 +249,7 @@ pub fn execute_changelog_output(
                     0
                 }
                 Err(e) => {
-                    print_error(e);
+                    print_error(FailureCode::Changelog, e);
                     1
                 }
             }
@@ -255,7 +260,7 @@ pub fn execute_changelog_output(
                 0
             }
             Err(e) => {
-                print_error(e);
+                print_error(FailureCode::Changelog, e);
                 1
             }
         },
@@ -301,7 +306,10 @@ pub fn run_changelog(config_override: Option<&Path>, command: ChangelogCommands)
 
 pub fn read_file_content(path: &Path) -> Result<String, i32> {
     std::fs::read_to_string(path).map_err(|e| {
-        print_error(format!("failed to read changelog '{}': {e}", path.display()));
+        print_error(
+            FailureCode::Changelog,
+            format!("failed to read changelog '{}': {e}", path.display()),
+        );
         1
     })
 }

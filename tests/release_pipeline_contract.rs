@@ -576,7 +576,11 @@ fn the_install_smoke_pins_its_action_by_commit() {
         .find(|line| line.trim_start().starts_with("uses: cutver/setup@"))
         .expect("the workflow must install the CLI to smoke it");
 
-    let reference = line.trim_start().trim_start_matches("uses: cutver/setup@").trim().to_string();
+    let reference = line
+        .trim_start()
+        .trim_start_matches("uses: cutver/setup@")
+        .trim()
+        .to_string();
     assert!(
         reference.len() == 40 && reference.chars().all(|c| c.is_ascii_hexdigit()),
         "`cutver/setup` must be pinned to a 40-character commit sha, not `{reference}`: a tag can move, \

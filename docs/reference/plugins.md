@@ -114,9 +114,10 @@ capabilities = ["changelog.v1"]
 | `capabilities` | What the plugin may do. Validated against the canonical set; an unknown value fails closed. |
 | `events` | Lifecycle events this plugin handles. Empty means **all** of them. |
 | `manifest_match` | Manifest globs this plugin is offered. Empty means **none**. |
-| `permissions` | `network`, `env` and `filesystem` grants. A plugin has zero authority by default. |
-| `timeout_seconds` | Execution bound for the plugin call. |
-| `command` | Executable for a `runtime = "process"` plugin; required and non-empty there. Unused by `wasm`. |
+| `permissions` | `network`, `env` and `filesystem` grants. For `wasm`, denied unless granted ([Runtime Sandbox](#runtime-sandbox)); for `process`, only `env` applies and nothing is sandboxed. |
+| `timeout_seconds` | `integer`, seconds. `30` when unset for `runtime = "process"` (`src/plugin/manager/factory.rs:10,67`); passed to the WASM sandbox when set, and with no value the sandbox gets no timeout configured (`src/plugin/driver/wasm.rs:139-143`). It bounds one call, not the whole release. |
+| `command` | Executable for a `runtime = "process"` plugin; required and non-empty there, and always run with an empty argument list. Unused by `wasm`. See [the process runtime](../guides/plugin-process-runtime.md). |
+| `config` | A free-form TOML table ([details](configuration.md)). `cutver` parses it, preserves it across `plugin update`, and reads nothing out of it: the keys are the plugin's own, and the host fills no channel from them. `github-publish` is the reference implementation (`cutver.toml:84-96`). |
 
 > **A `changelog.v1` plugin only runs when `[changelog] format = "plugin"`.** With the default
 > `keep-a-changelog` the built-in renderer writes the notes and the installed plugin stays idle —
@@ -139,10 +140,21 @@ because the index is what distributes the digest — TLS there is trust, not jus
 
 ## Runtime Sandbox
 
-A WASM plugin gets **no filesystem, no network, and no environment** access unless explicitly
-granted under `[plugins.<name>.permissions]`, which accepts `network`, `env` and `filesystem`
-([plugin authoring guide](../guides/plugin-authoring.md)). There is no `--insecure` bypass: a
-capability the plugin did not declare is a capability it cannot reach.
+**A plugin has zero authority by default.** This is the canonical statement of that rule; other pages
+link here instead of restating it.
+
+- A WASM plugin gets no filesystem, no network and no environment access unless the entry grants it
+  under `[plugins.<name>.permissions]`, which accepts `network`, `env` and `filesystem`
+  (`src/plugin/driver/wasm.rs:118-137`). Only the granted hosts, directories and keys are added; a
+  `filesystem` entry that resolves outside the workspace is refused at load
+  (`src/config/discovery.rs:59-75`).
+- A plugin is also denied every capability it did not declare: declaring is what makes a call possible,
+  and there is no flag that widens it (`src/plugin/manager/core.rs:249-262`).
+- There is no `--insecure` bypass for the digest gates either ([above](#trust-model-two-gates-one-digest)).
+- **The process runtime is not sandboxed.** `permissions.network` and `permissions.filesystem` have no
+  effect on it; only `permissions.env` is applied, by clearing the child's environment. See
+  [the process runtime](../guides/plugin-process-runtime.md) and, for the filesystem mount names a
+  plugin author works with, the [authoring guide](../guides/plugin-authoring.md).
 
 ## Cache Location
 
@@ -169,6 +181,10 @@ you are working on.
 
 ## Related Documentation
 
+- [Plugin Overview](../guides/plugin-overview.md): what a plugin is, the lifecycle slots, and one
+  worked request and answer.
+- [The Process Runtime](../guides/plugin-process-runtime.md): `command`, stdin/stdout, env grants and
+  the timeout, for the runtime with no sandbox.
 - [Plugin Architecture and Wire Contract](../rfcs/0001-wasm-plugin-architecture.md): how the WebAssembly
   runtime, capabilities and the host boundary fit together.
 - [cutver.toml Configuration Reference](configuration.md): the rest of the configuration tables.

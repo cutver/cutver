@@ -50,17 +50,11 @@ No. Cutver provides two distinct builds:
 
 ## Are third-party WebAssembly plugins secure? Can they access my filesystem or secrets?
 
-Cutver enforces a strict **default-deny capability model**:
-
-- Every WASM plugin runs isolated within Wasmtime with **zero filesystem, zero network, and zero
-  environment access** by default.
-- Permissions must be explicitly declared and granted in `cutver.toml` under
-  `[plugins.<name>.permissions]`.
-- There is no `--insecure` CLI bypass. Furthermore, every downloaded plugin has its SHA-256 digest
-  verified prior to caching and re-verified on every load.
-
-The trust model and permission keys are specified in the
-[plugin reference](../reference/plugins.md).
+Not without a grant, and the grant is written by you rather than by the plugin. The default-deny rule,
+the permission keys and the two digest gates are stated once, in the
+[plugin reference](../reference/plugins.md#runtime-sandbox). The filesystem grants an author works
+with are in the [authoring guide](plugin-authoring.md), and the runtime that is deliberately *not*
+contained is in [the process runtime](plugin-process-runtime.md).
 
 ---
 

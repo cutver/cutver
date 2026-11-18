@@ -72,8 +72,10 @@ cutver --version
 cutver doctor
 ```
 
-A lean build that is asked for a plugin command fails with `PluginManagerRequired`. Install the
-plugin build instead of looking for a bypass flag — there is none.
+A lean build cannot run a `cutver plugin <subcommand>`: it prints that this build was compiled without
+the `plugins` feature, names the fix, and exits `1`. (`cutver plugin --help` still prints help.) Install
+the plugin build instead of looking for a bypass flag — there is none. A `kind = "plugin"` manifest is a
+different failure, named in [the manifest reference](../reference/manifests.md).
 
 ---
 

@@ -4,9 +4,9 @@ A Cutver plugin is a WebAssembly module that exports one function, `invoke`, and
 envelope. This guide takes you from an empty directory to a release another user can install with
 `cutver plugin add`.
 
-> **The sandbox is the point.** A plugin gets no network, no filesystem and no environment access
-> unless the user grants it in `cutver.toml`. Design for the grants, not around them: a plugin that
-> needs the network declares `permissions.network`, and the user sees that before installing.
+> **The sandbox is the point.** A WASM plugin gets no network, no filesystem and no environment access
+> unless the user grants it in `cutver.toml`; the rule is stated once in the
+> [plugin reference](../reference/plugins.md#runtime-sandbox). Design for the grants, not around them.
 
 ## 1. Scaffold the crate
 
@@ -112,9 +112,9 @@ permissions.network = ["api.example.com"]
 permissions.env = ["MY_TOKEN"]
 ```
 
-`runtime` is `wasm` or `process`. `permissions` accepts `network`, `env` and `filesystem`, mapped by
-the host to the sandbox's allowed hosts, config keys and allowed paths
-(`src/plugin/driver/wasm.rs:116`). A missing grant is a denied capability at runtime, not a warning.
+`runtime` is `wasm` or `process` ([the process runtime](plugin-process-runtime.md)). `permissions`
+accepts `network`, `env` and `filesystem`, mapped by the host to the sandbox's allowed hosts, config
+keys and allowed paths (`src/plugin/driver/wasm.rs:118-137`).
 
 ### Which path a guest sees
 

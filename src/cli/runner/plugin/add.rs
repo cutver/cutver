@@ -8,6 +8,7 @@
 use std::path::PathBuf;
 
 use crate::cli::args::PluginAddArgs;
+use crate::cli::machine::FailureCode;
 use crate::cli::runner::dispatch::{load_config_with_path, print_error};
 use crate::cli::style::Theme;
 use crate::plugin::PluginCacheRoot;
@@ -21,14 +22,14 @@ pub fn run_add(config_override: Option<PathBuf>, args: &PluginAddArgs) -> i32 {
     let name = match PluginName::new(args.name.as_str()) {
         Ok(name) => name,
         Err(error) => {
-            print_error(error);
+            print_error(FailureCode::Plugin, error);
             return 1;
         }
     };
     let index = match resolve_index(args.registry.as_deref()) {
         Ok(index) => index,
         Err(error) => {
-            print_error(error);
+            print_error(FailureCode::Plugin, error);
             return 1;
         }
     };
@@ -39,7 +40,7 @@ pub fn run_add(config_override: Option<PathBuf>, args: &PluginAddArgs) -> i32 {
     let cache = match PluginCacheRoot::resolve() {
         Ok(cache) => cache,
         Err(error) => {
-            print_error(error);
+            print_error(FailureCode::Plugin, error);
             return 1;
         }
     };
@@ -48,7 +49,7 @@ pub fn run_add(config_override: Option<PathBuf>, args: &PluginAddArgs) -> i32 {
     let plan = match plan_add(&config_path, &name, &add_options(args), &index, &cache, &transport) {
         Ok(plan) => plan,
         Err(error) => {
-            print_error(error);
+            print_error(FailureCode::Plugin, error);
             return 1;
         }
     };
@@ -64,7 +65,7 @@ pub fn run_add(config_override: Option<PathBuf>, args: &PluginAddArgs) -> i32 {
             0
         }
         Err(error) => {
-            print_error(error);
+            print_error(FailureCode::Plugin, error);
             1
         }
     }

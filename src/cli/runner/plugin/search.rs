@@ -3,6 +3,7 @@
 use std::time::Duration;
 
 use crate::cli::args::PluginSearchArgs;
+use crate::cli::machine::FailureCode;
 use crate::cli::runner::dispatch::print_error;
 use crate::cli::style::Theme;
 use crate::plugin::registry::{RegistryIndexUrl, UreqTransport, search_plugins};
@@ -32,7 +33,7 @@ pub fn run_search(args: &PluginSearchArgs) -> i32 {
         Some(base) => match RegistryIndexUrl::parse(base) {
             Ok(idx) => idx,
             Err(err) => {
-                print_error(err);
+                print_error(FailureCode::Plugin, err);
                 return 1;
             }
         },
@@ -44,7 +45,7 @@ pub fn run_search(args: &PluginSearchArgs) -> i32 {
     let entries = match search_plugins(args.query.as_deref(), &index, &transport) {
         Ok(res) => res,
         Err(err) => {
-            print_error(err);
+            print_error(FailureCode::Plugin, err);
             return 1;
         }
     };
@@ -57,7 +58,10 @@ pub fn run_search(args: &PluginSearchArgs) -> i32 {
         match render_search_json(&json_entries) {
             Ok(json_str) => println!("{json_str}"),
             Err(err) => {
-                print_error(format!("failed to serialize the search result to JSON: {err}"));
+                print_error(
+                    FailureCode::Plugin,
+                    format!("failed to serialize the search result to JSON: {err}"),
+                );
                 return 1;
             }
         }

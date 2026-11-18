@@ -13,6 +13,7 @@ use crate::cli::args::BumpLevel;
 use crate::config;
 
 use super::dispatch::print_error;
+use crate::cli::machine::FailureCode;
 
 /// Where the release result goes. `json` and `report` are independent: either, both, or neither.
 #[derive(Debug, Default)]
@@ -39,12 +40,12 @@ pub fn run_bump(
         Ok(summary) => match emit(&summary, &output) {
             Ok(()) => 0,
             Err(e) => {
-                print_error(e);
+                print_error(FailureCode::Report, e);
                 1
             }
         },
         Err(e) => {
-            print_error(e);
+            print_error(FailureCode::Bump, e);
             1
         }
     }

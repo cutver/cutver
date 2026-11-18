@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use crate::cli::args::PluginUpdateArgs;
+use crate::cli::machine::FailureCode;
 use crate::cli::runner::dispatch::{load_config_with_path, print_error};
 use crate::cli::style::Theme;
 use crate::plugin::cache::PluginCacheRoot;
@@ -29,13 +30,16 @@ pub fn run_update(config_override: Option<PathBuf>, args: &PluginUpdateArgs) -> 
         Some(name_str) => match PluginName::new(name_str) {
             Ok(name) => {
                 if !config.plugins.contains_key(&name) {
-                    eprintln!("Error: plugin '{name}' is not declared in cutver.toml.");
+                    print_error(
+                        FailureCode::Plugin,
+                        format!("plugin '{name}' is not declared in cutver.toml."),
+                    );
                     return 1;
                 }
                 Some(name)
             }
             Err(err) => {
-                print_error(err);
+                print_error(FailureCode::Plugin, err);
                 return 1;
             }
         },
@@ -46,7 +50,7 @@ pub fn run_update(config_override: Option<PathBuf>, args: &PluginUpdateArgs) -> 
         Some(base) => match RegistryIndexUrl::parse(base) {
             Ok(index) => index,
             Err(err) => {
-                print_error(err);
+                print_error(FailureCode::Plugin, err);
                 return 1;
             }
         },
@@ -56,7 +60,7 @@ pub fn run_update(config_override: Option<PathBuf>, args: &PluginUpdateArgs) -> 
     let cache = match PluginCacheRoot::resolve() {
         Ok(cache) => cache,
         Err(err) => {
-            print_error(err);
+            print_error(FailureCode::Plugin, err);
             return 1;
         }
     };
@@ -71,7 +75,7 @@ pub fn run_update(config_override: Option<PathBuf>, args: &PluginUpdateArgs) -> 
     let report = match update_plugins(&config_path, &options, &index, &cache, &transport) {
         Ok(report) => report,
         Err(err) => {
-            print_error(err);
+            print_error(FailureCode::Plugin, err);
             return 1;
         }
     };

@@ -3,7 +3,8 @@ use crate::cli::doctor::{ChangelogDriftJson, DoctorReport, VersionDriftJson, ren
 use crate::cli::style::Theme;
 use crate::config;
 
-use super::dispatch::print_error;
+use super::dispatch::{print_error, print_error_prefixed};
+use crate::cli::machine::FailureCode;
 
 /// Validates the workspace and reports drift.
 ///
@@ -18,7 +19,7 @@ pub fn run_doctor(config: &config::Config, check_changelog: bool, machine: bool)
     let version_drift = match bump::doctor(config) {
         Ok(drifts) => drifts,
         Err(e) => {
-            print_error(e);
+            print_error(FailureCode::Doctor, e);
             return 1;
         }
     };
@@ -27,8 +28,7 @@ pub fn run_doctor(config: &config::Config, check_changelog: bool, machine: bool)
         match bump::doctor_changelog(config) {
             Ok(drift) => Some(drift),
             Err(e) => {
-                let theme = Theme::stderr();
-                eprintln!("{} {e}", theme.error("Error checking changelog:"));
+                print_error_prefixed(FailureCode::ChangelogCheck, "Error checking changelog:", e);
                 return 1;
             }
         }
@@ -49,7 +49,10 @@ pub fn run_doctor(config: &config::Config, check_changelog: bool, machine: bool)
         match render_report_json(&report) {
             Ok(text) => println!("{text}"),
             Err(e) => {
-                print_error(format!("failed to serialize the diagnosis to JSON: {e}"));
+                print_error(
+                    FailureCode::Doctor,
+                    format!("failed to serialize the diagnosis to JSON: {e}"),
+                );
                 return 1;
             }
         }

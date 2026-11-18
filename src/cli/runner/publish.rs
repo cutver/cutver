@@ -6,6 +6,7 @@ use crate::cli::tree;
 use crate::config;
 
 use super::dispatch::print_error;
+use crate::cli::machine::FailureCode;
 
 pub fn run_publish(config: &config::Config, request: PublishRequest) -> i32 {
     match bump::run_publish(config, &request) {
@@ -14,7 +15,7 @@ pub fn run_publish(config: &config::Config, request: PublishRequest) -> i32 {
             0
         }
         Err(e) => {
-            print_error(e);
+            print_error(FailureCode::Publish, e);
             1
         }
     }

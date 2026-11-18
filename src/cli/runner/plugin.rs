@@ -10,6 +10,7 @@ use std::path::PathBuf;
 use std::path::Path;
 
 use crate::cli::args::PluginCommands;
+use crate::cli::machine::FailureCode;
 
 #[cfg(feature = "plugins")]
 mod add;
@@ -61,9 +62,12 @@ pub fn run_plugin(_config_override: Option<PathBuf>, command: PluginCommands) ->
         PluginCommands::Remove { .. } => "remove",
     };
 
-    super::dispatch::print_error(crate::plugin::PluginError::PluginsFeatureDisabled {
-        operation: operation.to_string(),
-    });
+    super::dispatch::print_error(
+        FailureCode::Plugin,
+        crate::plugin::PluginError::PluginsFeatureDisabled {
+            operation: operation.to_string(),
+        },
+    );
     1
 }
 
@@ -76,7 +80,7 @@ fn run_list(config_override: Option<PathBuf>, json: bool) -> i32 {
     let cache = match PluginCacheRoot::resolve() {
         Ok(cache) => cache,
         Err(error) => {
-            print_error(error);
+            print_error(FailureCode::Plugin, error);
             return 1;
         }
     };
@@ -95,7 +99,7 @@ fn run_remove(config_override: Option<PathBuf>, name: &str, keep_artifact: bool)
     let name = match PluginName::new(name) {
         Ok(name) => name,
         Err(error) => {
-            print_error(error);
+            print_error(FailureCode::Plugin, error);
             return 1;
         }
     };
@@ -107,7 +111,7 @@ fn run_remove(config_override: Option<PathBuf>, name: &str, keep_artifact: bool)
     let cache = match PluginCacheRoot::resolve() {
         Ok(cache) => cache,
         Err(error) => {
-            print_error(error);
+            print_error(FailureCode::Plugin, error);
             return 1;
         }
     };
@@ -115,7 +119,7 @@ fn run_remove(config_override: Option<PathBuf>, name: &str, keep_artifact: bool)
     let plan = match manage::plan_remove(&config_path, &name, keep_artifact, &cache) {
         Ok(plan) => plan,
         Err(error) => {
-            print_error(error);
+            print_error(FailureCode::Plugin, error);
             return 1;
         }
     };
@@ -126,7 +130,7 @@ fn run_remove(config_override: Option<PathBuf>, name: &str, keep_artifact: bool)
             0
         }
         Err(error) => {
-            print_error(error);
+            print_error(FailureCode::Plugin, error);
             1
         }
     }
@@ -149,7 +153,10 @@ fn print_json(statuses: &[PluginStatus]) -> i32 {
             0
         }
         Err(error) => {
-            print_error(format!("failed to serialize plugin list to JSON: {error}"));
+            print_error(
+                FailureCode::Plugin,
+                format!("failed to serialize plugin list to JSON: {error}"),
+            );
             1
         }
     }

@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use super::dispatch::print_error;
+use crate::cli::machine::FailureCode;
 use crate::config;
 
 pub fn run_open(
@@ -13,7 +14,7 @@ pub fn run_open(
         Some(path) => match config::load(path) {
             Ok(c) => (c.root_dir, c.git.tag_prefix),
             Err(e) => {
-                print_error(e);
+                print_error(FailureCode::Open, e);
                 return 1;
             }
         },
@@ -23,7 +24,7 @@ pub fn run_open(
                 Err(_) => (d, "v".to_string()),
             },
             Err(e) => {
-                print_error(format!("failed to determine current directory: {e}"));
+                print_error(FailureCode::Open, format!("failed to determine current directory: {e}"));
                 return 1;
             }
         },
@@ -33,7 +34,7 @@ pub fn run_open(
     let url = match crate::cli::open::resolve_url_for_repo(&root_dir, &target, &tag_prefix) {
         Ok(u) => u,
         Err(e) => {
-            print_error(e);
+            print_error(FailureCode::Open, e);
             return 1;
         }
     };
@@ -46,7 +47,7 @@ pub fn run_open(
     match crate::cli::open::launch_browser(&url, browser_override) {
         Ok(()) => 0,
         Err(e) => {
-            print_error(e);
+            print_error(FailureCode::Open, e);
             1
         }
     }

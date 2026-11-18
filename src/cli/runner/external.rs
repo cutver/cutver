@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+use crate::cli::machine::{self, FailureCode};
 use crate::cli::style::Theme;
 
 /// Spawns an external plugin subcommand formatted as `cutver-<subcommand>` from `$PATH`.
@@ -47,13 +48,18 @@ fn execute_binary(path: &Path, trailing_args: &[String]) -> i32 {
     match cmd.status() {
         Ok(status) => status.code().unwrap_or(1),
         Err(err) => {
-            let theme = Theme::stderr();
-            eprintln!(
-                "{}\n  {}\n  {}",
-                theme.error(format!("error: failed to execute external subcommand: {err}")),
-                theme.muted(format!("Where: executing '{path:?}'")),
-                theme.muted("Fix: verify binary permissions and system environment.")
-            );
+            let text = format!("error: failed to execute external subcommand: {err}");
+            let where_ = format!("Where: executing '{path:?}'");
+            let fix = "Fix: verify binary permissions and system environment.";
+            if !machine::try_emit_failure(FailureCode::External, &format!("{text}\n  {where_}\n  {fix}")) {
+                let theme = Theme::stderr();
+                eprintln!(
+                    "{}\n  {}\n  {}",
+                    theme.error(text),
+                    theme.muted(where_),
+                    theme.muted(fix)
+                );
+            }
             1
         }
     }
@@ -77,14 +83,18 @@ fn build_command(path: &Path) -> Command {
 }
 
 fn print_not_found_error(subcmd: &str) {
-    let theme = Theme::stderr();
     let binary = format!("cutver-{subcmd}");
+    let text = format!("error: unknown subcommand '{subcmd}'.");
+    let where_ = format!("Where: searching for '{binary}' in system PATH");
+    let fix = format!("Fix: ensure '{binary}' is installed and present in your system PATH, or run 'cutver --help'.");
+    if machine::try_emit_failure(FailureCode::External, &format!("{text}\n  {where_}\n  {fix}")) {
+        return;
+    }
+    let theme = Theme::stderr();
     eprintln!(
         "{}\n  {}\n  {}",
-        theme.error(format!("error: unknown subcommand '{subcmd}'.")),
-        theme.muted(format!("Where: searching for '{binary}' in system PATH")),
-        theme.muted(format!(
-            "Fix: ensure '{binary}' is installed and present in your system PATH, or run 'cutver --help'."
-        ))
+        theme.error(text),
+        theme.muted(where_),
+        theme.muted(fix)
     );
 }

@@ -56,9 +56,9 @@ S8. A JSON consumer must not be able to distinguish an empty result from an unav
 - [x] T3 — S1, S3: `schemaVersion` first in `plugin list|info`, and `plugin search` wrapped in `{schemaVersion, plugins}`. Commit: cf6e646.
 - [x] T4 — S1, S4, S8: `doctor --json` emits drift and checks as data, exit codes preserved. Commit: cf6e646.
 - [x] T5 — S2, S3, S7: docs (`docs/reference/cli.md`, new `docs/internals/machine-contract.md`, index row in `docs/internals/references.md`) and the breaking declaration in the commit footer. Commit: cf6e646.
-- [ ] T6 — S5, S6: machine-mode error envelope + stable `code`/`exitCode`, human path untouched. Commit: slice B.
-- [ ] T7 — S5: every failure site wired to the envelope (config load, bump, changelog, doctor, plugin, init). Commit: slice B.
-- [ ] T8 — S5, S6, S7: tests for both paths and docs for the envelope. Commit: slice B.
+- [x] T6 — S5, S6: machine-mode error envelope + stable `code`/`exitCode`, human path untouched. Commit: 5740245.
+- [x] T7 — S5: every failure site wired to the envelope (config load, bump, changelog, doctor, plugin, init). Commit: 5740245.
+- [x] T8 — S5, S6, S7: tests for both paths and docs for the envelope. Commit: 5740245.
 
 ## Log
 
@@ -101,3 +101,26 @@ the missing key). Verified by hand on this host, in throwaway workspaces, that a
 `clippy --all-targets --features plugins -D warnings` and `fmt` clean. Caveat: `tests/e2e_doctor.rs` is `#![cfg(unix)]`
 by repository convention, so the two new end-to-end tests only run on the CI unix legs; the shape is pinned locally by
 unit tests in `src/cli/doctor.rs`, `search.rs` and `info.rs`.
+
+L9 (slice B, verified by the parent): `src/cli/machine.rs` owns the activation rule (`wants_machine` per
+command: `--json`, plus `--report` for `bump`), the eleven `FailureCode` strings and the `Versioned`-built
+envelope; `dispatch::run` selects it first, `print_error(code, msg)` routes every one of the 47 call sites, and
+`print_error_prefixed` serves the two sites that own their marker (`Error loading config:`,
+`Error checking changelog:`, whose marker the envelope folds into `message`). `external.rs`' two handmade
+blocks branch to the envelope with a plain-text body and keep the child passthrough untouched. RED: 4 of the 6
+new tests failed before the change and the 2 guards (human path, drift-as-data) were already green; GREEN after.
+`cargo test --workspace --features plugins` green, `clippy -D warnings` and `fmt --check` clean, and the three
+manual runs on this host show one JSON line on stderr for `bump --json`, the unchanged `Error loading config:`
+sentence without `--json`, and `doctor --json` keeping drift on stdout with an empty stderr and exit 2.
+
+**S6 refined, stated rather than hidden:** on a non-TTY (CI, pipes, every test) the human bytes are identical
+everywhere. The single exception is `plugin update`'s hand-rolled `Error: plugin '…' is not declared in
+cutver.toml.`, which now goes through `print_error`: same sentence, but on a TTY the `Error:` marker is themed
+like every other error instead of plain. Accepted because the alternative was keeping one hand-rolled print
+that bypassed the machine channel; `tests/e2e_style.rs` pins the themed markers on the unix legs.
+
+L10 (declared limits of slice B): `Init` and `External` are unreachable in machine mode today because no
+`--json` exists on those commands — the codes exist so the vocabulary does not change when they gain one.
+Degradation warnings (`warning: …`) stay human prose, since they are not failures. A `cutver-<name>` external
+subcommand's stderr and exit code pass through unwrapped. clap usage errors exit before this code runs, so
+`exitCode: 2` never appears in an envelope (drift is data on stdout, not an error).

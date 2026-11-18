@@ -832,8 +832,9 @@ fn bump_json_renders_one_line_with_the_release_shape() {
     assert_eq!(
         json,
         concat!(
-            r#"{"released":true,"deferred":false,"version":"0.19.0","tag":"v0.19.0","commit":"abc1234","#,
-            r#""floating_tag":"v0","publish_push_command":"git push origin refs/heads/main","#,
+            r#"{"schemaVersion":1,"released":true,"deferred":false,"version":"0.19.0","tag":"v0.19.0","#,
+            r#""commit":"abc1234","floating_tag":"v0","#,
+            r#""publish_push_command":"git push origin refs/heads/main","#,
             r#""publish_commands":["cargo publish"]}"#
         )
     );

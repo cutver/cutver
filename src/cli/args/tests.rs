@@ -212,19 +212,31 @@ fn doctor_subcommand() {
 #[test]
 fn doctor_defaults() {
     let cli = Cli::try_parse_from(["cutver", "doctor"]).unwrap();
-    let Commands::Doctor { check_changelog } = cli.command else {
+    let Commands::Doctor { check_changelog, json } = cli.command else {
         panic!("expected doctor");
     };
     assert!(!check_changelog);
+    assert!(!json, "the human dashboard is the default surface");
+}
+
+#[test]
+fn doctor_with_json_keeps_the_exit_code_meanings_out_of_the_flag() {
+    let cli = Cli::try_parse_from(["cutver", "doctor", "--json", "--check-changelog"]).unwrap();
+    let Commands::Doctor { check_changelog, json } = cli.command else {
+        panic!("expected doctor");
+    };
+    assert!(json);
+    assert!(check_changelog, "--json does not change what is checked");
 }
 
 #[test]
 fn doctor_with_check_changelog() {
     let cli = Cli::try_parse_from(["cutver", "doctor", "--check-changelog"]).unwrap();
-    let Commands::Doctor { check_changelog } = cli.command else {
+    let Commands::Doctor { check_changelog, json } = cli.command else {
         panic!("expected doctor");
     };
     assert!(check_changelog);
+    assert!(!json);
 }
 
 #[test]

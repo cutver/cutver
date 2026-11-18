@@ -126,7 +126,15 @@ fn list_json_reports_effective_state() {
     let output = project.run(["plugin", "list", "--json"]);
     assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
 
-    let parsed: serde_json::Value = serde_json::from_str(&stdout(&output)).expect("stdout must be JSON");
+    let text = stdout(&output);
+    let parsed: serde_json::Value = serde_json::from_str(&text).expect("stdout must be JSON");
+    assert_eq!(
+        parsed["schemaVersion"], 1,
+        "every JSON surface carries the schema version: {text}"
+    );
+    let version_at = text.find("\"schemaVersion\"").expect("the schema version is present");
+    let plugins_at = text.find("\"plugins\"").expect("the plugin list is present");
+    assert!(version_at < plugins_at, "the schema version is the first key: {text}");
     let plugin = &parsed["plugins"][0];
     assert_eq!(plugin["name"], "demo");
     assert_eq!(plugin["runtime"], "wasm");

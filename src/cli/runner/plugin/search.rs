@@ -9,6 +9,23 @@ use crate::plugin::registry::{RegistryIndexUrl, UreqTransport, search_plugins};
 
 const SEARCH_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// The machine form of `plugin search`.
+///
+/// The list used to be a bare array, which has no room for a version; the object wrapper is the
+/// breaking change `CHANGELOG.md` declares, and the reason every surface now opens with
+/// `schemaVersion` (see `src/cli/json.rs`).
+#[derive(serde::Serialize)]
+struct SearchJson<'a> {
+    plugins: Vec<crate::plugin::registry::RegistryEntryJson<'a>>,
+}
+
+fn render_search_json(entries: &[crate::plugin::registry::RegistryEntryJson<'_>]) -> Result<String, serde_json::Error> {
+    let payload = SearchJson {
+        plugins: entries.to_vec(),
+    };
+    serde_json::to_string_pretty(&crate::cli::json::Versioned::new(&payload))
+}
+
 /// Runs `cutver plugin search` in a plugin-enabled build.
 pub fn run_search(args: &PluginSearchArgs) -> i32 {
     let index = match args.registry.as_deref() {
@@ -37,10 +54,10 @@ pub fn run_search(args: &PluginSearchArgs) -> i32 {
             .iter()
             .map(crate::plugin::registry::RegistryEntryJson::from)
             .collect();
-        match serde_json::to_string_pretty(&json_entries) {
+        match render_search_json(&json_entries) {
             Ok(json_str) => println!("{json_str}"),
             Err(err) => {
-                eprintln!("Failed to format JSON: {err}");
+                print_error(format!("failed to serialize the search result to JSON: {err}"));
                 return 1;
             }
         }
@@ -88,4 +105,49 @@ pub fn run_search(args: &PluginSearchArgs) -> i32 {
     }
 
     0
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::plugin::registry::{RegistryEntryJson, RegistryReleaseJson};
+
+    use super::*;
+
+    fn entry() -> RegistryEntryJson<'static> {
+        RegistryEntryJson {
+            name: "github-publish",
+            description: "Publish a GitHub release",
+            author: "cutver",
+            tier: "official",
+            repository: "https://github.com/cutver/plugins",
+            capabilities: vec!["on_post_release"],
+            releases: vec![RegistryReleaseJson {
+                version: "0.2.1".into(),
+                url: "https://example.invalid/github-publish-0.2.1.wasm",
+                sha256: "abc",
+            }],
+        }
+    }
+
+    #[test]
+    fn the_search_result_is_a_versioned_object_not_a_bare_array() {
+        let json = render_search_json(&[entry()]).expect("the search result serializes");
+
+        assert!(
+            json.trim_start().starts_with("{\n  \"schemaVersion\": 1,"),
+            "the schema version is the first key: {json}"
+        );
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("the result is valid JSON");
+        assert_eq!(parsed["schemaVersion"], 1, "{json}");
+        assert_eq!(parsed["plugins"][0]["name"], "github-publish", "{json}");
+        assert!(parsed["plugins"].is_array(), "the list lives under `plugins`: {json}");
+    }
+
+    #[test]
+    fn an_empty_search_result_is_an_empty_list_and_not_a_null() {
+        let json = render_search_json(&[]).expect("the search result serializes");
+
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("the result is valid JSON");
+        assert_eq!(parsed["plugins"].as_array().map(Vec::len), Some(0), "{json}");
+    }
 }

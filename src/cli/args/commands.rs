@@ -77,6 +77,9 @@ pub enum Commands {
         /// Also validate that CHANGELOG.md is consistent with Git release tags
         #[arg(long)]
         check_changelog: bool,
+        /// Print the diagnosis as one JSON object on stdout instead of the dashboard, so a machine reads drift, and the checks that were skipped, as data. The exit code still reports the outcome: 0 clean, 2 drift, 1 a check could not run
+        #[arg(long)]
+        json: bool,
     },
     /// Query or extract entries from the changelog
     Changelog {

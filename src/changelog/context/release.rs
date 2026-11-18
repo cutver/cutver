@@ -54,7 +54,10 @@ impl serde::Serialize for ReleaseContext {
         S: serde::Serializer,
     {
         use serde::ser::SerializeMap;
-        let mut map = serializer.serialize_map(Some(36))?;
+        let mut map = serializer.serialize_map(Some(37))?;
+        // The machine contract opens with the schema version (`src/cli/json.rs`); every other key
+        // keeps the position and meaning it already had, so this change is additive.
+        map.serialize_entry("schemaVersion", &crate::cli::json::SCHEMA_VERSION)?;
         map.serialize_entry("version", &self.version)?;
         map.serialize_entry("previous_version", &self.previous_version)?;
         map.serialize_entry("tag", &self.tag)?;

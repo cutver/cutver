@@ -133,7 +133,6 @@ names what was searched for and not found.
 | Independent workspace mode (`--package`, path filtering) | Deferred | No `--package` flag and no independent release unit. The changelog does group commits per declared `package` identity ([configuration reference](../reference/configuration.md)), which reports history per package without changing what ships; the independent mode itself stays deferred, with reasons and a reopen condition in [ADR-0002](../adr/0002-shared-version-with-path-filtered-changelogs.md). |
 | Internal workspace dependency cascade | Planned | No code updates inter-manifest dependency constraints. |
 | Pre-release channels (`--channel`, `bump release`) | Planned | No `--channel` on `bump` and no `release` level (`src/cli/args/commands.rs:35-47`). |
-| GitHub Actions step outputs | External | Emitted by the `cutver/release@v1` action, not by this tree (`$GITHUB_OUTPUT` does not appear in `src/`). |
 | Pi release skill | Implemented | Shipped as `cutver-release` (planned as `release-creator`): drives `cutver bump` with a mandatory dry-run simulation and health checks (`.pi/skills/cutver-release/SKILL.md`). |
 
 No `[Planned]` row appears as a configuration key or an example above; those

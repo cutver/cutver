@@ -148,8 +148,9 @@ Read on: [Architecture and design decisions](docs/internals/design.md) · [Plugi
 | | [Installing & Managing Plugins](docs/reference/plugins.md) | Install flow, digest verification, cache location, and the plugin commands. |
 | | [Official Insignia](docs/reference/insignia.md) | The "released with cutver" badge in copy-ready Markdown and HTML. |
 | **Templates** | [Customizing Release Templates](docs/templates/release-notes.md) | Variables, commit filters, breaking descriptions, and CI attribution. |
-| **Integrations** | [GitHub Actions Integration Guide](docs/integrations/github-actions.md) | Official `cutver/setup` and `cutver/release` action workflows. |
-| | [Production Release Workflow](docs/integrations/production-release-workflow.md) | The bot-token workflow with `first_release` and `dry_run` inputs. |
+| **Integrations** | [GitHub Actions Integration Guide](docs/integrations/github-actions.md) | The CLI release recipe for a GitHub runner, with `cutver/setup@v1` installing the binary. |
+| | [Production Release Workflow](docs/integrations/production-release-workflow.md) | The bot-token workflow: a deferred bump, a gated publish, and the `first_release` and `dry_run` inputs. |
+| | [Migrating from the `cutver/release` Action](docs/integrations/migrating-from-the-release-action.md) | Why the deprecated action cannot defer a publish, and the command that replaces each input. |
 | | [Container Integration Guide](docs/integrations/containers.md) | Running Cutver with Podman, Docker, `docker://`, and GitLab CI. |
 | | [AI Coding Skills](docs/integrations/agent-skills.md) | Install the release skills bundle into Pi, Claude Code, Cursor, or Copilot. |
 | **Internals** | [Architecture & Design Decisions](docs/internals/design.md) | Principles, plugin engine summary, and evolution roadmap. |

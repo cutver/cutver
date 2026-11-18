@@ -123,4 +123,4 @@ cutver bump auto
 - [Language Manifests and Surgical Diff Guarantees](../reference/manifests.md): How cutver preserves comments and formatting.
 - [CLI Commands and Exit Codes](../reference/cli.md): Comprehensive CLI reference and exit statuses.
 - [Customizing Release Templates](../templates/release-notes.md): Craft dynamic changelogs with release context variables.
-- [GitHub Actions Integration Guide](../integrations/github-actions.md): Automate CI/CD releases with official actions.
+- [GitHub Actions Integration Guide](../integrations/github-actions.md): Install the CLI on a runner and cut the release with its commands.

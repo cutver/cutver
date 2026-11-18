@@ -1,18 +1,23 @@
 # Production Release Workflow
 
-The bot-driven release workflow: a GitHub App token, an explicit bump input, and a published GitHub
-Release.
+The bot-driven release workflow: a GitHub App token, an explicit bump input, and a release that
+`cutver publish` tags only after the bump's commit has been verified.
 
-This is the workflow to copy when releases must be attributed to a bot identity, run on demand, and
-be simulable with `dry_run`. The
-[GitHub Actions integration guide](github-actions.md) covers the simpler push-triggered flow and the
-action outputs.
+This is the workflow to copy when releases must be attributed to a bot identity, run on demand, and be
+simulable with `dry_run`. The [GitHub Actions integration guide](github-actions.md) covers the
+push-triggered variant and the `cutver/setup@v1` inputs.
+
+> **Deprecated:** the `cutver/release@v1` action this guide used to be built around is deprecated. It
+> stays published and keeps working for existing workflows, but it is no longer the recommended path:
+> with no `publish` command and no `--defer-publish` input it cannot separate the bump from the
+> closing phase. [Migrating from the `cutver/release` Action](migrating-from-the-release-action.md)
+> maps each of its inputs and outputs to the command that replaces it.
 
 ---
 
 ## The Workflow
 
-Create `.github/workflows/release.yml` in your repository:
+`.github/workflows/release.yml` in your repository:
 
 ```yaml
 name: Release
@@ -65,27 +70,48 @@ jobs:
 
       - name: Install Cutver CLI
         uses: cutver/setup@v1
-
-      - name: Execute Cutver Release
-        uses: cutver/release@v1
-        id: cutver
-        env:
-          GH_TOKEN: ${{ steps.release-token.outputs.token }}
         with:
-          command: release
-          bump: ${{ github.event.inputs.bump }}
-          first-release: ${{ github.event.inputs.first_release }}
-          dry-run: ${{ github.event.inputs.dry_run }}
+          plugins: true
 
-      - name: Publish GitHub Release
-        if: steps.cutver.outputs.released == 'true' && !github.event.inputs.dry_run
+      - name: Restore the declared plugin artifacts
+        run: cutver plugin restore
+
+      - name: Doctor
         env:
-          GH_TOKEN: ${{ steps.release-token.outputs.token }}
+          GITHUB_TOKEN: ${{ steps.release-token.outputs.token }}
+        run: cutver doctor --check-changelog
+
+      - name: Release (bump only)
+        id: cutver
         run: |
-          gh release create "${{ steps.cutver.outputs.tag }}" \
-            --title "${{ steps.cutver.outputs.tag }}" \
-            --notes-file "${{ steps.cutver.outputs.notes-path }}"
+          args=(--defer-publish --report .cutver-release.json)
+          if [ "${{ inputs.first_release }}" = "true" ]; then args+=(--first-release); fi
+          if [ "${{ inputs.dry_run }}" = "true" ]; then args+=(--dry-run); fi
+          cutver bump "${{ inputs.bump || 'auto' }}" "${args[@]}"
+          for key in released deferred version tag commit; do
+            echo "$key=$(jq -r --arg k "$key" '.[$k] // ""' .cutver-release.json)" >> "$GITHUB_OUTPUT"
+          done
+        env:
+          GITHUB_TOKEN: ${{ steps.release-token.outputs.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+
+      - name: Render the release notes
+        if: steps.cutver.outputs.released == 'true'
+        run: cutver changelog latest --template .github/templates/cutver/RELEASE.md > RELEASE_NOTES.md
+
+      - name: Publish the release
+        if: steps.cutver.outputs.released == 'true'
+        run: cat RELEASE_NOTES.md | cutver publish --tag "${{ steps.cutver.outputs.tag }}" --commit "${{ steps.cutver.outputs.commit }}" --notes-file -
+        env:
+          GITHUB_TOKEN: ${{ steps.release-token.outputs.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
 ```
+
+The example keeps the bump and the publish in one job so the commands sit next to each other. The
+steps between them are yours: build the artifacts from `steps.cutver.outputs.commit`, run the smoke
+tests over them, and only then let the publish step create the tag. This repository moves those steps
+into separate jobs, so the assets a user downloads are the ones signed and uploaded before the tag
+exists ([`.github/workflows/release.yml`](../../.github/workflows/release.yml)).
 
 ---
 
@@ -95,14 +121,23 @@ jobs:
 | :--- | :--- |
 | App token instead of `GITHUB_TOKEN` | Commits pushed with `GITHUB_TOKEN` do not trigger downstream workflows; an app token does. |
 | `fetch-depth: 0` | Conventional commit parsing and tag history need the full history. |
-| `first_release` input | Tags the current version without bumping, for repositories that already shipped. |
-| `dry_run` input | Runs the full pipeline without writing, so the plan can be reviewed in the log. |
-| `notes-path` output | The rendered notes file is what `gh release create` consumes. |
+| `plugins: true` on `cutver/setup` | `cutver plugin restore` needs the plugin-enabled build; the lean binary hides the subcommand. |
+| `first_release` input | `--first-release` tags the current version without bumping, for repositories that already shipped. |
+| `dry_run` input | `--dry-run` runs the full pipeline without writing, and the report it writes says `released: false`, so every later step is skipped. |
+| `--defer-publish` | The bump creates the release commit and pushes the branch, then stops: no tag, no publish commands until you ask for them. |
+| `--report` file | One machine-readable result — `released`, `deferred`, `version`, `tag`, `commit` — instead of parsing the log or guessing the tag with `git describe`. |
+| `notes-file -` on publish | The notes arrive on standard input, so no path is named and an empty stream is refused before the tag exists. |
+
+Nothing in the workflow creates the GitHub Release record by hand: `cutver publish` runs
+`[publish].commands` and dispatches the `on_post_release` plugins, and the `github-publish` plugin
+declared in `cutver.toml` owns the release body
+([the reference plugin](../guides/plugin-github-publish.md)).
 
 ---
 
 ## Related Documentation
 
-- [GitHub Actions Integration Guide](github-actions.md): `cutver/setup`, `cutver/release`, and every step output.
-- [CLI Commands and Exit Codes](../reference/cli.md): what `cutver bump` and `cutver publish` accept locally.
+- [GitHub Actions Integration Guide](github-actions.md): `cutver/setup@v1`, the CLI release steps, and the deprecated `cutver/release` action.
+- [Migrating from the `cutver/release` Action](migrating-from-the-release-action.md): why the action cannot defer a publish, and the command that replaces each input.
+- [CLI Commands and Exit Codes](../reference/cli.md): what `cutver bump`, `cutver publish` and `--report` accept.
 - [Customizing Release Templates](../templates/release-notes.md): the notes file this workflow publishes.

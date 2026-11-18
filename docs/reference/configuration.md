@@ -17,9 +17,7 @@ Release behavior is configured in `cutver.toml`, which discovery walks up to fin
 
 ## Full Configuration Template
 
-`cutver init` generates a real `cutver.toml`. The skeleton below shows the shape
-and nesting only; the configuration tables further down are canonical, so the
-skeleton cannot drift from them.
+`cutver init` generates a real `cutver.toml`. The skeleton below shows the shape and nesting only; the configuration tables further down are canonical, so the skeleton cannot drift from them.
 
 ```toml
 # cutver.toml — shape only
@@ -66,9 +64,7 @@ the same way.
 
 ### `[version]`
 
-`cutver` has no `[workspace]` table. Because unknown keys are now a hard error,
-declaring a `[workspace]` table fails the load instead of being ignored;
-independent per-package releases remain future work ([design](../internals/design.md)).
+`cutver` has no `[workspace]` table. Because unknown keys are now a hard error, declaring a `[workspace]` table fails the load instead of being ignored; independent per-package releases remain future work ([design](../internals/design.md)).
 
 | Table | Key | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -106,6 +102,18 @@ Declares one target file to update. Multiple `[[manifest]]` blocks can be specif
 
 ---
 
+### `[[artifact]]`
+
+Declares files a release must produce. `publish` verifies every entry after validation and before the tag; `plan` reports the count it observes and never blocks. Checksums and the target matrix are not implemented: an entry checks that the files exist, not what their bytes hash to.
+
+| Key | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `glob` | `string` | Required | Workspace-relative glob (`**`, `*`, `?`); it may not escape the workspace. |
+| `at_least` | `integer` | `1` | Fewest files the glob must match. |
+| `description` | `string` | `None` | Only used in messages. |
+
+---
+
 ### `[changelog]`
 
 | Key | Type | Default | Description |
@@ -125,9 +133,7 @@ Declares one target file to update. Multiple `[[manifest]]` blocks can be specif
 | `ignore_scopes` | `list<string>` | `[]` | Exclude commits whose scope matches one of these values. |
 | `new_contributors` | `bool` | `false` | Emit a Level 3 `### New Contributors` section listing first-time authors when non-empty. |
 
-Alongside the per-category strings, a template receives `sections`: the release already grouped, in
-canonical order, so a template can render headings without grouping the flat commit list itself. The
-remaining variables are listed in [Customizing Release Templates](../templates/release-notes.md).
+Alongside the per-category strings, a template receives `sections`: the release already grouped, in canonical order, so a template can render headings without grouping the flat commit list itself. The remaining variables are listed in [Customizing Release Templates](../templates/release-notes.md).
 
 | Key | Type | Description |
 | :--- | :--- | :--- |
@@ -135,8 +141,7 @@ remaining variables are listed in [Customizing Release Templates](../templates/r
 | `section.entries` | `list<commit>` | Commits under that heading, with the same fields `commits` entries carry. |
 | `section.is_breaking` | `bool` | `true` only for the breaking section, which holds every breaking entry and no other section holds one. |
 
-A section left with no entries is omitted, so a loop never renders an empty heading. With no commits
-at all, `sections` is empty and `all_changes` keeps rendering `fallback_entry`.
+A section left with no entries is omitted, so a loop never renders an empty heading. With no commits at all, `sections` is empty and `all_changes` keeps rendering `fallback_entry`.
 
 ### `[preflight]`, `[git]`, `[hooks]`, & `[publish]`
 
@@ -156,10 +161,7 @@ at all, `sections` is empty and `all_changes` keeps rendering `fallback_entry`.
 | `[publish]` | `commands` | `list<string>` | `[]` | Shell commands executed after the release tag exists: in the closing phase (`cutver publish`) for a release cut in two phases, in the same run for a single-phase `cutver bump`. |
 | `[publish]` | `default_timeout` | `integer` | `None` | Optional timeout in seconds applied to each publish command. |
 
-A hook runs in its own process group on unix, which is what lets the timeout kill its whole tree. The
-consequence is that an interactive Ctrl-C reaches `cutver`, not the running hook: a hook that reads the
-terminal does not see the interrupt, and may end up in the background until the timeout or the release
-kills it. Hooks that prompt on a terminal therefore need a terminal of their own.
+A hook runs in its own process group on unix, which is what lets the timeout kill its whole tree. An interactive Ctrl-C therefore reaches `cutver`, not the running hook: a hook that reads the terminal may end up in the background until the timeout or the release kills it, and a hook that prompts needs a terminal of its own.
 
 ---
 
@@ -172,13 +174,7 @@ Each plugin gets its own table, written by `cutver plugin add` rather than by ha
 
 ### `[plugins.<name>.config]`
 
-A free-form table that belongs to the plugin, not to `cutver`: no host behavior depends on a key
-inside it, an unknown key there is not rejected the way one in the enclosing table is, and the host
-does not deliver it either — `permissions.env` is the only channel an entry fills
-(`src/plugin/driver/wasm.rs:135-137`, `src/plugin/driver/process.rs:74-82`). The loader parses the table
-(`src/plugin/types.rs:186`) and `cutver plugin update` rewrites only `source` and `hash`, leaving this
-one untouched (`src/plugin/manage/update.rs:1-6`): it is the only table in `cutver.toml` whose contents
-`cutver` neither validates nor reads.
+A free-form table that belongs to the plugin, not to `cutver`: no host behavior depends on a key inside it, an unknown key there is not rejected the way one in the enclosing table is, and the host does not deliver it either — `permissions.env` is the only channel an entry fills (`src/plugin/driver/wasm.rs:135-137`, `src/plugin/driver/process.rs:74-82`). The loader parses the table (`src/plugin/types.rs:186`) and `cutver plugin update` rewrites only `source` and `hash`, leaving this one untouched (`src/plugin/manage/update.rs:1-6`): it is the only table in `cutver.toml` whose contents `cutver` neither validates nor reads.
 
 The reference implementation is `github-publish`, in this repository's own `cutver.toml`, which records
 why each key is there (`cutver.toml:84-94`):

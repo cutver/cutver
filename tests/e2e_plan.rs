@@ -544,3 +544,78 @@ fn the_fixture_never_carries_a_background_maintenance_lock() {
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
 }
+
+/// S4: `artifacts[]` carries each declaration plus the count it observes now. A count, not a
+/// verdict: at plan time the assets are not built yet (L7).
+#[test]
+fn the_plan_reports_each_declared_artifact_and_the_files_it_matches() {
+    let artifacts = r#"
+[[artifact]]
+glob = "dist/*.tar.gz"
+at_least = 2
+description = "lean binaries"
+
+[[artifact]]
+glob = "artifacts/**/*.whl"
+"#;
+    let config = format!("{}{artifacts}", armed_config());
+    let guard = fixture("plan-artifacts", &config);
+    let fixture = guard.fixture();
+    fixture.write("dist/linux.tar.gz", "a");
+    fixture.write("dist/macos.tar.gz", "b");
+    fixture.write("artifacts/linux/x86_64/pkg.whl", "c");
+
+    let output = cutver_in(fixture, &["plan", "--json", "minor"]);
+
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr_of(&output));
+    let plan = parse(&output);
+    assert_eq!(
+        plan["artifacts"],
+        serde_json::json!([
+            { "glob": "dist/*.tar.gz", "at_least": 2, "description": "lean binaries", "matched": 2 },
+            { "glob": "artifacts/**/*.whl", "at_least": 1, "matched": 1 },
+        ]),
+        "{plan}"
+    );
+    let blockers = plan["blockers"].as_array().expect("blockers is an array");
+    assert!(
+        blockers
+            .iter()
+            .all(|blocker| !blocker.as_str().unwrap().contains("declared artifact")),
+        "a plan never blocks on an artifact: {blockers:?}"
+    );
+}
+
+/// S4 and L7: a plan over a dirty tree with no assets still exits `0`, reports `matched: 0` and
+/// raises no artifact blocker — the assets are built after the plan, so a blocker would be a lie.
+#[test]
+fn a_plan_over_a_dirty_tree_without_assets_never_blocks_on_artifacts() {
+    let artifacts = "\n[[artifact]]\nglob = \"dist/*.tar.gz\"\ndescription = \"release tarball\"\n";
+    let config = format!("{}{artifacts}", armed_config());
+    let guard = fixture("plan-artifacts-dirty", &config);
+    let fixture = guard.fixture();
+    fixture.write("wip.txt", "uncommitted work\n");
+
+    let output = cutver_in(fixture, &["plan", "--json", "minor"]);
+
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr_of(&output));
+    let plan = parse(&output);
+    assert_eq!(
+        plan["artifacts"],
+        serde_json::json!([
+            { "glob": "dist/*.tar.gz", "at_least": 1, "description": "release tarball", "matched": 0 },
+        ]),
+        "{plan}"
+    );
+    let blockers: Vec<&str> = plan["blockers"]
+        .as_array()
+        .expect("blockers is an array")
+        .iter()
+        .map(|blocker| blocker.as_str().expect("a blocker is one line of text"))
+        .collect();
+    assert!(!blockers.is_empty(), "the dirty tree is still reported: {plan}");
+    assert!(
+        blockers.iter().all(|blocker| !blocker.contains("declared artifact")),
+        "no blocker may be about artifacts: {blockers:?}"
+    );
+}

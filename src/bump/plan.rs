@@ -98,8 +98,9 @@ pub(crate) struct ReleasePlan {
     #[serde(serialize_with = "serialize_preflight")]
     pub(crate) preflight: Vec<preflight::Step>,
     pub(crate) phases: Vec<PlanPhase>,
-    /// Present and empty until phase 3 declares artifacts (#326 S6, L7).
-    pub(crate) artifacts: Vec<serde_json::Value>,
+    /// One entry per declared `[[artifact]]`: the declaration plus the count it observes now (#326
+    /// S4). Never a blocker — at plan time the assets are not built yet (L7).
+    pub(crate) artifacts: Vec<PlanArtifact>,
     /// Present and empty until phase 3 attests gates (#326 S6, L7).
     pub(crate) gates: Vec<serde_json::Value>,
     /// One self-contained reason per guard a real run would abort on. A blocked plan still exits `0`
@@ -159,6 +160,19 @@ pub(crate) struct PlanManifest {
     pub(crate) path: String,
     pub(crate) from: String,
     pub(crate) to: String,
+}
+
+/// One declared artifact plus what the plan observes at plan time (#326 S4).
+///
+/// `matched` is a count, not a verdict: the assets are built after the plan, so a blocker here
+/// would describe a state the workflow never sees (L7).
+#[derive(Debug, Serialize)]
+pub(crate) struct PlanArtifact {
+    pub(crate) glob: String,
+    pub(crate) at_least: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) description: Option<String>,
+    pub(crate) matched: usize,
 }
 
 /// One step of the release, in the order the run performs it.

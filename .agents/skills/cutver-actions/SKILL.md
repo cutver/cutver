@@ -13,7 +13,8 @@ Activate when the user asks to configure GitHub Actions CI/CD workflows, install
 `cutver/setup` installs the binary. The release itself is driven by the `cutver` commands, in two phases. `cutver/release` is **deprecated**: still published and usable, no longer the recommended path — it runs whatever published `cutver` is on `PATH`, so it cannot cut a release that fixes the release path, and its command set has no `publish` and no `--defer-publish`.
 
 ## Hard Rules
-- Install with `cutver/setup@v1`. The integration guide documents a `github-token` input and states the action downloads the release archive with no checksum or signature check.
+- Install with `cutver/setup`, pinned by commit: `uses: cutver/setup@<40-character-sha>`. A major tag can move, and this step installs the binary the rest of the job runs.
+- `cutver/setup` verifies the downloaded archive against the release's `SHA256SUMS` by default (`verify-checksum: true`); a mismatch fails the step naming both digests, and a release without the asset fails too unless verification is explicitly disabled. What it does **not** verify is the Cosign signature on `SHA256SUMS`, and a tool-cache hit is trusted without verifying anything — say both when the runner's trust boundary matters.
 - Never propose `cutver/release@v1` for a new workflow. If a repository already uses it, say it is deprecated and offer the command steps below instead.
 - Cut the release with the binary built from the commit being released, in two invocations: `cutver bump … --defer-publish` then `cutver publish --tag … --commit …`. One invocation cannot build and smoke artifacts before tagging.
 - Preview first: `--dry-run` on the bump, or on the closing phase. A release is irreversible once tagged.

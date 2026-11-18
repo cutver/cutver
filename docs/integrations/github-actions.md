@@ -12,12 +12,16 @@ workflow steps call `cutver` itself.
 
 ## Installing the CLI
 
-- **[`cutver/setup@v1`](https://github.com/cutver/setup)**: downloads the `cutver` release archive matching the runner platform (`ubuntu-latest`, `macos-latest`, `windows-latest`) and adds it to `$PATH`.
+- **[`cutver/setup`](https://github.com/cutver/setup)**: downloads the `cutver` release archive matching the runner platform (`ubuntu-latest`, `macos-latest`, `windows-latest`), verifies it against the release's `SHA256SUMS`, and adds it to `$PATH`.
+  - Pin it by commit, not by the floating major tag: `uses: cutver/setup@<40-character-sha>`. A tag can move; a commit cannot, and this step installs the binary the workflow then runs. This repository's own workflow does that (`release.yml`, `Smoke test fresh Cutver installation`).
   - `version` selects the release (default `latest`; pin a version when the runner must be reproducible).
   - `plugins: true` installs the plugin-enabled build; the default is the lean core, which hides the `plugin` subcommand and has no plugin runtime.
   - `cache: false` bypasses the runner tool cache and downloads again.
   - `github-token` is used only to resolve `latest`; it defaults to `${{ github.token }}`.
-  - The download is not verified: the action checks no checksum and no signature. Verify `SHA256SUMS` and the cosign signature yourself if the runner's trust boundary requires it.
+  - `verify-checksum` defaults to `true`. With it on, the archive's digest is compared against the line `SHA256SUMS` carries for that file, and a mismatch fails the step naming the expected and the actual digest. A release with no `SHA256SUMS`, or one that does not list the file, also fails unless you set `verify-checksum: false` — which is only for releases published before the checksum existed, and it extracts the archive unverified.
+  - The output `installed-version` reports the exact version that was installed.
+  - What verification does **not** cover: the signature. `SHA256SUMS` is signed with Cosign at release time, and the action reads the file but does not check that signature, so an actor able to replace both release assets defeats it. Verify the signature separately when the runner's trust boundary requires it.
+  - A tool-cache hit is trusted: nothing is downloaded and nothing is verified. A tree cached by a run with `verify-checksum: false` is reused by a later run that has verification enabled, so use `cache: false` when that matters.
   - When the release must be cut by the code being released, build the CLI in the workflow and put it first on `PATH` instead of installing a published binary; `.github/workflows/release.yml` in this repository does exactly that.
 
 ---

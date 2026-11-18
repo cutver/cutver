@@ -564,3 +564,26 @@ fn the_version_job_checkout_persists_the_app_token_in_that_job() {
         "the guard must fail the job when the token is empty: {guard}"
     );
 }
+
+/// The install smoke runs the binary a user would download, so the action that installs it is pinned to
+/// a commit: a floating major tag can be moved to code nobody reviewed, and that code runs with the
+/// release token in this job (#322).
+#[test]
+fn the_install_smoke_pins_its_action_by_commit() {
+    let workflow = repo_text(".github/workflows/release.yml");
+    let line = workflow
+        .lines()
+        .find(|line| line.trim_start().starts_with("uses: cutver/setup@"))
+        .expect("the workflow must install the CLI to smoke it");
+
+    let reference = line
+        .trim_start()
+        .trim_start_matches("uses: cutver/setup@")
+        .trim()
+        .to_string();
+    assert!(
+        reference.len() == 40 && reference.chars().all(|c| c.is_ascii_hexdigit()),
+        "`cutver/setup` must be pinned to a 40-character commit sha, not `{reference}`: a tag can move, \
+         and this step installs the binary the rest of the job runs"
+    );
+}

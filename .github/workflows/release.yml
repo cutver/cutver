@@ -1028,7 +1028,9 @@ jobs:
           fi
 
       - name: Smoke test fresh Cutver installation
-        uses: cutver/setup@v1
+        # Pinned by commit, not by the floating `v1` tag: this step installs the binary users get, so
+        # whatever runs here has to be a commit someone reviewed, not whatever `v1` points at today.
+        uses: cutver/setup@f5750f14d73e8b98fd94227ea1ef631493504616
         with:
           version: ${{ needs.version.outputs.tag }}
           cache: "false"

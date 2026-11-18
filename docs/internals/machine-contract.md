@@ -23,6 +23,7 @@ when an existing key changes meaning or disappears.
 | :--- | :--- | :--- |
 | `cutver bump --json` | One compact object on the last stdout line. | `1` |
 | `cutver bump --report <PATH>` | The same object, in that file, atomically, plus one trailing newline. | `1` |
+| `cutver plan --json` | The release plan: tag, commit, notes, phases and blockers, all as data. | `1` |
 | `cutver changelog latest --json` | The release context, pretty-printed. | `1` |
 | `cutver changelog show <V> --json` | The release context, pretty-printed. | `1` |
 | `cutver doctor --json` | The diagnosis: drift and check statuses as data. | `1` |
@@ -34,8 +35,9 @@ when an existing key changes meaning or disappears.
 `version` is the release version the entry describes.
 
 The surfaces that do not emit JSON are deliberate: `init`, `open --print-url` (a URL), `publish` (the
-plan tree) and `plugin add|update|restore|remove` print human output only. Passing `--json` to them
-is a usage error, not a silent fallback.
+plan tree), `plan` without `--json` (the same tree the dry run prints) and `plugin
+add|update|restore|remove` print human output only. Passing `--json` to them is a usage error, not a
+silent fallback.
 
 ---
 
@@ -86,6 +88,7 @@ The message is escaped, so the envelope is one JSON line however long the human 
 | `external` | A `cutver-<name>` subcommand could not be resolved or executed. |
 | `init` | Scaffolding the configuration. |
 | `open` | Resolving the URL or launching the browser. |
+| `plan` | `cutver plan` could not compute the release: a plugin-driven surface, or notes it could not render. |
 | `plugin` | Any `plugin` subcommand: cache, registry, digest, the plugin feature. |
 | `publish` | The closing phase prepared by `bump --defer-publish`. |
 | `report` | Serializing or writing the `--json`/`--report` result after the release finished. |
@@ -137,6 +140,45 @@ dashboard, no rendered drift block, no suggested-fix text.
 A check that cannot run — an unreadable manifest, an unusable Git — fails the command with exit `1`
 and the error on stderr. That is why no check reports a `failed` status: a failed check never produces
 this object.
+
+---
+
+## `cutver plan --json`
+
+`plan` computes the release the workspace is about to cut and mutates nothing — no file, no git
+mutation, no `[preflight]`, no `[hooks]`, no `[publish] commands` and no plugin dispatch — so the object
+is evidence rather than a report of something that happened.
+
+```json
+{
+  "schemaVersion": 1, "read_only": true, "level": "minor",
+  "current_version": "0.19.0", "next_version": "0.20.0", "tag": "v0.20.0",
+  "floating_tag": "v0", "commit": "abc1234", "branch": "main",
+  "commit_message": "chore(release): v0.20.0 [skip ci]",
+  "notes": "## [0.20.0] - 2026-11-18\n\n### ✨ Features\n- …",
+  "changelog": { "path": "CHANGELOG.md", "prepends": "0.20.0" },
+  "manifests": [{ "path": "Cargo.toml", "from": "0.19.0", "to": "0.20.0" }],
+  "preflight": [{ "name": "test", "command": "cargo test", "skipped": false }],
+  "phases": [{ "name": "validate", "mutates": false, "steps": ["…"] }],
+  "artifacts": [], "gates": [], "blockers": []
+}
+```
+
+`read_only` is always `true` — a property of the command, not of the invocation. `commit` is `HEAD`,
+the commit the release would be cut from; `branch` is the checked-out branch, `null` on a detached `HEAD`.
+
+- `notes` is the **rendered** entry the release would prepend, produced without writing the changelog.
+  A plan that cannot render it fails with exit `1` and a `plan` envelope; it never emits `"notes": null`.
+- `phases` is the release in order — `validate` (`mutates: false`), `mutate` and `publish` (`mutates:
+  true`) — one step per thing the run would do, derived from the same computation `bump` runs, so it
+  cannot describe a pipeline that does not exist.
+- `artifacts` and `gates` are present and empty: nothing declares an artifact or attests a gate yet, so a
+  consumer that codes against the shape today need not branch on their presence later.
+- `blockers` lists the guards that would abort a real `bump` — a dirty tree under
+  `[git] require_clean_tree`, a `[git] require_branch` that does not match, a release tag that already
+  exists locally or on the remote, an invalid tag name — one self-contained line each, naming what to
+  fix. **A blocked plan still exits `0`**: the release decision belongs to the consumer, and exit `1`
+  keeps its single meaning, "no plan could be computed".
 
 ---
 

@@ -5,6 +5,7 @@ pub mod dispatch;
 pub mod doctor;
 pub mod external;
 pub mod open;
+pub mod plan;
 pub mod plugin;
 pub mod publish;
 
@@ -29,6 +30,8 @@ pub use doctor::run_doctor;
 pub use external::run_external;
 #[allow(unused_imports)]
 pub use open::run_open;
+#[allow(unused_imports)]
+pub(crate) use plan::{render_plan_json, run_plan};
 #[allow(unused_imports)]
 pub use plugin::run_plugin;
 #[allow(unused_imports)]

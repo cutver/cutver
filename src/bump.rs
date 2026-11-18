@@ -1,4 +1,5 @@
 mod exec;
+pub(crate) mod plan;
 #[cfg(test)]
 mod tests;
 pub mod types;

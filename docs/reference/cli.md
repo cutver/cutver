@@ -20,8 +20,7 @@ cutver --help
 | `1` | **General Error** | Configuration parse error, missing file, preflight test failure, a hook or publish command that outlives its timeout, `cutver publish` validation failure, or git safety violation. |
 | `2` | **Drift Detected** | `cutver doctor` detected manifest version drift across packages or mismatch between tags and changelog. |
 
-Every JSON surface reports the same outcome and opens with `schemaVersion`; see the
-[machine contract](../internals/machine-contract.md) for the surfaces, their keys and the compatibility rule.
+Every JSON surface reports the same outcome and opens with `schemaVersion` ([machine contract](../internals/machine-contract.md)).
 
 ---
 
@@ -65,13 +64,9 @@ cutver bump [LEVEL] [OPTIONS]
 | `-c <PATH>` | `--config <PATH>` | Explicit path to `cutver.toml`. |
 
 ```bash
-# Preview automated release calculated from conventional commits
+# Preview the release calculated from conventional commits, run it, or skip a preflight step
 cutver bump auto --dry-run
-
-# Run automated release
 cutver bump auto
-
-# Skip a specific preflight step
 cutver bump auto --skip-preflight lint
 
 # Commit and push the branch, and leave the tag and publishing to a later step
@@ -86,9 +81,26 @@ cutver bump minor --defer-publish
 {"released":true,"deferred":false,"version":"0.19.0","tag":"v0.19.0","commit":"abc1234","floating_tag":"v0","publish_push_command":null,"publish_commands":["cargo publish"]}
 ```
 
-`released` is `false` on a `--dry-run`; `deferred` is `true` when the run stopped after the branch push; `floating_tag` is `null` when the run never reached it; `publish_commands` lists the rendered `[publish].commands` and is always an array.
+`released` is `false` on a `--dry-run`; `floating_tag` is `null` when the run never reached it; `publish_commands` lists the rendered `[publish].commands` and is always an array. `publish_push_command` is the *planned* push line, so it is filled on a `--dry-run` report and `null` on a real run, whose pushes have already happened: read it before the run and confirm the refs afterwards with `git ls-remote origin`.
 
-`publish_push_command` is the *planned* push command line, so it is filled on a `--dry-run` report and `null` on a real run: by the time a real run writes the object the pushes have already happened, and `publish_commands` then names the commands it ran. Read the push line before the run, and confirm the refs afterwards with `git ls-remote origin`.
+---
+
+### `cutver plan`
+
+Computes the release the workspace is about to cut and reports it without changing anything: no file, no git mutation, no `[preflight]`, no `[hooks]`, no `[publish] commands` and no plugin dispatch — not even `on_pre_bump`, which `bump --dry-run` still dispatches. A dirty tree on the wrong branch is the normal case, because that is the state CI asks the question in.
+
+```bash
+cutver plan [LEVEL] [--json] [--skip-preflight <STEP>]... [--first-release]
+```
+
+| Flag | Long Option | Description |
+| :--- | :--- | :--- |
+| | `--json` | Prints the plan as one JSON object on stdout instead of the plan tree. |
+| | `--skip-preflight <STEP>` | Marks a named preflight step as skipped; a plan never runs one (can be repeated). |
+| `-fr`, `--fr` | `--first-release` | Plans the initial release: the tag carries the version the manifests already declare. |
+| `-c <PATH>` | `--config <PATH>` | Explicit path to `cutver.toml`. |
+
+`notes` is the rendered changelog entry, produced without writing the file, and `phases` is the release in order (`validate`, `mutate`, `publish`) with the steps each phase would run. The guards that abort a real `bump` — dirty tree, required branch, an existing release tag, an invalid tag name — arrive as one-line `blockers`, and the command still exits `0`; exit `1` means no plan could be computed. Every key is documented in the [machine contract](../internals/machine-contract.md).
 
 ---
 
@@ -117,11 +129,7 @@ cutver publish --tag v1.3.0 --commit "$(git rev-parse HEAD)" --notes-file RELEAS
 
 ### `cutver doctor`
 
-Validates configuration syntax, verifies declared manifest files, and detects **version drift** across packages.
-
-```bash
-cutver doctor [--check-changelog] [--json]
-```
+Validates configuration syntax, verifies declared manifest files, and detects **version drift** across packages: `cutver doctor [--check-changelog] [--json]`.
 
 | Flag | Long Option | Description |
 | :--- | :--- | :--- |
@@ -133,16 +141,12 @@ cutver doctor [--check-changelog] [--json]
 
 ### `cutver changelog`
 
-Utilities to extract and inspect release notes from `CHANGELOG.md`:
+Utilities to extract and inspect release notes from `CHANGELOG.md`; `latest` prints the newest entry to
+stdout and skips `[Unreleased]`:
 
 ```bash
-# Print latest release notes to stdout (skipping [Unreleased])
 cutver changelog latest [-H/--include-header] [--template <PATH>] [--json]
-
-# Print release notes for an exact historical version
 cutver changelog show <VERSION> [-H/--include-header] [--template <PATH>] [--json]
-
-# Dispatch changelog or compare view in default browser
 cutver changelog open [TARGET] [--print-url] [--browser <BROWSER>]
 ```
 
@@ -174,15 +178,9 @@ cutver plugin search [QUERY] [--registry <BASE>] [--json]
 cutver plugin remove <NAME> [--keep-artifact]
 ```
 
-`plugin` exits `1` on any failure: an unresolvable cache root, an unreachable registry, a digest
-mismatch, an unknown capability, or a declaration that already exists. The install flow, the digest
-trust model, the cache layout and the `[plugins.<name>]` keys live in the
-[plugin reference](plugins.md).
+`plugin` exits `1` on any failure: an unresolvable cache root, an unreachable registry, a digest mismatch, an unknown capability, or a declaration that already exists. The install flow, the digest trust model, the cache layout and the `[plugins.<name>]` keys live in the [plugin reference](plugins.md).
 
-Every `plugin` JSON surface opens with `schemaVersion`. `plugin list` and `plugin search` wrap their
-entries in an object — `{"schemaVersion": 1, "plugins": [...]}` — because a bare array has no room
-for a version; `plugin search` used to print a bare array, which the
-[machine contract](../internals/machine-contract.md) records as the one breaking change.
+Every `plugin` JSON surface opens with `schemaVersion`; `list` and `search` wrap their entries in `{"schemaVersion": 1, "plugins": [...]}`, because a bare array has no room for a version.
 
 ---
 

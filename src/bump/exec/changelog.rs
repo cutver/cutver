@@ -107,6 +107,16 @@ pub(crate) struct ChangelogPlan {
     pub(crate) warnings: Vec<String>,
 }
 
+impl ChangelogPlan {
+    /// A project that declares no changelog still carries a plan: no update, no degradation.
+    pub(crate) fn none() -> Self {
+        Self {
+            update: None,
+            warnings: Vec::new(),
+        }
+    }
+}
+
 /// Records an unreadable contributor list as data instead of silently swallowing it (Pillar III.4).
 fn contributor_list_or_warn(result: io::Result<Vec<String>>, warnings: &mut Vec<String>) -> Vec<String> {
     match result {
@@ -215,55 +225,85 @@ fn render_changelog_body(
 pub(crate) fn prepare_changelog(params: ChangelogPlanParams<'_>) -> Result<ChangelogPlan, Error> {
     let mut params = params;
     let Some(cl_path) = &params.config.changelog.path else {
-        return Ok(ChangelogPlan {
-            update: None,
-            warnings: Vec::new(),
-        });
+        return Ok(ChangelogPlan::none());
     };
     let mut warnings = Vec::new();
-    let original = if !params.dry_run { Some(read(cl_path)?) } else { None };
-    let updated = if !params.dry_run {
-        let scope = match params.scope.take() {
-            Some(s) => s,
-            None => assemble_scope(&params)?,
-        };
-        let ReleaseScope {
-            latest_tag,
-            raw_commits,
-            commits,
-            context,
-            warnings: scope_warnings,
-        } = scope;
-        warnings.extend(scope_warnings);
-        let body = render_changelog_body(
-            params.config,
-            params.repo,
-            latest_tag.as_deref(),
-            &commits,
-            raw_commits.as_deref(),
-            Some(&context),
-            params.plugin_manager,
-        )?;
-        let orig_content = original.as_deref().unwrap_or_default();
-        changelog::compute_update(
-            orig_content,
-            params.tag,
-            &body,
-            params.config.changelog.full_template,
-            params.config.changelog.header_template.as_deref(),
-            Some(&context),
-        )?
-    } else {
-        None
-    };
+    if params.dry_run {
+        // A rehearsal records the path it would prepend to and renders nothing: `apply_changelog`
+        // never writes on a dry run, so the bytes it would have written are never needed.
+        return Ok(ChangelogPlan {
+            update: Some(ChangelogUpdate {
+                path: cl_path.clone(),
+                original: None,
+                updated: None,
+            }),
+            warnings,
+        });
+    }
+    let original = read(cl_path)?;
+    let (updated, scope_warnings) = render_entry(&mut params, &original)?;
+    warnings.extend(scope_warnings);
     Ok(ChangelogPlan {
         update: Some(ChangelogUpdate {
             path: cl_path.clone(),
-            original,
+            original: Some(original),
             updated,
         }),
         warnings,
     })
+}
+
+/// The rendered entry the release would prepend, computed without writing the changelog (#326 S3).
+///
+/// `cutver plan` cannot show notes a real run would not write, so this renders the same entry
+/// [`prepare_changelog`] prepends and returns its newest section. `Ok(None)` means no entry could be
+/// rendered — the configuration declares no changelog, the changelog already carries this version
+/// (`compute_update` returns `None`), or the rendered changelog holds no section to extract. The
+/// caller fails closed on it rather than printing a plan that claims notes it never rendered.
+pub(crate) fn preview_notes(params: ChangelogPlanParams<'_>) -> Result<Option<String>, Error> {
+    let mut params = params;
+    let Some(cl_path) = &params.config.changelog.path else {
+        return Ok(None);
+    };
+    let content = read(cl_path)?;
+    let (updated, _warnings) = render_entry(&mut params, &content)?;
+    Ok(updated.as_deref().and_then(changelog::release_notes))
+}
+
+/// Renders the changelog content one release would produce from `content`, in memory.
+///
+/// The single render authority: [`prepare_changelog`] writes what it returns, [`preview_notes`]
+/// reads the entry out of it, and neither can drift from the other.
+fn render_entry(params: &mut ChangelogPlanParams<'_>, content: &str) -> Result<(Option<String>, Vec<String>), Error> {
+    let scope = match params.scope.take() {
+        Some(s) => s,
+        None => assemble_scope(params)?,
+    };
+    let ReleaseScope {
+        latest_tag,
+        raw_commits,
+        commits,
+        context,
+        warnings,
+    } = scope;
+    let body = render_changelog_body(
+        params.config,
+        params.repo,
+        latest_tag.as_deref(),
+        &commits,
+        raw_commits.as_deref(),
+        Some(&context),
+        params.plugin_manager,
+    )?;
+    let updated = changelog::compute_update(
+        content,
+        params.tag,
+        &body,
+        params.config.changelog.full_template,
+        params.config.changelog.header_template.as_deref(),
+        Some(&context),
+    )?;
+    Ok((updated, warnings))
 }
 
 pub(crate) fn apply_changelog(

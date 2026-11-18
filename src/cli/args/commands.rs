@@ -55,6 +55,21 @@ pub enum Commands {
         #[arg(long, value_name = "PATH")]
         report: Option<PathBuf>,
     },
+    /// Compute the release the workspace is about to cut and print it without changing anything
+    Plan {
+        /// SemVer level to increment
+        #[arg(value_enum, default_value = "auto")]
+        level: BumpLevel,
+        /// Print the plan as one JSON object on stdout instead of the plan tree
+        #[arg(long)]
+        json: bool,
+        /// Skip named preflight verification steps (repeatable). A skipped step is reported as skipped and never run
+        #[arg(long, value_name = "STEP")]
+        skip_preflight: Vec<String>,
+        /// Plan the initial release, which tags the version the manifests already declare
+        #[arg(long = "first-release", visible_alias = "fr")]
+        first_release: bool,
+    },
     /// Publish a release `bump --defer-publish` prepared: create the tag, push it, move the floating major tag, and run `[publish] commands`
     Publish {
         /// Release tag to publish; it must match the version the manifests declare at HEAD

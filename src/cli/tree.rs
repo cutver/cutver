@@ -1,4 +1,5 @@
 use crate::bump::Summary;
+use crate::bump::plan::ReleasePlan;
 use crate::cli::path::relativize_path;
 use crate::cli::style::Theme;
 
@@ -239,6 +240,47 @@ pub fn print_tree_summary(summary: &Summary) {
         println!("{}\n", render_simulation_banner(&theme));
     }
     println!("{}", render_release_plan(summary, &theme));
+}
+
+/// Renders `cutver plan`: the very tree the dry run prints, because it is the very release, then the
+/// blockers a real `bump` would abort on (#326 S7).
+///
+/// Reusing [`render_release_plan`] instead of a second renderer is what keeps a plan and a rehearsal
+/// from describing the same release differently; the blockers are the one thing a dry run cannot
+/// print, because in a dry run they are an abort.
+pub(crate) fn render_plan(plan: &ReleasePlan, theme: &Theme) -> String {
+    let mut out = render_release_plan(&plan.summary(), theme);
+    out.push_str(&format!(
+        "\n\n{}",
+        theme.muted("Nothing was written, staged, committed, tagged or pushed.")
+    ));
+    if plan.blockers.is_empty() {
+        return out;
+    }
+    out.push_str(&format!(
+        "\n\n{}",
+        theme.warning(format!(
+            "A real bump would abort on {} blocker(s):",
+            plan.blockers.len()
+        ))
+    ));
+    for blocker in &plan.blockers {
+        out.push_str(&format!("\n  {} {blocker}", theme.error("•")));
+    }
+    out.push_str(&format!(
+        "\n\n{}",
+        theme.muted("`cutver plan` exits 0 anyway: the release decision is the caller's.")
+    ));
+    out
+}
+
+/// Prints the plan tree, its degradation warnings and its blockers.
+pub(crate) fn print_plan(plan: &ReleasePlan) {
+    let theme = Theme::stdout();
+    for warning in &plan.warnings {
+        crate::cli::style::warn_degradation(warning);
+    }
+    println!("{}", render_plan(plan, &theme));
 }
 
 #[cfg(test)]

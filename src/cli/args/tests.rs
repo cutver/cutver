@@ -204,6 +204,70 @@ fn bump_auto_dry_run() {
 }
 
 #[test]
+fn plan_defaults_to_auto_and_the_plan_tree() {
+    let cli = Cli::try_parse_from(["cutver", "plan"]).unwrap();
+    let Commands::Plan {
+        level,
+        json,
+        skip_preflight,
+        first_release,
+    } = cli.command
+    else {
+        panic!("expected plan")
+    };
+    assert_eq!(level, BumpLevel::Auto);
+    assert!(!json, "the default output is the human plan tree");
+    assert!(skip_preflight.is_empty());
+    assert!(!first_release);
+}
+
+#[test]
+fn plan_takes_a_level_json_and_skipped_preflight_steps() {
+    let cli = Cli::try_parse_from([
+        "cutver",
+        "plan",
+        "minor",
+        "--json",
+        "--skip-preflight",
+        "tests",
+        "--skip-preflight",
+        "lint",
+        "--first-release",
+    ])
+    .unwrap();
+    let Commands::Plan {
+        level,
+        json,
+        skip_preflight,
+        first_release,
+    } = cli.command
+    else {
+        panic!("expected plan")
+    };
+    assert_eq!(level, BumpLevel::Minor);
+    assert!(json);
+    assert_eq!(skip_preflight, vec!["tests", "lint"]);
+    assert!(first_release);
+}
+
+#[test]
+fn plan_accepts_the_visible_first_release_alias() {
+    let cli = Cli::try_parse_from(["cutver", "plan", "--fr"]).unwrap();
+    let Commands::Plan { first_release, .. } = cli.command else {
+        panic!("expected plan")
+    };
+    assert!(first_release);
+}
+
+#[test]
+fn plan_has_no_dry_run_flag_because_it_never_writes() {
+    assert!(
+        Cli::try_parse_from(["cutver", "plan", "--dry-run"]).is_err(),
+        "`plan` is what `--dry-run` means, so the flag has nothing left to ask for"
+    );
+}
+
+#[test]
 fn doctor_subcommand() {
     let cli = Cli::try_parse_from(["cutver", "doctor"]).unwrap();
     assert!(matches!(cli.command, Commands::Doctor { .. }));

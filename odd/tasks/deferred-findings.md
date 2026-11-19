@@ -12,13 +12,12 @@
 
 ## Open
 
-All six are tracked as issues in the core repository, which is where they will actually be picked up.
+All five are tracked as issues in the core repository, which is where they will actually be picked up.
 This table is the index: the issue holds the full evidence and acceptance criteria, and this file
 holds the reason each was deferred rather than fixed in place.
 
 | Issue | Finding | Why it was deferred |
 | --- | --- | --- |
-| [#159](https://github.com/cutver/cutver/issues/159) | `docs/internals/references.md` is **419 lines** against the Pillar IV.5 hard ceiling of 200. `docs/internals/design.md` is 175, above the 100-150 target. | Pre-existing and unrelated to the plugin work. Decomposing a reference document is its own reviewable unit, and doing it inside a plugin change would bury both. The closed issue #131 claimed all documents were calibrated to 110-150 lines, so that criterion no longer holds. |
 | [#160](https://github.com/cutver/cutver/issues/160) | No blank line between the `# Changelog` header and the newly inserted version heading. | Pre-existing cosmetic defect in the changelog prepend path. The control experiment against `format = "keep-a-changelog"` is what attributes it correctly; without that, the plugin would have taken the blame. |
 | [#161](https://github.com/cutver/cutver/issues/161) | `src/plugin/manager.rs` production portion is **381 lines**, above the Pillar V.4 target of 300 and past the 350 mark where decomposition becomes mandatory. | Recorded as finding 7 in [Contract Compliance Hardening](contract-compliance-hardening.md). Inside the 400 hard ceiling, so a target miss rather than a breach — an earlier reading of "1038 lines" wrongly counted the test module. |
 | [#162](https://github.com/cutver/cutver/issues/162) | Layering inversion: `use crate::cli::BumpLevel;` in `src/bump/exec/pipeline.rs:12` and `src/bump/tests.rs:2`. | Recorded in "Not in scope" in [Contract Compliance Hardening](contract-compliance-hardening.md). Same class as the defect that unit fixed, but resolving it moves a clap-derived enum across the boundary — a separate refactor with its own risk. |
@@ -40,6 +39,17 @@ These are decisions, not work items, which is why they are not on the active pla
   Rust toolchain and on a stale floating action tag.
 - **Write the first `cutver/registry` entry** from that release's `.sha256` sidecar. It cannot be
   written before then: a local build's digest is not the published asset's digest.
+
+---
+
+## Closed and re-verified
+
+- **[#159](https://github.com/cutver/cutver/issues/159)** — `references.md` was 419 lines against the 200 ceiling.
+  Closed as completed on 2026-11-12 and **re-verified on 2026-11-19**: `references.md` is 115 lines (inside the
+  100-150 target, not merely under the ceiling), `design.md` is 139, and every relative link in the file resolves.
+  This entry stays here because the index listed it as open for a week after it was fixed, which is the class the
+  contract's freshness rule exists to stop: a record that asserts something already untrue reads as work waiting
+  to be done.
 
 ---
 

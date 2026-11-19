@@ -3,7 +3,6 @@
 mod common;
 
 use common::*;
-use std::process::Command;
 
 #[test]
 fn changelog_latest_cli_extracts_body_from_discovered_config() {
@@ -34,8 +33,7 @@ path = "CHANGELOG.md"
 "#;
     fixture.write("CHANGELOG.md", changelog_content);
 
-    let output = Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&fixture.dir)
+    let output = cutver_command(&fixture.dir)
         .args(["changelog", "latest"])
         .output()
         .expect("failed to execute cutver binary");
@@ -91,8 +89,7 @@ path = "CHANGELOG.md"
 "#;
     fixture.write("CHANGELOG.md", changelog_content);
 
-    let output = Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&fixture.dir)
+    let output = cutver_command(&fixture.dir)
         .args(["changelog", "latest", "-H"])
         .output()
         .expect("failed to execute cutver binary");
@@ -129,8 +126,7 @@ fn changelog_latest_cli_with_explicit_path() {
 "#;
     fixture.write("RELEASES.md", releases_content);
 
-    let output = Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&fixture.dir)
+    let output = cutver_command(&fixture.dir)
         .args(["changelog", "latest", "-p", "RELEASES.md"])
         .output()
         .expect("failed to execute cutver binary");
@@ -156,8 +152,7 @@ fn changelog_latest_cli_fails_cleanly_when_no_releases() {
 "#;
     fixture.write("CHANGELOG.md", changelog_content);
 
-    let output = Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&fixture.dir)
+    let output = cutver_command(&fixture.dir)
         .args(["changelog", "latest"])
         .output()
         .expect("failed to execute cutver binary");
@@ -204,8 +199,7 @@ path = "CHANGELOG.md"
 "#;
     fixture.write("CHANGELOG.md", changelog_content);
 
-    let output = Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&fixture.dir)
+    let output = cutver_command(&fixture.dir)
         .args(["changelog", "show", "1.1.0"])
         .output()
         .expect("failed to execute cutver binary");
@@ -268,8 +262,7 @@ path = "CHANGELOG.md"
 "#;
     fixture.write("CHANGELOG.md", changelog_content);
 
-    let output = Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&fixture.dir)
+    let output = cutver_command(&fixture.dir)
         .args(["changelog", "show", "1.1.0", "-H"])
         .output()
         .expect("failed to execute cutver binary");
@@ -324,8 +317,7 @@ path = "CHANGELOG.md"
 "#;
     fixture.write("CHANGELOG.md", changelog_content);
 
-    let output = Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&fixture.dir)
+    let output = cutver_command(&fixture.dir)
         .args(["changelog", "show", "v1.1.0"])
         .output()
         .expect("failed to execute cutver binary");
@@ -339,8 +331,7 @@ path = "CHANGELOG.md"
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert_eq!(stdout.trim(), "- Release 1.1.0 notes");
 
-    let output_header = Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&fixture.dir)
+    let output_header = cutver_command(&fixture.dir)
         .args(["changelog", "show", "v1.1.0", "-H"])
         .output()
         .expect("failed to execute cutver binary");
@@ -383,8 +374,7 @@ path = "CHANGELOG.md"
 "#;
     fixture.write("CHANGELOG.md", changelog_content);
 
-    let output = Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&fixture.dir)
+    let output = cutver_command(&fixture.dir)
         .args(["changelog", "show", "9.9.9"])
         .output()
         .expect("failed to execute cutver binary");
@@ -425,8 +415,7 @@ path = "CHANGELOG.md"
     fixture.write("CHANGELOG.md", changelog_content);
 
     // Styled run
-    let output = Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&fixture.dir)
+    let output = cutver_command(&fixture.dir)
         .env("CLICOLOR_FORCE", "1")
         .args(["changelog", "latest", "-H"])
         .output()
@@ -440,8 +429,7 @@ path = "CHANGELOG.md"
     assert!(stdout.contains("\x1b[90m(#42)\x1b[0m"));
 
     // Raw run with NO_COLOR
-    let output_no_color = Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&fixture.dir)
+    let output_no_color = cutver_command(&fixture.dir)
         .env("NO_COLOR", "1")
         .args(["changelog", "latest", "-H"])
         .output()
@@ -487,8 +475,7 @@ path = "CHANGELOG.md"
     init_git_repo(fixture);
     initial_commit(fixture);
 
-    let output = Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&fixture.dir)
+    let output = cutver_command(&fixture.dir)
         .env("CLICOLOR_FORCE", "1")
         .args(["changelog", "latest", "--json"])
         .output()
@@ -569,8 +556,7 @@ path = "CHANGELOG.md"
     );
     run_git_ok(&fixture.dir, &["tag", "v1.2.0"]);
 
-    let output = Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&fixture.dir)
+    let output = cutver_command(&fixture.dir)
         .env("CLICOLOR_FORCE", "1")
         .args(["changelog", "show", "v1.2.0", "--json"])
         .output()
@@ -648,8 +634,7 @@ tag_prefix = "v"
     fixture.write("custom.j2", template);
 
     // Test changelog latest --template custom.j2
-    let output_latest = Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&fixture.dir)
+    let output_latest = cutver_command(&fixture.dir)
         .args(["changelog", "latest", "--template", "custom.j2"])
         .output()
         .expect("failed to execute cutver binary");
@@ -668,8 +653,7 @@ tag_prefix = "v"
     );
 
     // Test changelog show v1.2.0 --template custom.j2
-    let output_show = Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&fixture.dir)
+    let output_show = cutver_command(&fixture.dir)
         .args(["changelog", "show", "v1.2.0", "--template", "custom.j2"])
         .output()
         .expect("failed to execute cutver binary");

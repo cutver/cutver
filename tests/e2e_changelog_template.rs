@@ -3,7 +3,6 @@
 mod common;
 
 use common::*;
-use std::process::Command;
 
 #[test]
 fn test_inline_changelog_template_in_cutver_toml() {
@@ -54,8 +53,7 @@ require_clean_tree = true
         &["commit", "--allow-empty", "-m", "feat(api): add v2 endpoint"],
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&fixture.dir)
+    let output = cutver_command(&fixture.dir)
         .args(["bump", "minor"])
         .output()
         .expect("failed to execute cutver bump");
@@ -134,8 +132,7 @@ Contributors:
         &["commit", "--allow-empty", "-m", "feat: brand new feature"],
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&fixture.dir)
+    let output = cutver_command(&fixture.dir)
         .args(["bump", "minor"])
         .output()
         .expect("failed to execute cutver bump");
@@ -205,8 +202,7 @@ path = "CHANGELOG.md"
     let custom_template = "Release: {{ version }}\n{{ all_changes }}";
     fixture.write("notes.j2", custom_template);
 
-    let output_latest = Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&fixture.dir)
+    let output_latest = cutver_command(&fixture.dir)
         .args(["changelog", "latest", "--template", "notes.j2"])
         .output()
         .expect("failed to execute cutver changelog latest");
@@ -226,8 +222,7 @@ path = "CHANGELOG.md"
         "stdout should contain changes: {stdout_latest}"
     );
 
-    let output_show = Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&fixture.dir)
+    let output_show = cutver_command(&fixture.dir)
         .args(["changelog", "show", "1.1.0", "--template", "notes.j2"])
         .output()
         .expect("failed to execute cutver changelog show");
@@ -286,8 +281,7 @@ require_clean_tree = true
         &["commit", "--allow-empty", "-m", "fix: fix edge case bug"],
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&fixture.dir)
+    let output = cutver_command(&fixture.dir)
         .args(["bump", "patch"])
         .output()
         .expect("failed to execute cutver bump");
@@ -312,8 +306,7 @@ require_clean_tree = true
         "CHANGELOG.md should contain fix item: {cl}"
     );
 
-    let output_latest = Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&fixture.dir)
+    let output_latest = cutver_command(&fixture.dir)
         .args(["changelog", "latest"])
         .output()
         .expect("failed to execute cutver changelog latest");
@@ -362,8 +355,7 @@ require_clean_tree = true
     run_git_ok(&fixture.dir, &["tag", "cutver-1.0.0"]);
     run_git_ok(&fixture.dir, &["commit", "--allow-empty", "-m", "feat: new capability"]);
 
-    let output = Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&fixture.dir)
+    let output = cutver_command(&fixture.dir)
         .args(["bump", "minor"])
         .output()
         .expect("failed to execute cutver bump");
@@ -428,8 +420,7 @@ require_clean_tree = true
         &["commit", "--allow-empty", "-m", "feat: add shiny thing (#101)"],
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&fixture.dir)
+    let output = cutver_command(&fixture.dir)
         .args(["bump", "minor"])
         .output()
         .expect("failed to execute cutver bump");
@@ -478,8 +469,7 @@ fn test_header_template_evaluation() {
     run_git_ok(&fixture.dir, &["tag", "v1.0.0"]);
     run_git_ok(&fixture.dir, &["commit", "--allow-empty", "-m", "fix: tiny fix"]);
 
-    let output = Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&fixture.dir)
+    let output = cutver_command(&fixture.dir)
         .args(["bump", "patch"])
         .output()
         .expect("failed to execute cutver bump");

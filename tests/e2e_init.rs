@@ -3,11 +3,9 @@
 mod common;
 
 use common::*;
-use std::process::Command;
 
 fn run_cutver(dir: &std::path::Path, args: &[&str]) -> std::process::Output {
-    Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(dir)
+    cutver_command(dir)
         .args(args)
         .output()
         .expect("failed to execute cutver binary")

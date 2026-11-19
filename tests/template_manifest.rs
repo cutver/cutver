@@ -57,8 +57,7 @@ fn commit(fixture: &Fixture, message: &str) {
 /// binary puts that CWD on the project, which is what a user has — and keeps these tests from
 /// mutating the test process's own CWD to fake it.
 fn run_cutver(fixture: &Fixture, args: &[&str]) -> std::process::Output {
-    std::process::Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&fixture.dir)
+    cutver_command(&fixture.dir)
         .args(args)
         .output()
         .expect("the cutver binary runs")

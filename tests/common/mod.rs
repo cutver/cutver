@@ -1,8 +1,28 @@
 #![allow(dead_code)]
 
+pub mod ci;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
+
+/// The three variables the CI output channel reads (#326 4A).
+pub const CI_VARIABLES: [&str; 3] = ["GITHUB_ACTIONS", "GITHUB_OUTPUT", "GITHUB_STEP_SUMMARY"];
+
+/// A `cutver` process for `dir` with the CI channel's inputs removed: the hermetic default.
+///
+/// A runner exports `GITHUB_ACTIONS`, `GITHUB_OUTPUT` and `GITHUB_STEP_SUMMARY` for its own steps,
+/// so a suite that inherited them would annotate every expected failure and fill the runner's real
+/// sinks from a test. Every suite spawns the binary through this helper; `tests/ci_output.rs` sets
+/// the variables again on the returned command to prove what the channel does when they are there.
+pub fn cutver_command(dir: impl AsRef<Path>) -> Command {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_cutver"));
+    command.current_dir(dir.as_ref());
+    for name in CI_VARIABLES {
+        command.env_remove(name);
+    }
+    command
+}
 
 /// A per-test working tree.
 ///

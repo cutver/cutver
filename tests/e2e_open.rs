@@ -19,8 +19,7 @@ fn test_open_print_url_repo_default() {
         .expect("failed to add git remote");
     assert!(res.success());
 
-    let output = Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&fixture.dir)
+    let output = cutver_command(&fixture.dir)
         .args(["open", "--print-url"])
         .output()
         .expect("failed to execute cutver open");
@@ -46,8 +45,7 @@ fn test_open_print_url_version_release() {
     assert!(res.success());
 
     // Test with bare version "0.9.1"
-    let output = Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&fixture.dir)
+    let output = cutver_command(&fixture.dir)
         .args(["open", "0.9.1", "--print-url"])
         .output()
         .expect("failed to execute cutver open");
@@ -57,8 +55,7 @@ fn test_open_print_url_version_release() {
     assert_eq!(stdout.trim(), "https://github.com/Row0902/cutver/releases/tag/v0.9.1");
 
     // Test with prefixed version "v0.9.1"
-    let output2 = Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&fixture.dir)
+    let output2 = cutver_command(&fixture.dir)
         .args(["open", "v0.9.1", "--print-url"])
         .output()
         .expect("failed to execute cutver open");
@@ -84,8 +81,7 @@ fn test_open_print_url_compare_range() {
     assert!(res.success());
 
     // Test "compare" keyword
-    let output = Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&fixture.dir)
+    let output = cutver_command(&fixture.dir)
         .args(["open", "compare", "--print-url"])
         .output()
         .expect("failed to execute cutver open compare");
@@ -95,8 +91,7 @@ fn test_open_print_url_compare_range() {
     assert_eq!(stdout.trim(), "https://github.com/Row0902/cutver/compare/HEAD");
 
     // Test range "v1.0.0...v1.1.0"
-    let output_range = Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&fixture.dir)
+    let output_range = cutver_command(&fixture.dir)
         .args(["open", "v1.0.0...v1.1.0", "--print-url"])
         .output()
         .expect("failed to execute cutver open range");
@@ -124,8 +119,7 @@ fn test_changelog_open_print_url() {
         .expect("failed to add git remote");
     assert!(res.success());
 
-    let output = Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&fixture.dir)
+    let output = cutver_command(&fixture.dir)
         .args(["changelog", "open", "1.2.0", "--print-url"])
         .output()
         .expect("failed to execute cutver changelog open");
@@ -143,8 +137,7 @@ fn test_open_missing_remote_fails_cleanly() {
     fixture.write("README.md", "# Test");
     initial_commit(fixture);
 
-    let output = Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&fixture.dir)
+    let output = cutver_command(&fixture.dir)
         .args(["open", "--print-url"])
         .output()
         .expect("failed to execute cutver open");
@@ -171,8 +164,7 @@ fn test_open_respects_browser_env() {
     assert!(res.success());
 
     // Using "true" command as a dummy browser that immediately succeeds
-    let output = Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&fixture.dir)
+    let output = cutver_command(&fixture.dir)
         .env("BROWSER", "true")
         .args(["open"])
         .output()

@@ -3,7 +3,6 @@
 mod common;
 
 use common::*;
-use std::process::Command;
 
 #[test]
 fn doctor_with_check_changelog_cli_succeeds_when_consistent() {
@@ -32,8 +31,7 @@ field = "version"
         "## [1.1.0] - 2026-02-01\n- v1.1.0\n\n## [1.0.0] - 2026-01-01\n- v1.0.0\n",
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&fixture.dir)
+    let output = cutver_command(&fixture.dir)
         .args(["doctor", "--check-changelog"])
         .output()
         .expect("failed to execute cutver binary");
@@ -94,8 +92,7 @@ floating_major_tag = true
         "## [1.1.0] - 2026-02-01\n- v1.1.0\n\n## [1.0.0] - 2026-01-01\n- v1.0.0\n",
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&fixture.dir)
+    let output = cutver_command(&fixture.dir)
         .args(["doctor", "--check-changelog"])
         .output()
         .expect("failed to execute cutver binary");
@@ -148,8 +145,7 @@ field = "version"
         "## [1.1.0] - 2026-02-01\n- v1.1.0\n\n## [1.0.0] - 2026-01-01\n- v1.0.0\n",
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&fixture.dir)
+    let output = cutver_command(&fixture.dir)
         .args(["doctor", "--check-changelog"])
         .output()
         .expect("failed to execute cutver binary");
@@ -196,8 +192,7 @@ field = "version"
     fixture.write("a.json", r#"{"version": "1.1.0"}"#);
     fixture.write("b.json", r#"{"version": "1.0.0"}"#);
 
-    let output = Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&fixture.dir)
+    let output = cutver_command(&fixture.dir)
         .args(["doctor", "--json"])
         .output()
         .expect("failed to execute cutver binary");
@@ -261,8 +256,7 @@ field = "version"
     run_git_ok(&fixture.dir, &["tag", "v1.1.0"]);
     fixture.write("CHANGELOG.md", "## [1.1.0] - 2026-02-01\n- v1.1.0\n");
 
-    let output = Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&fixture.dir)
+    let output = cutver_command(&fixture.dir)
         .args(["doctor", "--json", "--check-changelog"])
         .output()
         .expect("failed to execute cutver binary");

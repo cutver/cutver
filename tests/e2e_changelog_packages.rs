@@ -3,7 +3,6 @@
 mod common;
 
 use common::*;
-use std::process::Command;
 
 const CHANGELOG_INITIAL: &str = "# Changelog\n\n## [1.0.0] - 2026-01-01\n\n- Initial release\n";
 
@@ -17,8 +16,7 @@ impl Workspace<'_> {
     }
 
     fn bump(&self) -> std::process::Output {
-        Command::new(env!("CARGO_BIN_EXE_cutver"))
-            .current_dir(&self.fixture().dir)
+        cutver_command(&self.fixture().dir)
             .args(["bump", "minor"])
             .output()
             .expect("failed to execute cutver bump")

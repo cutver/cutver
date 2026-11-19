@@ -8,7 +8,7 @@
 mod common;
 
 use std::path::Path;
-use std::process::{Command, Output};
+use std::process::Output;
 
 use common::*;
 use serde_json::Value;
@@ -64,8 +64,7 @@ fn prepared_repo(name: &str, extra: &str) -> (FixtureGuard, Fixture) {
 }
 
 fn cutver(fixture: &Fixture, args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&fixture.dir)
+    cutver_command(&fixture.dir)
         .args(args)
         .output()
         .expect("failed to execute the cutver binary")

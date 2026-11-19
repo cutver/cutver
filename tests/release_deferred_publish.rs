@@ -8,7 +8,6 @@
 mod common;
 
 use std::path::Path;
-use std::process::Command;
 use std::time::{Duration, Instant};
 
 use common::*;
@@ -103,8 +102,7 @@ fn publish_request(tag: &str, commit: Option<String>) -> PublishRequest {
 /// The invocation the release workflow runs, from inside the worktree: `--notes-file` is spelled the
 /// way the job spells it, relative to the repository it runs in (#302).
 fn publish_from_worktree(fixture: &Fixture, notes: &str, commit: &str) -> std::process::Output {
-    Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&fixture.dir)
+    cutver_command(&fixture.dir)
         .args(["publish", "--tag", "v1.3.0", "--commit", commit, "--notes-file", notes])
         .output()
         .expect("failed to execute cutver publish")
@@ -115,8 +113,7 @@ fn publish_from_worktree(fixture: &Fixture, notes: &str, commit: &str) -> std::p
 fn publish_from_stdin(fixture: &Fixture, notes: &str, commit: &str) -> std::process::Output {
     use std::io::Write;
     use std::process::Stdio;
-    let mut child = Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&fixture.dir)
+    let mut child = cutver_command(&fixture.dir)
         .args(["publish", "--tag", "v1.3.0", "--commit", commit, "--notes-file", "-"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

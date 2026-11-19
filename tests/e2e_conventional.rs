@@ -402,8 +402,7 @@ check = "true""#,
     );
     run_git_ok(&fixture.dir, &["commit", "--allow-empty", "-m", "fix: off-by-one bug"]);
 
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&fixture.dir)
+    let output = cutver_command(&fixture.dir)
         .args(["bump", "auto", "--dry-run"])
         .output()
         .expect("failed to execute cutver binary");

@@ -4,7 +4,10 @@
 //!
 //! Not `cfg(unix)`: none of this needs a git repository, so the contract is proven on every platform.
 
-use std::process::{Command, Output};
+mod common;
+
+use common::cutver_command;
+use std::process::Output;
 
 use tempfile::TempDir;
 
@@ -38,8 +41,13 @@ field = "version"
 }
 
 fn run_in(dir: &TempDir, args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(dir.path())
+    cutver_command(dir.path())
+        // The CI channel is resolved from the environment, so a runner that sets these for its own
+        // steps would annotate a failure this contract expects to be one line. Strip them: what is
+        // asserted here is the machine channel without CI, and `tests/ci_output.rs` owns the rest.
+        .env_remove("GITHUB_ACTIONS")
+        .env_remove("GITHUB_OUTPUT")
+        .env_remove("GITHUB_STEP_SUMMARY")
         .args(args)
         .output()
         .expect("failed to execute the cutver binary")

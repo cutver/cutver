@@ -21,7 +21,7 @@ Validates configuration syntax, verifies declared manifest files, and detects **
 
 Utilities to extract and inspect release notes from `CHANGELOG.md`; `latest` prints the newest entry to stdout and skips `[Unreleased]`:
 
-```bash
+```text
 cutver changelog latest [-H/--include-header] [-p/--path <PATH>] [--template <PATH>] [--json]
 cutver changelog show <VERSION> [-H/--include-header] [-p/--path <PATH>] [--template <PATH>] [--json]
 cutver changelog open [TARGET] [--print-url] [--browser <BROWSER>]
@@ -66,7 +66,7 @@ the flags it shares.
 
 Installs, inspects, updates and removes plugins from the registry index. Requires a plugin-enabled build (`--features plugins`): a lean binary hides the subcommand and fails closed naming the flag.
 
-```bash
+```text
 cutver plugin add <NAME> [--version <VERSION>] [--registry <BASE>] [--event <EVENT>]... [--manifest-match <GLOB>]... [--dry-run] [--force]
 cutver plugin list [--json]
 cutver plugin restore [--registry <BASE>] [--dry-run]

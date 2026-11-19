@@ -65,7 +65,7 @@ instruction instead of a `runtime` setting that cannot help.
 
 ### `cutver plugin add`
 
-```bash
+```text
 cutver plugin add <NAME> [--version <VERSION>] [--registry <BASE>] \
   [--event <EVENT>]... [--manifest-match <GLOB>]... [--dry-run] [--force]
 ```

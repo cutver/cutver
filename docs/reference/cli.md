@@ -45,7 +45,7 @@ bound by the same documentation ceiling and one page of nine commands is past it
 
 Calculates SemVer updates, runs preflights, applies atomic manifest changes, updates the changelog, commits, and tags. Add `--defer-publish` to stop after the branch push and close the release later with `cutver publish` ([Release Pipeline Order and Atomic Guarantees](../internals/pipeline.md)).
 
-```bash
+```text
 cutver bump [LEVEL] [OPTIONS]
 ```
 
@@ -85,7 +85,7 @@ cutver bump minor --defer-publish
 
 Computes the release the workspace is about to cut and reports it without changing anything: no file, no git mutation, no `[preflight]`, no `[hooks]`, no `[publish] commands` and no plugin dispatch — not even `on_pre_bump`, which `bump --dry-run` still dispatches. A dirty tree on the wrong branch is the normal case, because that is the state CI asks the question in.
 
-```bash
+```text
 cutver plan [LEVEL] [--json] [--skip-preflight <STEP>]... [--first-release]
 ```
 
@@ -104,7 +104,7 @@ cutver plan [LEVEL] [--json] [--skip-preflight <STEP>]... [--first-release]
 
 Closes a release that `bump --defer-publish` prepared: it creates the annotated tag, pushes it, moves the floating major tag, runs `[publish].commands` and dispatches the `on_post_release` plugins. Validation fails closed before any of that, naming the command that resolves the problem and stating that nothing was written; an existing-tag error names the commit it points at (`src/bump/types.rs:85-88`). Every declared `[[artifact]]` glob is also verified after validation and before the tag: one that matches fewer files than its `at_least` fails closed naming the glob and the counts, and `--dry-run` reports that same verdict. Which inputs are validated, and why the split exists, live in [Release Pipeline Order and Atomic Guarantees](../internals/pipeline.md).
 
-```bash
+```text
 cutver publish --tag <TAG> [OPTIONS]
 ```
 

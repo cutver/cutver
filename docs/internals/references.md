@@ -13,6 +13,7 @@ Detailed guides and specifications are partitioned into focused modular document
 | **Plugins** | [Plugins Reference](../reference/plugins.md) | Capability specifications and runtime management |
 | **Architecture** | [Architecture & Design Decisions](design.md) | Design principles, roadmap, and core decisions |
 | **Pipeline** | [Pipeline Execution & Atomic Guarantees](pipeline.md) | Two-phase execution, rollback, and process trees |
+| **Contributing** | [The Local Gate & Source Line Budget](local-gate.md) | The one command that mirrors CI locally, and the ratchet that keeps `src/` under 400 lines |
 | **Machine output** | [Machine Contract](machine-contract.md) | `schemaVersion`, every JSON surface, and exit codes |
 
 ---

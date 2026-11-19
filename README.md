@@ -155,6 +155,7 @@ Read on: [Architecture and design decisions](docs/internals/design.md) · [Plugi
 | | [AI Coding Skills](docs/integrations/agent-skills.md) | Install the release skills bundle into Pi, Claude Code, Cursor, or Copilot. |
 | **Internals** | [Architecture & Design Decisions](docs/internals/design.md) | Principles, plugin engine summary, and evolution roadmap. |
 | | [Pipeline Execution & Atomic Guarantees](docs/internals/pipeline.md) | Two-phase release pipeline, rollback bounds, and process trees. |
+| | [The Local Gate & Source Line Budget](docs/internals/local-gate.md) | The one command that mirrors CI locally, and the ratchet that keeps `src/` under 400 lines. |
 | | [Plugin Engine Architecture](docs/rfcs/0001-wasm-plugin-architecture.md) | The microkernel, the capability contract, and the two runtimes. |
 
 ---

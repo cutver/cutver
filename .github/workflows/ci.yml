@@ -73,7 +73,9 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           status=0
-          for file in README.md $(find docs -type f -name '*.md' | sort); do
+          # CONTRACT.md is exempt by name and the exemption lives in the test that mirrors this loop,
+          # so it reads as a decision instead of as an omission from this glob.
+          for file in README.md CONTRIBUTING.md $(find docs -type f -name '*.md' | sort); do
             lines=$(wc -l < "$file" | tr -d ' ')
             if [ "$lines" -gt 200 ]; then
               echo "::error file=$file::$file has $lines lines; the ceiling is 200 (CONTRACT.md:114)"

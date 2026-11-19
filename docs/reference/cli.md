@@ -2,13 +2,7 @@
 
 Comprehensive command-line interface documentation for `cutver`.
 
-Every command supports `--help` for quick reference; each section below lists the same flags.
-
-```bash
-cutver --help
-```
-
----
+Every command supports `--help`; each section below lists the same flags. `cutver --help` lists them.
 
 ## Exit Codes
 
@@ -22,7 +16,13 @@ cutver --help
 
 Every JSON surface reports the same outcome and opens with `schemaVersion` ([machine contract](../internals/machine-contract.md)).
 
----
+## Global Options
+
+`--ci` and `--no-ci` are accepted by every subcommand, before or after its name. `--ci` turns the CI
+channel on — `$GITHUB_OUTPUT`, `$GITHUB_STEP_SUMMARY` and a stderr failure annotation — without
+`GITHUB_ACTIONS` and without a named sink; `--no-ci` turns it off even on a detected CI. Without either
+the channel follows `GITHUB_ACTIONS` reading `true` (trimmed, case-insensitive) plus a named file. It
+never writes stdout, so `--json` is unaffected: [CI output channel](../internals/machine-contract.md#ci-output-channel).
 
 ## Commands
 
@@ -36,8 +36,6 @@ Every JSON surface reports the same outcome and opens with `schemaVersion` ([mac
 | `-f` | `--force` | Overwrites `cutver.toml` and default template if they already exist. |
 | `-p <DIR>` | `--path <DIR>` | Target directory to inspect and initialize (default: current directory). |
 | `-nt` | `--no-template` | Skips scaffolding `.github/templates/cutver/RELEASE.md`. |
-
----
 
 ### `cutver bump`
 
@@ -75,7 +73,7 @@ cutver bump minor --defer-publish
 {"released":true,"deferred":false,"version":"0.19.0","tag":"v0.19.0","commit":"abc1234","floating_tag":"v0","publish_push_command":null,"publish_commands":["cargo publish"]}
 ```
 
-`released` is `false` on a `--dry-run`; `floating_tag` is `null` when the run never reached it; `publish_commands` lists the rendered `[publish].commands` and is always an array. `publish_push_command` is the *planned* push line, so it is filled on a `--dry-run` report and `null` on a real run, whose pushes have already happened: read it before the run and confirm the refs afterwards with `git ls-remote origin`.
+`released` is `false` on a `--dry-run`; `floating_tag` is `null` when the run never reached it; `publish_commands` lists the rendered `[publish].commands` and is always an array. `publish_push_command` is the *planned* push line, so it is filled on a `--dry-run` report and `null` on a real run, whose pushes have already happened: read it before the run and confirm the refs afterwards with `git ls-remote origin`. On a detected CI it also fills the runner's sinks ([CI output channel](../internals/machine-contract.md#ci-output-channel)).
 
 ---
 

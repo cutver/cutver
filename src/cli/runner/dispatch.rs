@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::cli::args::{Cli, Commands};
+use crate::cli::ci;
 use crate::cli::machine::{self, FailureCode};
 use crate::cli::style::Theme;
 use crate::config;
@@ -18,9 +19,11 @@ use super::publish::run_publish;
 /// Reports a failure.
 ///
 /// When the invocation asked for machine output, the failure is one JSON envelope on stderr; when
-/// it did not, the rendered line is byte-for-byte the one this command always printed.
+/// it did not, the rendered line is byte-for-byte the one this command always printed. On a detected
+/// CI either of them is preceded by one `::error::` annotation on the same stream (S4).
 pub fn print_error(code: FailureCode, msg: impl std::fmt::Display) {
     let text = msg.to_string();
+    ci::annotate_error(&text);
     if machine::try_emit_failure(code, &text) {
         return;
     }
@@ -34,7 +37,9 @@ pub fn print_error(code: FailureCode, msg: impl std::fmt::Display) {
 /// channels; the human path keeps the exact line it printed before.
 pub fn print_error_prefixed(code: FailureCode, prefix: &str, msg: impl std::fmt::Display) {
     let text = msg.to_string();
-    if machine::try_emit_failure(code, &format!("{prefix} {text}")) {
+    let message = format!("{prefix} {text}");
+    ci::annotate_error(&message);
+    if machine::try_emit_failure(code, &message) {
         return;
     }
     let theme = Theme::stderr();
@@ -43,6 +48,7 @@ pub fn print_error_prefixed(code: FailureCode, prefix: &str, msg: impl std::fmt:
 
 pub fn run(args: Cli) -> i32 {
     machine::select(&args.command);
+    ci::select(ci::CiMode::from_flags(args.ci, args.no_ci));
     match args.command {
         Commands::Init {
             update,
@@ -72,6 +78,7 @@ pub fn run(args: Cli) -> i32 {
             defer_publish,
             json,
             report,
+            ..
         } => {
             let config = match load_config(args.config) {
                 Ok(c) => c,
@@ -92,6 +99,7 @@ pub fn run(args: Cli) -> i32 {
             json,
             skip_preflight,
             first_release,
+            ..
         } => {
             let config = match load_config(args.config) {
                 Ok(c) => c,

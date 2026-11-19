@@ -26,6 +26,7 @@ fn bump_patch_defaults() {
     assert!(!defer_publish);
     assert!(!json);
     assert!(report.is_none());
+
     assert!(cli.config.is_none());
 }
 
@@ -276,6 +277,26 @@ fn plan_has_no_dry_run_flag_because_it_never_writes() {
     assert!(
         Cli::try_parse_from(["cutver", "plan", "--dry-run"]).is_err(),
         "`plan` is what `--dry-run` means, so the flag has nothing left to ask for"
+    );
+}
+
+#[test]
+fn the_two_ci_flags_are_global_so_every_subcommand_can_opt_out() {
+    let cli = Cli::try_parse_from(["cutver", "plan", "--ci"]).unwrap();
+    assert!(cli.ci, "`--ci` turns the channel on");
+    assert!(!cli.no_ci);
+
+    let cli = Cli::try_parse_from(["cutver", "doctor", "--no-ci"]).unwrap();
+    assert!(!cli.ci);
+    assert!(cli.no_ci, "`--no-ci` turns the channel off on any subcommand");
+    assert!(matches!(cli.command, Commands::Doctor { .. }));
+
+    let before = Cli::try_parse_from(["cutver", "--no-ci", "changelog", "latest"]).unwrap();
+    assert!(before.no_ci, "a global flag is accepted before the subcommand too");
+
+    assert!(
+        Cli::try_parse_from(["cutver", "bump", "--ci", "--no-ci"]).is_err(),
+        "`--ci` and `--no-ci` are opposite answers to one question"
     );
 }
 

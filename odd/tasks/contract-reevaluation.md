@@ -59,12 +59,13 @@ and S7.
 
 | ID | What | Specs | Route | Commit |
 | :--- | :--- | :--- | :--- | :--- |
-| T1 | Close the `CONTRIBUTING.md` hole: extend the doc walk in the test and the CI loop | S8 | inline | |
-| T2 | Lean dependency-graph check: the lean build carries no `extism` or `wasmtime` | S1, S10 | inline | |
-| T3 | Clap-to-`docs/reference/cli.md` parity test, and fix the `cutver open` drift it finds | S7, S10 | inline | |
-| T4 | Fenced `cutver …` lines must parse against the CLI, plus the example convention it needs | S7, S10 | inline | |
-| T5 | Rewrite `CONTRACT.md`: S1-S9, each clause naming the check that binds it | S1-S9 | inline | |
-| T6 | Align the size figures in the docs with the measurement, and say where size is reported | S1 | inline | |
+| T1 | Close the `CONTRIBUTING.md` hole: extend the doc walk in the test and the CI loop | S8 | inline | `a680e2f` |
+| T2 | Lean dependency-graph check: the lean build carries no `extism` or `wasmtime` | S1, S10 | inline | `281765d` |
+| T3 | Clap-to-`docs/reference/cli.md` parity test, and fix the `cutver open` drift it finds | S7, S10 | inline | `e4c9352` |
+| T4 | Fenced `cutver …` lines must parse against the CLI, plus the example convention it needs | S7, S10 | inline | `852c411` |
+| T5 | Rewrite `CONTRACT.md`: S1-S9, each clause naming the check that binds it | S1-S9 | inline | `3426a86` |
+| T6 | Align the size figures in the docs with the measurement, and say where size is reported | S1 | worker + verifier | `4c3294e` |
+| T7 | Run the local gate and record its result | — | inline | this commit |
 
 ## Log
 
@@ -78,3 +79,28 @@ and S7.
   page; `CONTRIBUTING.md` (130 lines) and `CONTRACT.md` (181) are both outside the doc walk.
 - **L6** — Ordering decision: checks first, contract prose last, so no commit on this branch introduces a declaration
   whose check does not exist yet.
+- **L7** — What the checks found on their first run, which is the argument for having built them: the parity test
+  reported `cutver open` with no reference section *and* `cutver changelog --path` undocumented in both nested
+  subcommands; the transcript test failed on fourteen lines that were all syntax diagrams, which is why the
+  convention became the fence tag; the ratchet test corrected its author about `wasmtime`, which is transitive and
+  therefore invisible to any manifest reading.
+- **L8** — T3 could not document `open` without decomposing: nine commands at 195 lines against a 200-line ceiling
+  means the next fact costs a fact. `docs/reference/cli-tools.md` took the four commands that report, read or reach
+  outside the repository, whole; `cli.md` kept exit codes, the `--ci` channel and the five release commands at 146.
+- **L9** — T6 went to a worker and then to an independent verifier because it edits the release workflow (risk item 5).
+  The verifier confirmed the structure, confirmed the size report cannot fail a run, and confirmed no doc fact was
+  dropped; it also found that the first version of the summary rows ran `basename` as a nested command substitution,
+  so the artifact name never reached the table while the step exited 0, and that the report test's job anchoring could
+  be fooled by moving the step into a job that never fills `dist/`. Both are fixed, and the mutation was replayed to
+  prove the new assertions are not vacuous.
+- **L10** — T7, the local gate on this host: **PASS**, 9 steps passed, 0 failed, 1 not run here
+  (`clippy (x86_64-unknown-linux-gnu, plugins feature)` needs `x86_64-linux-gnu-gcc`, which this host does not
+  have — a host limit that predates the branch, reported as not-run rather than as a pass). The `lean dependency
+  shape` step is the new one in that list. `cargo test --locked --workspace` is 503 unit tests plus the integration
+  suites, all green, and `git diff --name-only 1695813..HEAD` contains **no file under `src/`**: this branch changes
+  tests, workflows and prose, not behaviour.
+- **L11** — Known obligations for the pull request, so they are not rediscovered there: `docs/reference/plugins.md`
+  is 197 lines, above the 150 trigger that S8 introduces, so the PR says why it is one thing or splits it; the size
+  figures now live only in a release run's job summary and a reader on the releases page sees the archives without
+  them, which is a deliberate first step and not a promise the pipeline keeps beyond that; and #272 (the deprecation
+  warning channel) is referenced by Pillar VII.2 as an open dependency, not as completed work.

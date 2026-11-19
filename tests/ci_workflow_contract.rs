@@ -301,10 +301,7 @@ const EXEMPT: [(&str, &str); 1] = [(
 fn every_document_stays_under_the_line_ceiling() {
     const CEILING: usize = 200;
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let mut files: Vec<std::path::PathBuf> = GOVERNED_ROOT_FILES
-        .iter()
-        .map(|name| root.join(name))
-        .collect();
+    let mut files: Vec<std::path::PathBuf> = GOVERNED_ROOT_FILES.iter().map(|name| root.join(name)).collect();
     collect_markdown(&root.join("docs"), &mut files);
 
     let mut over = Vec::new();

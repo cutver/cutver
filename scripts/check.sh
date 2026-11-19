@@ -98,11 +98,12 @@ SKIP_NO_TARGET="the $LINUX_TARGET target is not installed; \`rustup target add $
 SKIP_NO_CC="zstd-sys (via extism) compiles C for $LINUX_TARGET and needs $LINUX_CC, which is not on PATH here"
 
 # --- the steps, in the workflow's order --------------------------------------------------------
-STEPS='toolchain build test test-plugins clippy clippy-plugins linux-clippy linux-plugins-clippy fmt'
+STEPS='toolchain dependency-shape build test test-plugins clippy clippy-plugins linux-clippy linux-plugins-clippy fmt'
 
 label() {
 	case "$1" in
 	toolchain) printf 'toolchain (rustc -V, cargo -V)' ;;
+	dependency-shape) printf 'lean dependency shape (no WebAssembly runtime)' ;;
 	build) printf 'build (default features)' ;;
 	test) printf 'test (default features)' ;;
 	test-plugins) printf 'test (plugins feature)' ;;
@@ -119,6 +120,20 @@ run_step() {
 	case "$1" in
 	toolchain)
 		rustc -V && cargo -V
+		;;
+	dependency-shape)
+		# Pillar VI.4 became a shape invariant when the ~4 MB budget was dropped: without
+		# `--features plugins` the resolved graph must reach no WebAssembly runtime. It runs
+		# before `build` because a shape defect is cheaper to see than a compile failure.
+		graph=$(cargo tree --locked --no-default-features -e normal --prefix none) || return 1
+		names=$(printf '%s\n' "$graph" | awk '{print $1}' | sort -u)
+		runtimes=$(printf '%s\n' "$names" | grep -E '^(extism|wasmtime)' || true)
+		if [ -n "$runtimes" ]; then
+			printf 'the lean build reaches a WebAssembly runtime:\n%s\n' "$runtimes" >&2
+			printf 'extism and wasmtime belong behind --features plugins\n' >&2
+			return 1
+		fi
+		printf 'lean dependency graph: %s crates, no WebAssembly runtime\n' "$(printf '%s\n' "$names" | wc -l | tr -d ' ')"
 		;;
 	build)
 		cargo_with_ci_env cargo build --locked --workspace --all-targets

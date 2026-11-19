@@ -40,6 +40,10 @@ default = []
 plugins = ["dep:extism", "dep:ureq", "dep:sha2"]
 
 [dev-dependencies]
+# `clap` is already a direct dependency above, so this adds NO new crates to Cargo.lock. The parity
+# test walks the real command tree instead of re-deriving flags from the source text, because a test
+# that parses `src/` by hand drifts with it and reports the drift as agreement.
+clap = { version = "4", features = ["derive"] }
 # `wat` is already in Cargo.lock as a transitive dependency of `wasmtime` and
 # `wasm-compose` (both pulled in by the optional `extism` dependency), so this adds
 # NO new crates to the resolved dependency graph. Dev-dependencies never ship in

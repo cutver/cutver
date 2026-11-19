@@ -73,6 +73,9 @@ attestation is only as trustworthy as the machine that wrote it. No signing, no 
 - [x] T4 — S4: `artifacts[]` in `cutver plan --json`.
 - [x] T5 — S5, S7: no-change proof for undeclared projects + docs.
 - [ ] T6 — S8-S12 (3B): `cutver attest`, `--require-gate`, the clean-tree exemption, `gates[]` in plan, docs.
+- [x] T7 — runner capacity (delivery, not a spec): fold both macOS configurations into one `test`
+      entry, drop macOS from `test-plugins`, add `workflow_dispatch`. Unblocks 3A's `CI gate`
+      without touching the gate's `needs` or the three-leg contract.
 
 ## Log
 
@@ -107,3 +110,23 @@ without a new table.
 L7 (decision, parent): in 3A `plan` reports `matched` and never blocks. At plan time the assets are not built yet — the
 workflow uploads them from Actions artifacts inside the publish job — so a blocker there would be a lie. In 3B the gates
 array does carry a verdict, because an attestation either exists for that commit or it does not.
+
+L8 (user, verbatim): `Tenemos que continuar con el 326 desde donde nos quedamos. Recuerda que la PR 330 en CI de MacOS
+no pasó las tres veces que lo intentamos porque lo cancelaban, en el 326 dejaste comentario al respecto de todo`
+
+L9 (evidence, `path:line`): the macOS leg was never acquired, and no repository-side YAML can cause that. Across
+44332874622 (attempts 1 and 2) and 44339353782, the job payload carries `runner_id: 0`, `runner_name: ""`, `steps: []`
+and `started_at == created_at` — queued, never in progress — for exactly 902s, with GitHub's own check annotation
+`The job was not acquired by Runner of type hosted even after multiple attempts` plus the notice `Due to capacity
+constraints, jobs targeting macOS arm64 runners may experience longer queue times.` The sibling macOS leg of each run
+did get a runner (5m04s and 5m06s queue) and passed, so the pool was degraded, not absent. Ruled out as causes:
+`fail-fast: false` (`ci.yml:19`, `:72`), `timeout-minutes` (zero matches under `.github/`), and workflow `concurrency`
+(`ci.yml` has none; the only one is `container.yml:21-23`, keyed on its own `github.workflow`). `gate` failed only
+because `needs.test.result` was `cancelled` (`ci.yml:111-129`), which is the fail-closed behavior its comment demands.
+
+L10 (decision, user): fold the two macOS legs into one job and add `workflow_dispatch`. One macOS runner request per
+run instead of two, both configurations preserved. Implemented inside `test` rather than as a fourth job because
+`tests/ci_workflow_contract.rs` pins `LEGS = [test, test-plugins, publish-dry-run]` and fails when a job exists that the
+gate does not need: a new job would have forced a change to the `needs` list and to the three-leg contract, i.e. to the
+one thing guarding the branch ruleset. The macOS entry now runs the lean build (the VI.4 guard) and then the `plugins`
+build and test on the same runner; `test-plugins` keeps ubuntu and windows and loses no coverage.

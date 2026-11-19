@@ -81,7 +81,7 @@ jobs:
       - name: Format
         if: matrix.os == 'ubuntu-latest'
         run: cargo fmt --all --check
-      # CONTRACT.md:114 sets a hard ceiling of 200 lines per document; nothing
+      # CONTRACT.md:140 sets a hard ceiling of 200 lines per document; nothing
       # failed closed on it, so the entry point drifted past it. Runs here rather
       # than as its own job so the `gate` wiring keeps its exact three legs.
       - name: Documentation line budget
@@ -93,7 +93,7 @@ jobs:
           for file in README.md CONTRIBUTING.md $(find docs -type f -name '*.md' | sort); do
             lines=$(wc -l < "$file" | tr -d ' ')
             if [ "$lines" -gt 200 ]; then
-              echo "::error file=$file::$file has $lines lines; the ceiling is 200 (CONTRACT.md:114)"
+              echo "::error file=$file::$file has $lines lines; the ceiling is 200 (CONTRACT.md:140)"
               status=1
             fi
           done

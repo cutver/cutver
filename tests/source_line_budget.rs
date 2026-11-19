@@ -1,4 +1,4 @@
-//! Source line budget over `src/**/*.rs`: `CONTRACT.md:146`'s hard ceiling of 400 lines, enforced as
+//! Source line budget over `src/**/*.rs`: `CONTRACT.md:174`'s hard ceiling of 400 lines, enforced as
 //! a ratchet instead of a wish.
 //!
 //! Sixteen files were already over the ceiling when this landed, the worst at 1308 lines
@@ -22,7 +22,7 @@
 
 use std::path::{Path, PathBuf};
 
-/// `CONTRACT.md:146`: production source files target <= 300 lines with a strict hard ceiling of 400.
+/// `CONTRACT.md:174`: production source files target <= 300 lines with a strict hard ceiling of 400.
 const CEILING: usize = 400;
 
 /// Every file that was already over the ceiling when the ratchet landed, with the line count it had
@@ -106,7 +106,7 @@ fn no_source_file_climbs_over_the_ceiling() {
         .collect();
     assert!(
         over.is_empty(),
-        "the hard ceiling is {CEILING} lines (CONTRACT.md:146); these files are over it and are not \
+        "the hard ceiling is {CEILING} lines (CONTRACT.md:174); these files are over it and are not \
          allowlisted: {over:?}. Decompose one into `foo.rs` + `foo/` (the Facade pattern) or move code \
          out of it. Adding it to ALLOWLIST is not the fix: the allowlist exists only for debt that \
          predates the ratchet, and it can never grow"
@@ -124,7 +124,7 @@ fn an_allowlisted_file_may_not_grow() {
         .collect();
     assert!(
         grown.is_empty(),
-        "an allowlisted file may shrink but never grow: the recorded count is a cap (CONTRACT.md:146) \
+        "an allowlisted file may shrink but never grow: the recorded count is a cap (CONTRACT.md:174) \
          and this ratchet only tightens. Pull each file back to at most its recorded count: {grown:?}. \
          If the file now fits inside the {CEILING}-line ceiling, delete its ALLOWLIST entry instead of \
          raising it"
@@ -150,7 +150,7 @@ fn the_allowlist_may_only_shrink() {
     assert!(
         stale.is_empty(),
         "the allowlist may only shrink; these entries have to go: {stale:?}. A file that fits inside \
-         the {CEILING}-line ceiling (CONTRACT.md:146) is no longer debt, so delete its ALLOWLIST entry \
+         the {CEILING}-line ceiling (CONTRACT.md:174) is no longer debt, so delete its ALLOWLIST entry \
          in the same commit that shrank it — leaving it there hands the next change a budget nobody \
          approved"
     );

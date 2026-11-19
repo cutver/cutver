@@ -291,7 +291,7 @@ const GOVERNED_ROOT_FILES: [&str; 2] = ["README.md", "CONTRIBUTING.md"];
 const EXEMPT: [(&str, &str); 1] = [(
     "CONTRACT.md",
     "defines the ceiling and is consulted clause by clause rather than read whole \
-     (odd/tasks/contract-reevaluation.md S9)",
+     (CONTRACT.md:140)",
 )];
 
 /// `ci.yml` enforces the documentation line ceiling as a shell loop inside the `test` job, where this
@@ -315,7 +315,7 @@ fn every_document_stays_under_the_line_ceiling() {
     }
     assert!(
         over.is_empty(),
-        "the ceiling is {CEILING} lines (CONTRACT.md:114); these are over it: {over:?}"
+        "the ceiling is {CEILING} lines (CONTRACT.md:140); these are over it: {over:?}"
     );
 }
 

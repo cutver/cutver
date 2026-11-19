@@ -13,6 +13,31 @@ Because developers and automated CI/CD pipelines entrust `cutver` with their can
 
 ---
 
+## ⚖️ Enforcement
+
+A rule nothing executes is a wish with a citation. This project learned that four times in one session: `permissions.env` (#300), `[gates] require`, `--ci` without a named sink, and the 400-line ceiling itself were each declared and each unchecked. That is a pattern, not four accidents, so every limit below is exactly one of four things:
+
+| Level | Means | What the clause must name |
+| :--- | :--- | :--- |
+| **Enforced** | A check fails the build or the required `CI gate` | The test or gate step |
+| **Ratchet** | Enforced, and its recorded allowance may only tighten | The check and its allowlist |
+| **Judgement** | No machine can decide it | Who decides, and why a machine cannot |
+| **Target** | An aspiration that is deliberately not a gate | The evidence a change attaches when it misses |
+
+The limits this contract carries, and which of the four each one is:
+
+| Limit | Level | Where it is checked |
+| :--- | :--- | :--- |
+| 200 lines per document | **Enforced** | `every_document_stays_under_the_line_ceiling` in `tests/ci_workflow_contract.rs`, mirrored by a `ci.yml` step |
+| 400 lines per production source file | **Ratchet** | `tests/source_line_budget.rs`, with its sixteen allowlisted files |
+| 350-line facade trigger | **Judgement** | Review; `tests/source_line_budget.rs` states why it is not mechanical |
+| 300–400 lines per pull request | **Target** | The pull request states its slice boundary, or splits |
+| The lean build's dependency shape | **Enforced** | `tests/lean_dependency_graph.rs`, plus a `cargo tree` step in `scripts/check.sh` and in `ci.yml` |
+
+**Every declaration ships with its check.** A clause that a machine could verify may not rely on review, and a new numeric limit added anywhere in this document joins the table above with its level and its checker. When a check is expensive, it lands in the same pull request that declares the rule. When a check is genuinely impossible, the clause says *judgement* and says why — "we will remember to do this" is not an enforcement level.
+
+---
+
 ## 🏛️ Pillar I: Architectural Purity & Mutation Safety
 
 ### 1. Functional Core, Imperative Shell
@@ -95,10 +120,11 @@ Every error surfaced to the user must answer three questions:
 - Tests must never touch the user's ambient Git configuration, global files, or host repositories.
 - Time-dependent tests (changelog dates, timestamps) must accept parameterized dates or mock clocks; tests must never fail due to time zone differences or clock drift.
 
-### 2. Backward Compatibility & Responsible Deprecation
+### 2. Configuration Backward Compatibility
 - Configuration syntax in `cutver.toml` must maintain backwards compatibility.
 - Deprecated syntax must remain functional with clear migration warnings emitted in `cutver doctor` and `cutver init --update`.
 - Breaking schema changes require a major version bump and automated migration tooling.
+- Machine surfaces — JSON output, exit codes, the plan and attestation files — carry a separate policy: **Pillar VII.2**.
 
 ### 3. Quality Gates (Fail-Closed)
 - `cargo clippy --all-targets -- -D warnings`: Zero warnings tolerated.
@@ -108,10 +134,12 @@ Every error surfaced to the user must answer three questions:
 ### 4. Cognitive Load & Work-Unit Commits
 - Changes should be broken down into atomic, reviewable work-unit commits (`feat:`, `fix:`, `refactor:`, `test:`, `docs:`).
 - Code, tests, and documentation must accompany the behavior within the same commit.
-- Pull requests must strive to remain under 300–400 lines of effective code to protect human review focus.
+- Pull requests stay under 300–400 lines of effective code to protect human review focus. That is a **target**, not a gate: past it the pull request states its slice boundary and why the change is one unit, and chained pull requests are the sanctioned answer.
 
 ### 5. Cognitive Documentation & Human-Centered Design
-- **Strict Cognitive Line Budgets**: All repository documentation files (`README.md`, `docs/**/*.md`) must adhere to human attention horizons (Nielsen Norman 3–5 minute reading threshold). Target: 100–150 lines per document; strict hard ceiling $\le$ 200 lines. Documents approaching limits must decompose into focused submodules under `docs/`.
+- **Strict Cognitive Line Budgets**: All repository documentation (`README.md`, `CONTRIBUTING.md`, `docs/**/*.md`) adheres to human attention horizons (Nielsen Norman 3–5 minute reading threshold). Target 100–150 lines per document, hard ceiling $\le$ 200 lines — **enforced** by `every_document_stays_under_the_line_ceiling` and by a step in `ci.yml`, which walk the same roots. **The trigger is 150**: crossing it obliges a decision — split the page, or record in the pull request why it is one thing — because the cheapest way to satisfy a ceiling is deletion and the cheapest words to delete are the qualifiers, which are the semantics. Documents approaching either line decompose into focused submodules under `docs/`.
+- **The survivor rule**: compaction moves a fact to another page; it never drops one. A page compacted to fit the ceiling is read back against its predecessor, and a statement of behaviour that cannot move is a reason to split the page rather than a sentence to delete. Phase 4A compacted `machine-contract.md` to 199 lines and silently lost four statements of behaviour; this clause exists because of that diff.
+- **Documentation freshness**: shipping docs in the same commit is not enough on its own — it asks for *presence* while the failure is *freshness*. Three parts: **(1) same commit** — a new or changed surface ships its reference row and at least one worked example in the commit that changes it; **(2) freshness** — shipping a surface obliges revisiting the pages that describe the flow *around* it, because a new flag is not only a row in the reference, it changes what the first-run page recommends; **(3) examples that were run** — an example is a transcript or it is a claim. Enforcement stops where a test would start lying: flag surface parity between the clap tree and `docs/reference/**` is mechanical (`tests/cli_reference_parity.rs`), and a `cutver …` line in a `bash`-tagged fence must parse against the CLI (`tests/documentation_examples.rs`, parse only, nothing executed). Narrative pages — `design.md`, `pipeline.md`, the guides — stay a **judgement** obligation, because no test can verify that a sentence is still true, and pretending otherwise produces prose that passes and lies. A `last-verified: vX.Y.Z` stamp is vanity: easy to add, easier to fake.
 - **Direct Companion Tone**: Documentation speaks directly from engineer to engineer. Lead with executable snippets, explain concisely afterwards, and highlight gotchas via visible callouts. Marketing hype (*"blazing fast"*, *"revolutionary"*) and corporate bureaucratic prose are strictly forbidden.
 - **Semantic Link Hygiene**: Hyperlink anchor text must communicate conceptual destinations and value. Exposing raw file paths (`docs/...`), file extensions (`.md`), or generic phrases (*"click here"*) in visible link text is strictly forbidden.
 - **Domain-First Abstraction**: Frame features around user outcomes (e.g. *"Release Templates"*, *"Manifest Synchronization"*), treating underlying implementation libraries (e.g. MiniJinja, toml_edit) as secondary technical notes.
@@ -143,7 +171,7 @@ Every error surfaced to the user must answer three questions:
 
 ### 4. Atomic Primitives & Strict Single Responsibility
 - **Function Budget**: Functions must not exceed 35–40 lines of effective code. A function does exactly one thing: compute, parse, validate, or perform boundary I/O. Mixing responsibilities is forbidden.
-- **Module Budget & No Legacy `mod.rs`**: Production source files (`src/**/*.rs`) target $\le$ 300 lines with a strict hard ceiling of $\le$ 400 lines. When a file approaches 350 lines, decomposition into focused submodules via the Facade pattern (`foo.rs` + `foo/`) is mandatory. Using legacy `mod.rs` files inside `src/` is strictly forbidden; modern Rust 2018/2021+ sibling files (`foo.rs` alongside `foo/`) are required.
+- **Module Budget & No Legacy `mod.rs`**: Production source files (`src/**/*.rs`) target $\le$ 300 lines with a strict hard ceiling of $\le$ 400 lines, **enforced as a ratchet** by `tests/source_line_budget.rs`. When a file approaches 350 lines, decomposition into focused submodules via the Facade pattern (`foo.rs` + `foo/`) is **mandatory as a judgement call**: whether `foo.rs` should become `foo.rs` + `foo/` depends on where its seams are, which no line count can decide, so review owns it. Using legacy `mod.rs` files inside `src/` is strictly forbidden; modern Rust 2018/2021+ sibling files (`foo.rs` alongside `foo/`) are required.
 - **Thin CLI `main.rs` Budget**: $\le$ 50 lines (ideal $\le$ 20 lines). It only parses CLI arguments and delegates immediately to runner dispatch.
 - **Integration Test Suite Budget**: $\le$ 500 lines per domain suite (`tests/e2e_*.rs`), sharing common test fixtures and setup helpers in `tests/common/mod.rs`.
 - Functions must be pure, deterministic, and composable without hidden side-effects.
@@ -175,6 +203,26 @@ Every error surfaced to the user must answer three questions:
 
 ### 4. Zero Footprint Regressions
 - The WebAssembly runtime engine (Extism) must remain gated behind the optional Cargo feature flag `plugins` (`cargo build --features plugins`).
-- Minimal CLI installations without plugins must compile with zero external WASM dependencies and retain the ultra-lean binary size baseline (~4 MB).
+- **Minimal CLI installations without plugins must reach no WebAssembly runtime at all**: without `--features plugins`, the resolved dependency graph contains neither `extism` nor `wasmtime`. That shape invariant replaced the `~4 MB` binary-size budget, which nothing ever executed — a budget with no threshold, no tool and no check, while the documentation quoted three different numbers. It is **enforced** in `tests/lean_dependency_graph.rs` (the feature wiring) and by a `cargo tree` step in `scripts/check.sh` and in `ci.yml` (the graph itself).
+- **Size is reported, never enforced.** Binary size is a channel cost — container layers, download — and startup latency is the user cost; both are measured per release and published, and neither is a merge gate. The number is gone; the measurement is not.
 
+---
 
+## 🧭 Pillar VII: Scope & Evolution
+
+### 1. What `cutver` May Become
+The pillars above govern how well something is built; this one governs whether it belongs. Growth is welcome — the tool earns its size — but scope is a decision, not an accretion, so a feature can be cleanly implemented and still be out of scope.
+
+- **GitHub is a channel, never an identity.** Every integration with a code host degrades to stdio and exit codes: `cutver` works in a repository with no remote, no token and no network, and a CI integration is a consumer of the machine contract rather than a dependency of the core.
+- **The core grows no HTTP client and no provider SDK.** Network access exists only behind the `plugins` feature, for the plugin registry and its install path, and never as a general-purpose capability of the core.
+- **Plugins extend the four typed slots and nothing else**: `ManifestV1`, `LifecycleV1`, `ChangelogV1`, `VersioningV1`. A capability outside them is a core feature proposal, not a plugin.
+
+Crossing this boundary is a **judgement** call for the maintainer, stated in the pull request and recorded in the changelog, never an implementation detail discovered in review.
+
+### 2. Surface Compatibility & Deprecation
+`schemaVersion` implies a policy that had never been written down. Every machine surface — `bump`, `plan`, `doctor`, `changelog`, `plugin` JSON, exit codes, the plan file and the attestation files — follows it:
+
+- **Additive within a schema version.** New fields may appear; existing fields keep their name, type, meaning and position, because field order is part of the contract.
+- **A break is a major bump with a deprecation cycle**, not a release: the old surface keeps working and warns, and the removal happens in a later release than the rename. The warning channel this depends on is tracked in #272, and a major bump without a live channel is a break with no migration.
+- **A surface is never removed in the release that renames it.** Renames take two releases at minimum.
+- Configuration compatibility is a separate promise, stated for `cutver.toml` in **Pillar IV.2**.

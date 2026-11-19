@@ -1,0 +1,54 @@
+name: Contract debt
+description: A rule the contract declares that nothing enforces, a number nobody checks, or a documented fact that stopped being true.
+title: "[contract-debt]: "
+# The closest existing label: a declaration nothing executes is something not working. The four cases
+# below were all found by reading, which is the habit this form exists to make cheap.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This project learned the shape four times in one session, and every one of them was a
+        declaration with no check behind it:
+
+        - `permissions.env` — a config field, read by nothing (#300)
+        - `[gates] require` — a key that selected no gate
+        - `--ci` without a named sink — a flag that recorded where output would go, and nothing wrote there
+        - the 400-line ceiling itself — enforced nowhere until `tests/source_line_budget.rs` existed
+
+        What they share: a sentence in [the contract](https://github.com/cutver/cutver/blob/main/CONTRACT.md)
+        that a machine could have verified — a number, a flag, a field, a key — and no test, gate step
+        or review question that would fail the day it stopped being true. The contract answers that
+        class with four enforcement levels: **Enforced**, **Ratchet**, **Judgement** and **Target**.
+        The third field below has to land on one of them.
+
+  - type: input
+    id: clause
+    attributes:
+      label: Which contract clause
+      description: Quote it verbatim, with its pillar and section number, or the exact page and line for a documented fact. A paraphrase moves the target halfway between the report and the fix.
+      placeholder: CONTRACT.md IV.5 — "A page compacted to fit the ceiling is read back against its predecessor…"
+    validations:
+      required: true
+
+  - type: textarea
+    id: observed
+    attributes:
+      label: What you observed instead
+      description: The command you ran and what it printed, the file you read and what it showed, or how you established that nothing runs the rule. "I could not find a check" is a finding — say where you looked, so the next reader does not repeat the search.
+    validations:
+      required: true
+
+  - type: textarea
+    id: check
+    attributes:
+      label: The check that would have caught it
+      description: The test, gate step or assertion that fails when the clause stops holding. When no machine can decide it, name the level it should be — Judgement, or a Target with the evidence a change attaches when it misses — and say who decides. A declaration without this is the wish the contract forbids.
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Related clauses, the pull request that made it untrue, the release where it changed. Optional.

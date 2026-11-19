@@ -1,0 +1,12 @@
+# Blank issues are disabled. The three forms are the classes this project triages — a defect, a scope
+# proposal, and a declaration nothing enforces — and each form's fields are the questions the maintainer
+# would otherwise have to ask by hand, one round trip at a time. A blank issue is a report that skipped
+# exactly those questions, so it costs a round trip and returns nothing. If a fourth class appears, the
+# answer is a fourth form in this directory, not a blank page.
+#
+# No `contact_links`, deliberately. A contact link is a promise to answer somewhere: neither the README
+# nor the contributing guide names a discussions board, a support channel or a security address, and no
+# `SECURITY.md` exists. A URL invented here would route a reporter to a 404, and a channel nobody runs
+# is worse than no channel. A question that fits none of the three forms goes into the feature form's
+# "Anything else" field, where it is at least attached to a workflow.
+blank_issues_enabled: false

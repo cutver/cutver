@@ -19,6 +19,7 @@ use crate::bump::exec::manifest::current_source;
 use crate::bump::types::BumpLevel;
 use crate::changelog;
 use crate::config::Config;
+use crate::config::artifact::matched_counts;
 use crate::git;
 use crate::git::ops::{tag_force_push_args, tag_push_args};
 use crate::plugin::PluginManager;
@@ -136,7 +137,26 @@ pub fn run_publish(config: &Config, request: &PublishRequest) -> Result<PublishS
     git::status::require_clean_tree_except(&config.root_dir, config.git.require_clean_tree, &declared_inputs)?;
     let plugin_manager = Arc::new(PluginManager::from_config(&config.plugins)?);
     let (version, head) = validate(config, request, &plugin_manager)?;
+    verify_artifacts(config)?;
     publish_prepared(config, request, &version, &head, &plugin_manager)
+}
+
+/// Verifies that every declared `[[artifact]]` exists before the first irreversible step (#326 S2).
+///
+/// Runs after `validate` and before `publish_prepared`, whose first write is the tag. A dry run
+/// verifies too: it promises the verdict the real run would report.
+fn verify_artifacts(config: &Config) -> Result<(), Error> {
+    for (artifact, found) in config.artifact.iter().zip(matched_counts(config)?) {
+        if found < artifact.at_least {
+            return Err(Error::ArtifactMissing {
+                label: artifact.label().to_string(),
+                glob: artifact.glob.clone(),
+                found,
+                required: artifact.at_least,
+            });
+        }
+    }
+    Ok(())
 }
 
 /// Phase 1 of the closing phase: the same three checks a full run performs, plus the tag/commit

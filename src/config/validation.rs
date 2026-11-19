@@ -126,6 +126,7 @@ const ROOT_KEYS: &[&str] = &[
     "project",
     "version",
     "manifest",
+    "artifact",
     "preflight",
     "changelog",
     "git",
@@ -177,6 +178,8 @@ const GIT_KEYS: &[&str] = &[
 ];
 const HOOKS_KEYS: &[&str] = &["pre_bump", "post_bump", "default_timeout"];
 const PUBLISH_KEYS: &[&str] = &["push", "commands", "default_timeout"];
+/// `[[artifact]]` is a closed key set: a typo here is rejected exactly like one in `[publish]`.
+const ARTIFACT_KEYS: &[&str] = &["glob", "at_least", "description"];
 const PLUGIN_KEYS: &[&str] = &[
     "runtime",
     "source",
@@ -212,6 +215,7 @@ pub(crate) fn reject_unknown_keys(text: &str) -> Result<(), ConfigError> {
             "hooks" => check_section(value, HOOKS_KEYS, "hooks")?,
             "publish" => check_section(value, PUBLISH_KEYS, "publish")?,
             "manifest" => check_manifests(value)?,
+            "artifact" => check_artifacts(value)?,
             "plugins" => check_plugins(value)?,
             // `[preflight]` accepts arbitrary step names (see module docs).
             "preflight" => {}
@@ -298,6 +302,25 @@ fn reject_template_key_on_other_kind(
     Err(ConfigError::TemplateKeyOnOtherKind {
         path: path.unwrap_or("(unnamed)").to_string(),
     })
+}
+
+fn check_artifacts(item: &Item) -> Result<(), ConfigError> {
+    match item {
+        Item::ArrayOfTables(artifacts) => {
+            for artifact in artifacts.iter() {
+                check_table_unknown(artifact, ARTIFACT_KEYS, "artifact")?;
+            }
+        }
+        Item::Value(Value::Array(artifacts)) => {
+            for value in artifacts.iter() {
+                if let Value::InlineTable(t) = value {
+                    check_inline_unknown(t, ARTIFACT_KEYS, "artifact")?;
+                }
+            }
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 fn check_plugins(item: &Item) -> Result<(), ConfigError> {
@@ -640,6 +663,20 @@ primary = true
                 assert_eq!(primary, "Cargo.toml");
             }
             other => panic!("expected ConflictingPrimaryManifest, got {other:?}"),
+        }
+    }
+
+    /// S1: an `[[artifact]]` table is a closed key set, so a typo is rejected exactly like a typo in
+    /// `[publish]` instead of being parsed and silently ignored.
+    #[test]
+    fn unknown_key_inside_an_artifact_table_is_rejected() {
+        let toml = "[version]\ncurrent_source = \"a\"\n\n[[manifest]]\npath = \"a\"\nkind = \"cargo-package\"\n\n[[artifact]]\nglob = \"dist/*\"\nchecksum = \"SHA256SUMS\"";
+        match load_str(toml) {
+            Err(ConfigError::UnknownKey { table, key }) => {
+                assert_eq!(table, "artifact");
+                assert_eq!(key, "checksum");
+            }
+            other => panic!("expected the unknown artifact key to be rejected, got: {other:?}"),
         }
     }
 

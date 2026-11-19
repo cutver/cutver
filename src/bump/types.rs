@@ -1,3 +1,4 @@
+use crate::config::glob::GlobError;
 use crate::preflight;
 use semver::Version;
 use std::io;
@@ -82,6 +83,28 @@ pub enum Error {
         "release commit '{expected}' is not HEAD ('{actual}')\n  Where: `cutver publish` validation, before the tag, the pushes and the publish commands\n  Fix: check out the commit you meant to publish (`git checkout {expected}`) and re-run, or drop `--commit` to publish the current HEAD. Nothing was written."
     )]
     PublishCommitMismatch { expected: String, actual: String },
+    #[error(
+        "declared artifact '{label}' matched {found} file(s), {required} required (glob '{glob}')\n  Where: `cutver publish` artifact verification, after validation and before the tag, the pushes and the publish commands\n  Fix: build the files the glob names before publishing, or correct the `[[artifact]]` declaration in cutver.toml. Nothing was tagged, pushed or executed."
+    )]
+    ArtifactMissing {
+        label: String,
+        glob: String,
+        found: usize,
+        required: usize,
+    },
+    #[error(
+        "declared artifact glob '{pattern}' escapes the workspace root '{root}'\n  Where: resolving `[[artifact]]` declarations, before anything is tagged, pushed or executed\n  Fix: declare a glob relative to the workspace root that never walks out of it: no leading separator or drive, and no '..'. Nothing was tagged, pushed or executed."
+    )]
+    ArtifactGlobEscapes { pattern: String, root: String },
+    #[error(
+        "failed to read '{path}' while expanding the declared artifact glob '{pattern}': {source}\n  Where: resolving `[[artifact]]` declarations, before anything is tagged, pushed or executed\n  Fix: make the workspace readable again and re-run. Nothing was tagged, pushed or executed."
+    )]
+    ArtifactGlobRead {
+        pattern: String,
+        path: String,
+        #[source]
+        source: io::Error,
+    },
     #[error("release tag {tag} already exists (points at {commit}) — resolve it before re-running")]
     TagExists { tag: String, commit: String },
     #[error(
@@ -221,6 +244,17 @@ pub enum Error {
         "cutver plan cannot report the notes for '{tag}': {reason}\n  Where: rendering the entry a real bump would prepend to '{path}', before anything is written (`cutver plan` writes nothing, and it fails closed instead of printing `notes: null`)\n  Fix: give the project a renderable changelog — declare `[changelog] path` in cutver.toml, make that file readable, fix the template it names — and remove any existing '## [{tag}]' entry, which makes the prepend a no-op. Then re-run `cutver plan`."
     )]
     PlanNotes { path: String, tag: String, reason: String },
+}
+
+/// A glob that could not be resolved is a release failure with the closing phase's own context: the
+/// error states what was not written, instead of leaking a bare path error.
+impl From<GlobError> for Error {
+    fn from(error: GlobError) -> Self {
+        match error {
+            GlobError::OutsideWorkspace { pattern, root } => Error::ArtifactGlobEscapes { pattern, root },
+            GlobError::Read { pattern, path, source } => Error::ArtifactGlobRead { pattern, path, source },
+        }
+    }
 }
 
 #[derive(Debug)]

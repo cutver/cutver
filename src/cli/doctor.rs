@@ -299,6 +299,7 @@ mod tests {
                 primary: true,
                 kind: ManifestKind::CargoPackage,
             }],
+            artifact: Default::default(),
             preflight: vec![(
                 "test".into(),
                 PreflightCommand {

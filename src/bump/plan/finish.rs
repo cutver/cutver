@@ -9,9 +9,10 @@ use crate::bump::exec::{
     ChangelogPlanParams, assemble_scope, compute, format_command, prepare_changelog, preview_notes,
 };
 use crate::config::Config;
+use crate::config::artifact::matched_counts;
 
 use super::guards::NAMED_NOTHING;
-use super::{ComputeRequest, PlanChangelog, PlanManifest, PlanPhase, ReleasePlan, relative};
+use super::{ComputeRequest, PlanArtifact, PlanChangelog, PlanManifest, PlanPhase, ReleasePlan, relative};
 
 impl ReleasePlan {
     /// Stage 2: the release scope, the manifest changes and the changelog entry.
@@ -74,6 +75,7 @@ impl ReleasePlan {
                 .iter()
                 .map(|command| format_command(command, &self.interp_ctx))
                 .collect::<Result<Vec<_>, _>>()?;
+            self.artifacts = plan_artifacts(config)?;
             self.phases = self.derive_phases(config)?;
         } else {
             let plan = prepare_changelog(cl_params)?;
@@ -195,4 +197,23 @@ impl ReleasePlan {
             root_dir: Some(self.root_dir.clone()),
         }
     }
+}
+
+/// The document's artifact entries: each declaration plus the count its glob matches right now.
+///
+/// A plan never blocks on a missing artifact (#326 S4, L7): the workflow builds the assets after it
+/// plans, so the count is the honest answer and a verdict would be a lie.
+fn plan_artifacts(config: &Config) -> Result<Vec<PlanArtifact>, Error> {
+    let counts = matched_counts(config)?;
+    Ok(config
+        .artifact
+        .iter()
+        .zip(counts)
+        .map(|(artifact, matched)| PlanArtifact {
+            glob: artifact.glob.clone(),
+            at_least: artifact.at_least,
+            description: artifact.description.clone(),
+            matched,
+        })
+        .collect())
 }

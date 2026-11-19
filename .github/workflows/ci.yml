@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
   pull_request:
+  # A manual run exists so a leg that GitHub queued and never served can be retried without an
+  # empty commit. `gh run rerun --failed` re-queues into the *same* run, whose macOS slot is
+  # already gone; `gh workflow run ci.yml --ref <branch>` starts a fresh run on the same head SHA,
+  # which is the SHA the ruleset matches against `CI gate`.
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
@@ -11,19 +16,33 @@ env:
 jobs:
   # Runs WITHOUT `--features plugins` on purpose: this job is the Pillar VI.4
   # guard that the lean build (no Extism, no WASM dependency tree) keeps
-  # compiling, linting and passing. Do not replace it with the feature job
-  # below — the two cover different configurations, not the same one twice.
+  # compiling, linting and passing. Keep that guard on every OS — the plugins
+  # steps below are additive, on the macOS entry only, never a replacement for
+  # the lean build.
   test:
-    name: Test (${{ matrix.os }})
+    name: Test (${{ matrix.label }})
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          - label: ubuntu-latest
+            os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-          - os: macos-latest
+          # Both configurations, one runner. Hosted macOS arm64 capacity is the scarce resource
+          # here: with a macOS leg in this job *and* one in `test-plugins`, a single run asks for
+          # two macOS runners, and GitHub served only one of them — the other sat queued, was
+          # never acquired (`runner_id: 0`, no steps), and was reaped at 15m02s with the
+          # annotation `The job was not acquired by Runner of type hosted even after multiple
+          # attempts`. That happened on three consecutive runs on 2026-11-18, twice under
+          # `rerun --failed` and once on a fresh run. Folding halves the demand and loses no
+          # coverage: the lean build on macOS is the VI.4 guard above, and the plugins feature is
+          # platform-sensitive on its own (the plugin cache resolves $HOME).
+          - label: macos-latest, default and plugins
+            os: macos-latest
             target: aarch64-apple-darwin
-          - os: windows-latest
+            plugins: true
+          - label: windows-latest
+            os: windows-latest
             target: x86_64-pc-windows-msvc
     runs-on: ${{ matrix.os }}
     steps:
@@ -34,6 +53,13 @@ jobs:
         run: cargo build --locked --workspace --all-targets
       - name: Test
         run: cargo test --locked --workspace
+      # `matrix.plugins` is absent on the other two entries, which evaluates to null, i.e. false.
+      - name: Build (plugins feature)
+        if: matrix.plugins
+        run: cargo build --locked --workspace --all-targets --features plugins
+      - name: Test (plugins feature)
+        if: matrix.plugins
+        run: cargo test --locked --workspace --features plugins
       - name: Clippy
         if: matrix.os == 'ubuntu-latest'
         run: cargo clippy --locked --workspace --all-targets -- -D warnings
@@ -61,8 +87,11 @@ jobs:
   # WebAssembly path is never compiled, including tests/wasm_plugin.rs, which is
   # gated behind `#![cfg(feature = "plugins")]`.
   #
-  # All three OSes, because the feature is platform-sensitive: the plugin cache
-  # resolves $HOME, which is normally unset on Windows.
+  # The feature is platform-sensitive: the plugin cache resolves $HOME, which is
+  # normally unset on Windows. Coverage therefore stays on all three OSes, but
+  # macOS is covered by the folded entry in `test` rather than by a second macOS
+  # runner requested here. Keep it that way while hosted macOS capacity is the
+  # constraint: two macOS legs per run is what starved.
   #
   # No `target` matrix key here: the job above declares one that no step
   # consumes, and these runners already are the declared triples.
@@ -71,7 +100,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7

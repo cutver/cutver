@@ -160,7 +160,8 @@ is evidence rather than a report of something that happened.
   "manifests": [{ "path": "Cargo.toml", "from": "0.19.0", "to": "0.20.0" }],
   "preflight": [{ "name": "test", "command": "cargo test", "skipped": false }],
   "phases": [{ "name": "validate", "mutates": false, "steps": ["…"] }],
-  "artifacts": [], "gates": [], "blockers": []
+  "artifacts": [{ "glob": "dist/*.tar.gz", "at_least": 8, "description": "lean binaries", "matched": 8 }],
+  "gates": [], "blockers": []
 }
 ```
 
@@ -172,8 +173,10 @@ the commit the release would be cut from; `branch` is the checked-out branch, `n
 - `phases` is the release in order — `validate` (`mutates: false`), `mutate` and `publish` (`mutates:
   true`) — one step per thing the run would do, derived from the same computation `bump` runs, so it
   cannot describe a pipeline that does not exist.
-- `artifacts` and `gates` are present and empty: nothing declares an artifact or attests a gate yet, so a
-  consumer that codes against the shape today need not branch on their presence later.
+- `artifacts` carries one entry per declared `[[artifact]]`: `glob`, `at_least`, `description` (only when
+  set) and `matched`, the number of files the glob matches right now. It is a count, never a verdict — a
+  plan never blocks on a missing artifact, because the assets are built after it plans. `gates` is still
+  present and empty: nothing attests a gate yet, so a consumer can code against the shape without branching.
 - `blockers` lists the guards that would abort a real `bump` — a dirty tree under
   `[git] require_clean_tree`, a `[git] require_branch` that does not match, a release tag that already
   exists locally or on the remote, an invalid tag name — one self-contained line each, naming what to

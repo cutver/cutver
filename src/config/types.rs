@@ -4,6 +4,7 @@ use std::io;
 use std::path::PathBuf;
 use thiserror::Error;
 
+use super::artifact::Artifact;
 pub use super::path::{ManifestPath, PackageName};
 
 #[derive(Debug, Error)]
@@ -85,6 +86,9 @@ pub struct Config {
     pub version: VersionSection,
     #[serde(default)]
     pub manifest: Vec<Manifest>,
+    /// Declared release assets, verified by `publish` before its first irreversible step (#326 S1).
+    #[serde(default)]
+    pub artifact: Vec<Artifact>,
     #[serde(skip)]
     pub preflight: PreflightSteps,
     #[serde(skip)]
@@ -124,6 +128,7 @@ impl Default for Config {
             project: Project::default(),
             version: VersionSection::default(),
             manifest: Vec::new(),
+            artifact: Vec::new(),
             preflight: Vec::new(),
             preflight_default_timeout: None,
             changelog: Changelog::default(),
@@ -638,5 +643,41 @@ kind = "cargo-package"
         let cfg_auto = load_str(toml_auto).unwrap();
         assert_eq!(cfg_auto.version.strategy, "plugin");
         assert_eq!(cfg_auto.version.plugin, None);
+    }
+
+    /// S1: `[[artifact]]` declares a file set a release must produce. `glob` is required,
+    /// `at_least` defaults to `1`, and `description` is optional.
+    #[test]
+    fn artifact_table_parsing_and_defaults() {
+        let toml = r#"
+[[manifest]]
+path = "Cargo.toml"
+kind = "cargo-package"
+
+[[artifact]]
+glob = "dist/*.tar.gz"
+at_least = 8
+description = "lean binaries"
+
+[[artifact]]
+glob = "target/*.zip"
+"#;
+        let c = load_str(toml).unwrap();
+        assert_eq!(c.artifact.len(), 2);
+        assert_eq!(c.artifact[0].glob, "dist/*.tar.gz");
+        assert_eq!(c.artifact[0].at_least, 8);
+        assert_eq!(c.artifact[0].description.as_deref(), Some("lean binaries"));
+        assert_eq!(c.artifact[1].glob, "target/*.zip");
+        assert_eq!(c.artifact[1].at_least, 1, "`at_least` defaults to 1");
+        assert_eq!(c.artifact[1].description, None);
+
+        let default_cfg = load_str(&manifest("cargo-package", "")).unwrap();
+        assert!(default_cfg.artifact.is_empty());
+    }
+
+    #[test]
+    fn artifact_table_requires_a_glob() {
+        let toml = "[[manifest]]\npath = \"Cargo.toml\"\nkind = \"cargo-package\"\n\n[[artifact]]\nat_least = 2";
+        assert!(matches!(load_str(toml), Err(ConfigError::Parse(_))));
     }
 }

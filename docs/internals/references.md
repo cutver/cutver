@@ -58,11 +58,15 @@ When invoked without an explicit `-c / --config` argument, `cutver` locates its 
 
 ## Conventional Commit Bump Rules
 
-When `cutver bump auto` runs, it scans commit history from the latest tag matching `tag_prefix` up to `HEAD`:
+When `cutver bump auto` runs, it scans commit history from the latest tag matching `tag_prefix` up to `HEAD`, and the highest signal in that range wins:
 
-- **Major Bump (`X.0.0`)**: Triggered if any commit contains a breaking change marker (`!` after type/scope, e.g. `feat!: ...`) or a `BREAKING CHANGE:` footer.
-- **Minor Bump (`0.X.0`)**: Triggered if any commit has type `feat`.
-- **Patch Bump (`0.0.X`)**: Default fallback for `fix`, `perf`, `refactor`, `chore`, `docs`, `test`, or non-conventional commits.
+| Signal in the range | Deduced bump | Example commit |
+| :--- | :--- | :--- |
+| A breaking change marker (`!` after the type or scope) or a `BREAKING CHANGE:` footer | **Major** (`X.0.0`) | `feat(api)!: redesign auth flow` |
+| Type `feat` | **Minor** (`0.X.0`) | `feat(cli): add quiet mode` |
+| `fix`, `perf`, `refactor`, `chore`, `docs`, `test`, or a non-conventional message | **Patch** (`0.0.X`) | `fix(git): unstage index on error` |
+
+An explicit level (`cutver bump patch`, `minor` or `major`) overrides the deduction instead of being weighed against it.
 
 ### Commit Filtering
 

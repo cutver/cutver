@@ -1,10 +1,6 @@
 # Getting Started with cutver
 
-Ship your first multi-manifest release in three commands.
-
-`cutver` synchronizes version numbers across any set of manifests, runs preflights, updates changelogs, and cuts git tags using a single declarative configuration file.
-
----
+Ship your first multi-manifest release, with the artifacts verified before anything irreversible happens. Every transcript on this page was captured from a real repository.
 
 ## 1. Initialize Your Repository
 
@@ -14,107 +10,132 @@ Run `cutver init` in the root of your project:
 cutver init
 ```
 
-What `cutver init` performs automatically:
-- Scans and detects package manifests (`Cargo.toml`, `package.json`, `pyproject.toml`, Gradle, etc.).
-- Scaffolds a tailored `cutver.toml` configuration at the repository root.
-- Generates a starter `CHANGELOG.md` following the Keep-a-Changelog standard.
-- Creates a default release template at `.github/templates/cutver/RELEASE.md`.
+It detects your package manifests (`Cargo.toml`, `package.json`, `pyproject.toml`, Gradle, etc.) and scaffolds `cutver.toml`, a Keep-a-Changelog `CHANGELOG.md` and a release template at `.github/templates/cutver/RELEASE.md`. Commit those files before releasing: the guard refuses a dirty tree by default.
 
-*Gotcha*: If you add new packages or manifests later, run `cutver init --update` to append newly detected packages without overwriting your custom rules or hooks.
-
----
+*Gotcha*: packages you add later are appended by `cutver init --update`, which never overwrites your custom rules or hooks.
 
 ## 2. Check Workspace Health
 
-Verify that all declared manifests exist, are readable, and share the same version:
+Verify that every declared manifest exists, is readable, and shares one version. `--check-changelog` adds a row comparing `CHANGELOG.md` against your Git tags:
+
+```bash
+cutver doctor
+cutver doctor --check-changelog
+```
+
+```text
+# trimmed: the plain run, which prints the same three rows
+✔ cutver.toml is valid
+
+  Configuration   valid (cutver.toml)
+  Manifests       1 tracked (package.json @ 0.1.0)
+  Preflight       1 step defined (test: npm test)
+  Changelog       consistent with Git tags
+```
+
+Version drift exits `2`, so a script can tell "your files disagree" from "your configuration is broken" (exit `1`):
 
 ```bash
 cutver doctor
 ```
 
 ```text
-✓ cutver.toml is valid
-✓ Primary manifest: Cargo.toml (0.1.0)
-✓ Synchronized: package.json (0.1.0)
-✓ Preflight steps configured: 2
+✖ Version drift detected (1 manifest(s) out of sync):
+  • version.json: expected 0.1.0, found 0.1.3
+
+Suggested fix:
+  • Align version numbers manually across all files.
+  • Or run 'cutver bump patch' to synchronize all manifests in one step.
 ```
 
-To verify that your Git tags match entries in `CHANGELOG.md`, pass `--check-changelog`:
+## 3. Read the Plan
+
+`cutver plan` computes the entire release — target version, manifest diffs, changelog body, commit and tag names, publish steps — and performs none of it:
 
 ```bash
-cutver doctor --check-changelog
-```
-
-If manifest versions drift, `cutver doctor` reports the mismatch and exits with code `2`.
-
----
-
-## 3. Simulate Your Release (Dry Run)
-
-Always simulate version calculations and git actions before modifying files or creating tags:
-
-```bash
-cutver bump auto --dry-run
+cutver plan
 ```
 
 ```text
-Evaluating conventional commits since v0.1.0...
-Found 3 commits (1 feat, 2 fixes) -> Deduced bump: minor (0.2.0)
+ℹ Release Plan: 0.1.0 -> 0.2.0 (minor (deduced from 1 feature))
+├── Manifests
+│   └── package.json (0.1.0 -> 0.2.0)
+├── Preflight
+│   └── test: npm test
+├── Changelog
+│   └── CHANGELOG.md (prepends 0.2.0)
+├── Git
+│   ├── commit: chore(release): v0.2.0 [skip ci]
+│   └── tag: v0.2.0
+└── Publish
+    └── push: true
 
-Preflight checks:
-✓ tests (cargo test)
-✓ lint (cargo clippy -- -D warnings)
-
-Planned updates:
-  Cargo.toml: 0.1.0 -> 0.2.0
-  package.json: 0.1.0 -> 0.2.0
-  CHANGELOG.md: prepending ## [v0.2.0] - 2026-09-30
-
-Git release plan:
-  commit: chore(release): v0.2.0
-  tag: v0.2.0
-[dry-run] No changes written to disk.
+Nothing was written, staged, committed, tagged or pushed.
 ```
 
-### SemVer Auto-Deduction Rules
+Read-only means read-only: no file is touched, no preflight step runs and no plugin is dispatched. It exits `0` even when the plan carries blockers, because the release decision is yours.
 
-| Commit Signal | Deduced Bump | Example Commit |
-| :--- | :--- | :--- |
-| Breaking change (`!` or `BREAKING CHANGE:`) | **Major** (`X.0.0`) | `feat(api)!: redesign auth flow` |
-| Feature commit (`feat`) | **Minor** (`0.X.0`) | `feat(cli): add quiet mode` |
-| Fix or maintenance (`fix`, `perf`, `refactor`, `chore`) | **Patch** (`0.0.X`) | `fix(git): unstage index on error` |
+The level is deduced from the Conventional Commits since your last tag; [Conventional Commit Bump Rules](../internals/references.md) lists every signal with an example commit. An explicit level overrides deduction — `cutver plan minor`, or `patch` and `major` — and the tree then says `(bump)` instead of naming the commits.
 
-To override automatic deduction, pass an explicit level:
+## 4. Prepare the Release
+
+`cutver bump --defer-publish` runs the pipeline up to and including the release commit and the branch push, then stops:
+
 ```bash
-cutver bump patch
-cutver bump minor
-cutver bump major
+cutver bump --defer-publish
 ```
 
----
+```text
+# trimmed: Manifests to Changelog, plus the deferral
+✔ Release Plan: 0.1.0 -> 0.2.0 (minor (deduced from 1 feature))
+├── Git
+│   ├── commit: chore(release): v0.2.0 [skip ci]
+│   └── tag: v0.2.0 [DEFERRED]
+└── Publish
+    ├── push: true
+    └── deferred: cutver publish --tag v0.2.0
+```
 
-## 4. Cut Your Release
+That `[DEFERRED]` marker is the whole point: no tag is created, no floating major tag moves, no `[publish]` command runs and no `on_post_release` plugin is dispatched. The release commit is on the remote branch — `[publish] push = true`, the scaffolded default — so a build can smoke the artifacts it produced, and a smoke failure publishes nothing.
 
-Execute the automated release pipeline:
+## 5. Rewrite the Notes and Publish
+
+The notes handed to the post-release plugins are yours to write once you know what the artifacts say. Pass a file, or a stream with `-`, plus the tag and the commit you verified:
+
+```bash
+cutver publish --tag v0.2.0 --commit 8ff0bfd4ec2d2685e38e2aba810896e1d66dc499 --notes-file - <<'MD'
+## What changes
+
+- `cutver --quiet` keeps the summary tree and drops every other line.
+MD
+```
+
+```text
+# trimmed: git remote path
+✔ Published: v0.2.0 at 8ff0bfd4ec2d2685e38e2aba810896e1d66dc499
+├── Tag
+│   └── v0.2.0
+└── Push
+    └── git push origin refs/tags/v0.2.0
+```
+
+*Gotcha*: `--commit` must be the full SHA `git rev-parse HEAD` prints; a short one is refused before anything is written. With no `on_post_release` plugin installed the notes are read and nothing consumes them yet, so no draft release appears.
+
+## The Short Path
+
+When there are no artifacts to smoke first, one command does the whole release — same pipeline, tag and pushes included:
 
 ```bash
 cutver bump auto
 ```
 
-### The Atomic Two-Phase Pipeline
+It is the short path, not the recommendation: nothing can be verified between the commit and the tag.
 
-```text
-1. Guard Phase   ──▶ Verify clean git working tree and branch restrictions
-2. Preflight     ──▶ Run test and lint checks (fail-fast with process tree kill)
-3. Compute       ──▶ In-memory manifest diffs & changelog generation
-4. Apply         ──▶ Atomic file write via sync_all and temporary swap
-5. Hooks         ──▶ Run post_bump hooks and stage modified lockfiles
-6. Git Actions   ──▶ Create release commit and SemVer tag (optional upstream push)
-```
+## The Rollback Boundary
+
+The pipeline runs guard, preflight, in-memory compute, atomic apply, hooks, then Git actions, as described in [Pipeline Execution & Atomic Guarantees](../internals/pipeline.md).
 
 > **Rollback Guarantee**: If a step fails **before the release commit**, `cutver` restores the original manifest contents from memory and unstages its own git index changes, leaving the workspace as it was. The commit, the tag and the publish come after that point and are not rolled back.
-
----
 
 ## Next Steps
 

@@ -40,11 +40,17 @@ The exact boundaries are documented in the
 
 No. Cutver provides two distinct builds:
 
-- **`cutver` (Lean build, ~1.25 MB):** Standalone zero-overhead static binary containing the
+- **`cutver` (Lean build):** Standalone zero-overhead static binary containing the
   complete core engine (manifest parsing, SemVer deduction, atomic apply, preflight checks,
-  changelog rendering). Perfect for lean, minimal CI/CD runners.
-- **`cutver-plugins` (~5 MB):** Adds the full sandboxed WebAssembly plugin engine (`Wasmtime`) for
+  changelog rendering). Perfect for lean, minimal CI/CD runners: no WebAssembly runtime is linked in,
+  so it is materially smaller than the plugin build.
+- **`cutver-plugins`:** Adds the full sandboxed WebAssembly plugin engine (`Wasmtime`) for
   projects leveraging custom plugins.
+
+Neither build has a fixed size to quote here: it differs per target and changes every release. The
+release workflow measures every archive it uploads and writes the bytes and MiB of each one into that
+run's job summary; the artifacts themselves are on the
+[releases page](https://github.com/cutver/cutver/releases).
 
 ---
 

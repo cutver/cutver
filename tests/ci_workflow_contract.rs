@@ -279,6 +279,21 @@ fn the_label_check_reports_the_exact_required_context_on_a_fresh_pull_request() 
     );
 }
 
+/// The ceiling's scope, named once. `CONTRIBUTING.md` sat outside it on honour until the contract's own
+/// re-evaluation found the hole: the page documenting the ceiling was the one document the walk could
+/// not see.
+const GOVERNED_ROOT_FILES: [&str; 2] = ["README.md", "CONTRIBUTING.md"];
+
+/// Documents inside the ceiling's scope that are exempt by name, each with the reason the exemption is
+/// allowed. A reference page is scanned for one clause at a time rather than read whole, so the 3-5
+/// minute attention argument that sets the ceiling does not reach it. Writing the exemption down is the
+/// point: an implied exemption is exactly how `CONTRIBUTING.md` escaped the walk.
+const EXEMPT: [(&str, &str); 1] = [(
+    "CONTRACT.md",
+    "defines the ceiling and is consulted clause by clause rather than read whole \
+     (CONTRACT.md:140)",
+)];
+
 /// `ci.yml` enforces the documentation line ceiling as a shell loop inside the `test` job, where this
 /// file cannot see it as a step, so an over-long document failed only in CI — three times in one day.
 /// This mirrors that loop locally: same ceiling, same file set, no network and no workflow step.
@@ -286,7 +301,7 @@ fn the_label_check_reports_the_exact_required_context_on_a_fresh_pull_request() 
 fn every_document_stays_under_the_line_ceiling() {
     const CEILING: usize = 200;
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let mut files = vec![root.join("README.md")];
+    let mut files: Vec<std::path::PathBuf> = GOVERNED_ROOT_FILES.iter().map(|name| root.join(name)).collect();
     collect_markdown(&root.join("docs"), &mut files);
 
     let mut over = Vec::new();
@@ -300,8 +315,54 @@ fn every_document_stays_under_the_line_ceiling() {
     }
     assert!(
         over.is_empty(),
-        "the ceiling is {CEILING} lines (CONTRACT.md:114); these are over it: {over:?}"
+        "the ceiling is {CEILING} lines (CONTRACT.md:140); these are over it: {over:?}"
     );
+}
+
+/// An exemption is a claim about a real file. Without this, deleting or renaming the exempt document
+/// leaves a named exemption protecting nothing, and an entry with no reason passes review unnoticed.
+#[test]
+fn every_named_exemption_is_real_and_carries_its_reason() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    for (name, reason) in EXEMPT {
+        assert!(
+            !reason.trim().is_empty(),
+            "{name} is exempt from the line ceiling with no written reason; an exemption nobody had to \
+             justify is how CONTRIBUTING.md stayed outside the walk"
+        );
+        assert!(
+            root.join(name).is_file(),
+            "{name} is exempt from the line ceiling but does not exist; delete the exemption"
+        );
+        assert!(
+            !GOVERNED_ROOT_FILES.contains(&name) && !name.starts_with("docs/"),
+            "{name} is both exempt and governed by the walk; one of the two is a lie"
+        );
+    }
+}
+
+/// The loop in `ci.yml` and [`GOVERNED_ROOT_FILES`] are two copies of one decision. When they drift,
+/// the passing suite and the blocking pipeline disagree about the same file set, and only the pipeline
+/// copy stops the merge.
+#[test]
+fn the_ci_loop_governs_the_same_root_files_as_this_test() {
+    let ci = repo_text(CI);
+    let loop_line = ci
+        .lines()
+        .find(|line| line.contains("for file in ") && line.contains("find docs"))
+        .expect("ci.yml must keep a documentation line-budget loop that walks docs");
+    for name in GOVERNED_ROOT_FILES {
+        assert!(
+            loop_line.contains(name),
+            "ci.yml's line-budget loop does not govern {name}; it reads {loop_line:?}"
+        );
+    }
+    for (name, _) in EXEMPT {
+        assert!(
+            !loop_line.contains(name),
+            "ci.yml's line-budget loop governs the exempt {name}; the two copies disagree"
+        );
+    }
 }
 
 fn collect_markdown(dir: &std::path::Path, found: &mut Vec<std::path::PathBuf>) {

@@ -24,7 +24,11 @@ channel on — `$GITHUB_OUTPUT`, `$GITHUB_STEP_SUMMARY` and a stderr failure ann
 the channel follows `GITHUB_ACTIONS` reading `true` (trimmed, case-insensitive) plus a named file. It
 never writes stdout, so `--json` is unaffected: [CI output channel](../internals/machine-contract.md#ci-output-channel).
 
-## Commands
+## Release Commands
+
+The five commands that cut a release, in the order the two-phase flow uses them. Diagnostics, the
+changelog, `open` and the plugin commands have [their own page](cli-tools.md), because both pages are
+bound by the same documentation ceiling and one page of nine commands is past it.
 
 ### `cutver init`
 
@@ -41,7 +45,7 @@ never writes stdout, so `--json` is unaffected: [CI output channel](../internals
 
 Calculates SemVer updates, runs preflights, applies atomic manifest changes, updates the changelog, commits, and tags. Add `--defer-publish` to stop after the branch push and close the release later with `cutver publish` ([Release Pipeline Order and Atomic Guarantees](../internals/pipeline.md)).
 
-```bash
+```text
 cutver bump [LEVEL] [OPTIONS]
 ```
 
@@ -81,7 +85,7 @@ cutver bump minor --defer-publish
 
 Computes the release the workspace is about to cut and reports it without changing anything: no file, no git mutation, no `[preflight]`, no `[hooks]`, no `[publish] commands` and no plugin dispatch — not even `on_pre_bump`, which `bump --dry-run` still dispatches. A dirty tree on the wrong branch is the normal case, because that is the state CI asks the question in.
 
-```bash
+```text
 cutver plan [LEVEL] [--json] [--skip-preflight <STEP>]... [--first-release]
 ```
 
@@ -100,7 +104,7 @@ cutver plan [LEVEL] [--json] [--skip-preflight <STEP>]... [--first-release]
 
 Closes a release that `bump --defer-publish` prepared: it creates the annotated tag, pushes it, moves the floating major tag, runs `[publish].commands` and dispatches the `on_post_release` plugins. Validation fails closed before any of that, naming the command that resolves the problem and stating that nothing was written; an existing-tag error names the commit it points at (`src/bump/types.rs:85-88`). Every declared `[[artifact]]` glob is also verified after validation and before the tag: one that matches fewer files than its `at_least` fails closed naming the glob and the counts, and `--dry-run` reports that same verdict. Which inputs are validated, and why the split exists, live in [Release Pipeline Order and Atomic Guarantees](../internals/pipeline.md).
 
-```bash
+```text
 cutver publish --tag <TAG> [OPTIONS]
 ```
 
@@ -133,61 +137,9 @@ Records a gate's verdict for a commit, so `publish` can require it: `cutver atte
 
 ---
 
-### `cutver doctor`
-
-Validates configuration syntax, verifies declared manifest files, and detects **version drift** across packages: `cutver doctor [--check-changelog] [--json]`.
-
-| Flag | Long Option | Description |
-| :--- | :--- | :--- |
-| | `--check-changelog` | Verifies that release entries in `CHANGELOG.md` match Git release tags. Headings are read through `[git] tag_prefix`, the same as `changelog latest` and `show`, so the commands agree: with `tag_prefix = "release-"`, `## release-1.2.0` is the entry for that tag. A tag whose entry is really absent is still drift, exit code `2`. |
-| | `--json` | Prints the diagnosis as one JSON object on stdout — `ok`, a `checks` entry per check (`ok`/`drift`/`skipped`) and the drift arrays — and renders no dashboard or drift text. The exit code still reports the outcome: `0` clean, `2` drift, `1` a check could not run. See the [machine contract](../internals/machine-contract.md). |
-| `-c <PATH>` | `--config <PATH>` | Explicit path to `cutver.toml`. |
-
----
-
-### `cutver changelog`
-
-Utilities to extract and inspect release notes from `CHANGELOG.md`; `latest` prints the newest entry to stdout and skips `[Unreleased]`:
-
-```bash
-cutver changelog latest [-H/--include-header] [--template <PATH>] [--json]
-cutver changelog show <VERSION> [-H/--include-header] [--template <PATH>] [--json]
-cutver changelog open [TARGET] [--print-url] [--browser <BROWSER>]
-```
-
-`changelog latest` and `show` read headings through `[git] tag_prefix`: with `tag_prefix = "release-"`,
-`## release-1.2.0` is the entry for `1.2.0`. Exactly one marker is stripped, so a `v`/`V` heading still
-matches under another prefix and a doubled marker is not read as a version. `changelog open` reads no
-changelog: it builds the release URL from the same prefix.
-
-`--json` builds its context from git and fails closed: an unreadable commit range (not a repository, an
-unknown tag, an unusable `git`) goes to stderr with exit `1` instead of printing `"commits": []`, so a
-consumer can tell an empty range from an unreadable one. `--template` keeps rendering the body with an
-empty commit list. The object opens with `schemaVersion` and then the release context keys, including
-`version` — the release version, not the schema one.
-
----
-
-### `cutver plugin`
-
-Installs, inspects, updates and removes plugins from the registry index. Requires a plugin-enabled build (`--features plugins`): a lean binary hides the subcommand and fails closed naming the flag.
-
-```bash
-cutver plugin add <NAME> [--version <VERSION>] [--registry <BASE>] [--event <EVENT>]... [--manifest-match <GLOB>]... [--dry-run] [--force]
-cutver plugin list [--json]
-cutver plugin restore [--registry <BASE>] [--dry-run]
-cutver plugin update [NAME] [--version <VERSION>] [--registry <BASE>] [--dry-run]
-cutver plugin info <NAME> [--registry <BASE>] [--json]
-cutver plugin search [QUERY] [--registry <BASE>] [--json]
-cutver plugin remove <NAME> [--keep-artifact]
-```
-
-`plugin` exits `1` on any failure: an unresolvable cache root, an unreachable registry, a digest mismatch, an unknown capability, or a declaration that already exists. The install flow, the digest trust model, the cache layout and the `[plugins.<name>]` keys live in the [plugin reference](plugins.md). Every `plugin` JSON surface opens with `schemaVersion`; `list` and `search` wrap their entries in `{"schemaVersion": 1, "plugins": [...]}`, because a bare array has no room for a version.
-
----
-
 ## Related Documentation
 
+- [Diagnostics, Changelog, Open and Plugins](cli-tools.md): the other four commands, with their flags.
 - [Getting Started with cutver](../guides/getting-started.md): Walkthrough of your first release.
 - [Machine Contract](../internals/machine-contract.md): `schemaVersion`, every JSON surface, and exit codes.
 - [Complete cutver.toml Configuration Reference](configuration.md): Reference for all configuration keys.

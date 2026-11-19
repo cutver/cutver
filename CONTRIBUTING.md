@@ -48,14 +48,27 @@ dry-run yourself after touching `Cargo.toml` or what the crate ships; the platfo
 ## The three budgets
 
 1. **200 lines per document** — enforced. `every_document_stays_under_the_line_ceiling` in
-   `tests/ci_workflow_contract.rs` walks `README.md` and `docs/**/*.md`, and `ci.yml` runs the same loop as a
-   step. Target 100–150; decompose into a focused page before you reach 200. `CONTRIBUTING.md` follows the
-   ceiling but is outside that walk, so this one is on your honour.
+   `tests/ci_workflow_contract.rs` walks `README.md`, `CONTRIBUTING.md` and `docs/**/*.md`, and `ci.yml` runs
+   the same loop as a step. Target 100–150; decompose into a focused page before you reach 200. `CONTRACT.md`
+   is the one named exemption, and its reason sits next to it in the test rather than in an omission from a
+   glob. Crossing 150 obliges a decision: split the page, or say in the pull request why it is one thing —
+   the cheapest way to satisfy a ceiling is to delete the qualifiers, and the qualifiers are the semantics.
 2. **400 lines per source file** — enforced as a ratchet by `tests/source_line_budget.rs`. Sixteen files
    predate the ceiling and are allowlisted with the count they had: an entry may shrink but never grow, and a
    file that now fits inside 400 fails until its entry is deleted. Adding an entry is never the fix.
 3. **350 lines** — the facade trigger, a judgement call. Whether `foo.rs` should become `foo.rs` + `foo/`
    depends on where its seams are, so no test decides it; a reviewer will.
+
+## Documentation examples
+
+Every `cutver …` line inside a `bash`-tagged fence is a transcript: `tests/documentation_examples.rs` parses it
+against the real CLI and fails if a reader could not paste it. Redirection, pipes and a trailing `# comment`
+are stripped first, and nothing is executed.
+
+A syntax diagram — `cutver plugin add <NAME> [--registry <BASE>]` — is not a transcript, because the reader
+has to fill it in. Those lines belong in a `text`-tagged fence, where they are not parsed. The tag is the
+claim: `text` is checked to contain a metavariable, so it cannot quietly become the place real examples go to
+avoid the parser.
 
 ## Commits
 

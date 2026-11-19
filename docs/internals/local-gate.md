@@ -96,7 +96,7 @@ it). Those stay CI's job. The gate's job is that CI never tells you something a 
 
 ## The source line budget ratchet
 
-`CONTRACT.md:146` sets a hard ceiling of 400 lines per file under `src/`, and sixteen files were
+`CONTRACT.md:174` sets a hard ceiling of 400 lines per file under `src/`, and sixteen files were
 already over it when the ratchet landed — the worst at 1308. Refactoring them mid-roadmap would have
 produced two enormous diffs that build nothing, so the ceiling is enforced going forward instead:
 

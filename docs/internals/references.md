@@ -8,7 +8,8 @@ Detailed guides and specifications are partitioned into focused modular document
 | :--- | :--- | :--- |
 | **Configuration** | [Configuration Reference](../reference/configuration.md) | Complete `cutver.toml` schema and table options |
 | **Manifests** | [Manifest Editors](../reference/manifests.md) | Format-specific editing and AST preservation rules |
-| **CLI Commands** | [CLI Command Reference](../reference/cli.md) | Command arguments, options, and subcommand usage |
+| **CLI Commands** | [CLI Command Reference](../reference/cli.md) | Exit codes, the `--ci` channel, and the five release commands |
+| **CLI Diagnostics** | [Diagnostics, Changelog, Open and Plugins](../reference/cli-tools.md) | The four commands that report, read or reach outside the repository |
 | **Templates** | [Release Notes & Changelog Templates](../templates/release-notes.md) | Template variables, commit objects, and filters |
 | **Plugins** | [Plugins Reference](../reference/plugins.md) | Capability specifications and runtime management |
 | **Architecture** | [Architecture & Design Decisions](design.md) | Design principles, roadmap, and core decisions |

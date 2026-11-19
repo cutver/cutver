@@ -273,6 +273,28 @@ jobs:
           New-Item -ItemType Directory -Path dist -Force | Out-Null
           Move-Item "$out.zip" dist/
 
+      # Report only: `CONTRACT.md` Pillar VI.4 keeps the measurement and drops the number, because
+      # size is a channel cost (container layers, download) and a startup cost, not a merge gate. So
+      # this step writes what it measured and derives nothing else from it: no threshold, no exit
+      # status. `wc -c` is the one size primitive the three runners share — GNU `stat` and BSD `stat`
+      # disagree on flags and output, and `ls -l` column layout is not stable — and it needs `bash`
+      # on the Windows runner, where the default shell is `pwsh`.
+      - name: Report artifact size (lean build)
+        shell: bash
+        run: |
+          {
+            echo "### Lean build — \`${{ matrix.target }}\`"
+            echo
+            echo "| Artifact | Bytes | MiB |"
+            echo "| :--- | ---: | ---: |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          shopt -s nullglob
+          for artifact in dist/*; do
+            bytes=$(wc -c < "$artifact")
+            mib=$(awk -v bytes="$bytes" 'BEGIN { printf "%.2f", bytes / 1048576 }')
+            echo "| \`$(basename "$artifact")\` | $bytes | $mib |" >> "$GITHUB_STEP_SUMMARY"
+          done
+
       - name: Upload artifact
         uses: actions/upload-artifact@v5
         with:
@@ -379,6 +401,24 @@ jobs:
           Compress-Archive -Path $out -DestinationPath "$out.zip"
           New-Item -ItemType Directory -Path dist -Force | Out-Null
           Move-Item "$out.zip" dist/
+
+      # Same step as the lean job, reported under its own heading: one number used for two builds and
+      # three targets is exactly the confusion the docs carried. Report only, never a gate.
+      - name: Report artifact size (plugin-enabled build)
+        shell: bash
+        run: |
+          {
+            echo "### Plugin-enabled build — \`${{ matrix.target }}\`"
+            echo
+            echo "| Artifact | Bytes | MiB |"
+            echo "| :--- | ---: | ---: |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          shopt -s nullglob
+          for artifact in dist/*; do
+            bytes=$(wc -c < "$artifact")
+            mib=$(awk -v bytes="$bytes" 'BEGIN { printf "%.2f", bytes / 1048576 }')
+            echo "| \`$(basename "$artifact")\` | $bytes | $mib |" >> "$GITHUB_STEP_SUMMARY"
+          done
 
       - name: Upload artifact
         uses: actions/upload-artifact@v5

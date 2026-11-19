@@ -71,13 +71,25 @@ pub fn print_fresh_summary(target_dir: &Path, discovery: &DiscoveryResult, creat
     print_next_steps();
 }
 
+/// The next steps `cutver init` prints, kept as data instead of loose `println!` calls so a test can
+/// hold them to the flow the documentation recommends: read the plan before anything mutates, then cut
+/// the release in two phases so the artifacts can be verified in between. A recommendation nobody
+/// checks is how the first-run page and the first-run command drift apart.
+pub const NEXT_STEPS: [&str; 7] = [
+    "Next steps:",
+    "  1. Validate your configuration:",
+    "     cutver doctor",
+    "  2. Read the release before it happens:",
+    "     cutver plan",
+    "  3. Cut it in two phases, so the artifacts can be verified in between:",
+    "     cutver bump --defer-publish",
+];
+
 /// Prints actionable next steps for the user after initialization.
 pub fn print_next_steps() {
-    println!("Next steps:");
-    println!("  1. Validate your configuration:");
-    println!("     cutver doctor");
-    println!("  2. Simulate your first release:");
-    println!("     cutver bump auto --dry-run");
+    for line in NEXT_STEPS {
+        println!("{line}");
+    }
 }
 
 /// Executes the initialization workflow: discovers workspace manifests and writes `cutver.toml`.

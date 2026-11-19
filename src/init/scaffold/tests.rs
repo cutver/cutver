@@ -208,3 +208,29 @@ fn new_contributors_is_enabled_only_for_the_builtin_renderer() {
         "the template sink shape must be discoverable from the scaffold: {config}"
     );
 }
+
+/// The freshness rule applied to a command's own output: the first-run page sends the reader to
+/// `plan` and then to a two-phase release, so `cutver init` may not still recommend the single-command
+/// dry run. Without this, the page and the CLI drift apart silently and the more authoritative of the
+/// two — the binary the reader just ran — teaches the older flow.
+#[test]
+fn the_next_steps_recommend_the_flow_the_first_run_page_teaches() {
+    let printed = runner::NEXT_STEPS.join("\n");
+    assert!(
+        printed.contains("cutver doctor"),
+        "the first step validates the configuration: {printed}"
+    );
+    assert!(
+        printed.contains("cutver plan"),
+        "reading the plan comes before anything mutates, which is what the first-run page teaches: {printed}"
+    );
+    assert!(
+        printed.contains("cutver bump --defer-publish"),
+        "the last step is the two-phase release, so the artifacts can be verified between the commit \
+         and the tag: {printed}"
+    );
+    assert!(
+        !printed.contains("--dry-run"),
+        "the single-command dry run is no longer the recommended first step: {printed}"
+    );
+}

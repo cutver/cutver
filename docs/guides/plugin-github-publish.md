@@ -112,7 +112,7 @@ Inside `publish`, in this order (`tests/release_pipeline_contract.rs:253-293`):
 
 - **The plugin's full key set.** Every key beyond the table above belongs to the plugin, not to
   `cutver`: the host parses `config` and reads nothing out of it
-  ([configuration reference](../reference/configuration.md):175-181). A key this repository does not set
+  ([the configuration tables reference](../reference/configuration-tables.md), where the plugin tables live). A key this repository does not set
   is not observable from here, so this page does not name one.
 - **Where the plugin lives.** It is not built in this repository: `crates/` holds the guest SDK
   (`cutver-pdk`) and `src/plugin` is the host. The artifact arrives from the Cutver registry index

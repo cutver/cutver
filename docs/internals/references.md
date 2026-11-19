@@ -6,7 +6,8 @@ Detailed guides and specifications are partitioned into focused modular document
 
 | Domain | Canonical Reference | Focus |
 | :--- | :--- | :--- |
-| **Configuration** | [Configuration Reference](../reference/configuration.md) | Complete `cutver.toml` schema and table options |
+| **Configuration** | [Configuration Reference](../reference/configuration.md) | Discovery, precedence, the unknown-key rule, and the canonical skeleton |
+| **Configuration tables** | [Configuration Tables Reference](../reference/configuration-tables.md) | Per-table keys, types and defaults for every `cutver.toml` section |
 | **Manifests** | [Manifest Editors](../reference/manifests.md) | Format-specific editing and AST preservation rules |
 | **CLI Commands** | [CLI Command Reference](../reference/cli.md) | Exit codes, the `--ci` channel, and the five release commands |
 | **CLI Diagnostics** | [Diagnostics, Changelog, Open and Plugins](../reference/cli-tools.md) | The four commands that report, read or reach outside the repository |
@@ -15,7 +16,8 @@ Detailed guides and specifications are partitioned into focused modular document
 | **Architecture** | [Architecture & Design Decisions](design.md) | Design principles, roadmap, and core decisions |
 | **Pipeline** | [Pipeline Execution & Atomic Guarantees](pipeline.md) | Two-phase execution, rollback, and process trees |
 | **Contributing** | [The Local Gate & Source Line Budget](local-gate.md) | The one command that mirrors CI locally, and the ratchet that keeps `src/` under 400 lines |
-| **Machine output** | [Machine Contract](machine-contract.md) | `schemaVersion`, every JSON surface, and exit codes |
+| **Machine output** | [Machine Contract](machine-contract.md) | `schemaVersion`, the surface index, exit codes, and the error envelope |
+| **Machine surfaces** | [Command Surfaces](machine-contract-surfaces.md) | The CI output channel, `doctor --json`, and `plan --json` as data |
 
 ---
 

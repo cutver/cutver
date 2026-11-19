@@ -80,13 +80,21 @@ never reports.
 `CI gate` collapses three legs (`test`, `test-plugins`, `publish-dry-run`) into one status, so a new job in
 `ci.yml` must be added to the gate's `needs` and to that test's `LEGS`, or its failures block nothing.
 
-**The label trap:** the label check answers `opened`, and requires *exactly one* `type:*` label. Create the
-pull request and label it afterwards, and the first run is red — it goes green on the `labeled` event, not
-before. Add a second type label and it goes red again. Put the label on the pull request at creation:
+**The label trap:** the check requires *exactly one* `type:*` label, and it answers `opened` as well as
+`labeled`. On `opened` the labels are read from the event payload, and on a brand-new pull request there are
+none yet — `gh pr create --label type:fix` creates the pull request first and applies the label second, so it
+is not an escape hatch. Every pull request therefore shows **two** runs of this check: a red `opened` and a
+green `labeled`. That is expected. The latest run is the one that counts, so the pull request still reports
+clean, and the `opened` answer exists so a required check never sits in *Expected* on a fresh pull request.
+
+What is not expected is a `labeled` run that is still red: that means zero `type:*` labels or two of them.
 
 ```bash
 gh pr create --label type:fix --title "fix(git): unstage the index on error" --body "…"
 ```
+
+Label it, then read the green run and not the red one. If it fails again after the label, the message says
+which count it objects to.
 
 ## The working record
 

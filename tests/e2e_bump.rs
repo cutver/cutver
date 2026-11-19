@@ -6,7 +6,6 @@ use common::*;
 use cutver::bump::run as bump_run;
 use cutver::config;
 use cutver::semver_bump::Bump;
-use std::process::Command;
 
 #[test]
 fn bump_minor_happy_path() {

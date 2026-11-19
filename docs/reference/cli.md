@@ -28,11 +28,7 @@ Every JSON surface reports the same outcome and opens with `schemaVersion` ([mac
 
 ### `cutver init`
 
-Scans project files, detects package manifests, determines primary source of truth, and scaffolds `cutver.toml`, a starter `CHANGELOG.md`, and default release notes template.
-
-```bash
-cutver init [OPTIONS]
-```
+`cutver init [OPTIONS]` scans project files, detects package manifests, determines primary source of truth, and scaffolds `cutver.toml`, a starter `CHANGELOG.md`, and default release notes template.
 
 | Flag | Long Option | Description |
 | :--- | :--- | :--- |
@@ -51,7 +47,7 @@ Calculates SemVer updates, runs preflights, applies atomic manifest changes, upd
 cutver bump [LEVEL] [OPTIONS]
 ```
 
-- `[LEVEL]`: Target SemVer level: `patch`, `minor`, `major`, or `auto` (default: `auto`).
+`[LEVEL]` is `patch`, `minor`, `major` or `auto` (default: `auto`).
 
 | Flag | Long Option | Description |
 | :--- | :--- | :--- |
@@ -64,18 +60,16 @@ cutver bump [LEVEL] [OPTIONS]
 | `-c <PATH>` | `--config <PATH>` | Explicit path to `cutver.toml`. |
 
 ```bash
-# Preview the release calculated from conventional commits, run it, or skip a preflight step
+# Preview, run, or skip a preflight step; then commit and leave the tag and publishing to `cutver publish`
 cutver bump auto --dry-run
 cutver bump auto
 cutver bump auto --skip-preflight lint
-
-# Commit and push the branch, and leave the tag and publishing to a later step
 cutver bump minor --defer-publish
 ```
 
 #### Machine-readable result
 
-`--json` and `--report` are independent: either, both, or neither. Both describe a real and a `--dry-run` run alike, and a failed run writes no report. The object opens with `schemaVersion` and then holds `released`, `deferred`, `version`, `tag`, `commit`, `floating_tag`, `publish_push_command` and `publish_commands`; field order is part of the contract.
+`--json` and `--report` are independent: either, both, or neither. Both describe a real and a `--dry-run` run alike, a failed run writes no report, and field order is part of the contract: the object opens with `schemaVersion`, then `released`, `deferred`, `version`, `tag`, `commit`, `floating_tag`, `publish_push_command` and `publish_commands`.
 
 ```json
 {"released":true,"deferred":false,"version":"0.19.0","tag":"v0.19.0","commit":"abc1234","floating_tag":"v0","publish_push_command":null,"publish_commands":["cargo publish"]}
@@ -100,7 +94,7 @@ cutver plan [LEVEL] [--json] [--skip-preflight <STEP>]... [--first-release]
 | `-fr`, `--fr` | `--first-release` | Plans the initial release: the tag carries the version the manifests already declare. |
 | `-c <PATH>` | `--config <PATH>` | Explicit path to `cutver.toml`. |
 
-`notes` is the rendered changelog entry, produced without writing the file, and `phases` is the release in order (`validate`, `mutate`, `publish`) with the steps each phase would run. The guards that abort a real `bump` — dirty tree, required branch, an existing release tag, an invalid tag name — arrive as one-line `blockers`, and the command still exits `0`; exit `1` means no plan could be computed. Every key is documented in the [machine contract](../internals/machine-contract.md).
+`notes` is the rendered changelog entry, produced without writing the file, and `phases` is the release in order (`validate`, `mutate`, `publish`) with the steps each phase would run. The guards that abort a real `bump` — dirty tree, required branch, an existing release tag, an invalid tag name — arrive as one-line `blockers`, and the command still exits `0`; exit `1` means no plan could be computed. Every key, including `gates`, is documented in the [machine contract](../internals/machine-contract.md).
 
 ---
 
@@ -116,7 +110,8 @@ cutver publish --tag <TAG> [OPTIONS]
 | :--- | :--- | :--- |
 | | `--tag <TAG>` | Release tag to publish. It must be a valid git ref, and it must equal the version the manifests declare at `HEAD`, so the tag is derived from the release commit instead of trusted from the command line. |
 | | `--commit <SHA>` | The release commit the caller verified. When given it must be `HEAD`; omit it to publish whatever `HEAD` is. |
-| | `--notes-file <PATH>` | Release notes for the `on_post_release` payload, which is what renders the draft release. The file is the command's input rather than a change in the tree; `-` reads the notes from standard input instead. An empty stream — or one carrying only whitespace — is refused before the tag, the pushes and the commands, because a release published with no notes cannot be corrected by re-running. |
+| | `--notes-file <PATH>` | Release notes for the `on_post_release` payload, which is what renders the draft release. The file is the command's input rather than a change in the tree, so a path that names a directory is refused before the clean-tree check; `-` reads the notes from standard input instead. An empty stream — or one carrying only whitespace — is refused before the tag, the pushes and the commands, because a release published with no notes cannot be corrected by re-running. |
+| | `--require-gate <NAME>` | Refuses to publish unless this gate has an attestation for the commit being published (can be repeated). It adds to the gates `[gates] require` already declares, which `publish` enforces whether or not the flag is given; a gate named both ways is required once. The refusal names the gate and the commit, and a recorded `failure` refuses too. `[gates] dir` is exempt from the clean-tree check exactly like `--notes-file`: an attestation is an input, not a change in the tree. See [`cutver attest`](#cutver-attest). |
 | | `--dry-run` | Validates and prints the plan without creating a tag, pushing anything or running a command. |
 | `-c <PATH>` | `--config <PATH>` | Explicit path to `cutver.toml`. |
 
@@ -124,6 +119,19 @@ cutver publish --tag <TAG> [OPTIONS]
 cutver bump minor --defer-publish --report .cutver-release.json
 cutver publish --tag v1.3.0 --commit "$(git rev-parse HEAD)" --notes-file RELEASE_NOTES.md
 ```
+
+---
+
+### `cutver attest`
+
+Records a gate's verdict for a commit, so `publish` can require it: `cutver attest <GATE> --commit <SHA> --conclusion success|failure [--run <URL>]` writes one JSON object into `[gates] dir` (default `.cutver/attestations`). The verdict is recorded, never verified: `cutver` signs nothing and talks to no network, so an attestation is only as trustworthy as the machine that wrote it ([the trust boundary](configuration.md#gates)).
+
+| Flag | Long Option | Description |
+| :--- | :--- | :--- |
+| `[GATE]` | | The gate this attestation covers. It becomes the file name inside `[gates] dir`, so only letters, digits, `-`, `_` and an inner `.` are accepted. |
+| | `--commit <SHA>` | The commit the gate verified, as the full sha `git rev-parse HEAD` prints. A tag, a branch or a short form is refused: the attestation is matched against the release commit. |
+| | `--conclusion <VERDICT>` | `success` or `failure`, and nothing else. A recorded `failure` refuses a release that requires the gate, in the same voice as a missing attestation. |
+| | `--run <URL>` | The run that produced the verdict, stored with it and reported by `cutver plan --json`. |
 
 ---
 
@@ -141,8 +149,7 @@ Validates configuration syntax, verifies declared manifest files, and detects **
 
 ### `cutver changelog`
 
-Utilities to extract and inspect release notes from `CHANGELOG.md`; `latest` prints the newest entry to
-stdout and skips `[Unreleased]`:
+Utilities to extract and inspect release notes from `CHANGELOG.md`; `latest` prints the newest entry to stdout and skips `[Unreleased]`:
 
 ```bash
 cutver changelog latest [-H/--include-header] [--template <PATH>] [--json]
@@ -165,8 +172,7 @@ empty commit list. The object opens with `schemaVersion` and then the release co
 
 ### `cutver plugin`
 
-Installs, inspects, updates and removes plugins from the registry index. Requires a plugin-enabled build
-(`--features plugins`): a lean binary hides the subcommand and fails closed naming the flag.
+Installs, inspects, updates and removes plugins from the registry index. Requires a plugin-enabled build (`--features plugins`): a lean binary hides the subcommand and fails closed naming the flag.
 
 ```bash
 cutver plugin add <NAME> [--version <VERSION>] [--registry <BASE>] [--event <EVENT>]... [--manifest-match <GLOB>]... [--dry-run] [--force]
@@ -178,9 +184,7 @@ cutver plugin search [QUERY] [--registry <BASE>] [--json]
 cutver plugin remove <NAME> [--keep-artifact]
 ```
 
-`plugin` exits `1` on any failure: an unresolvable cache root, an unreachable registry, a digest mismatch, an unknown capability, or a declaration that already exists. The install flow, the digest trust model, the cache layout and the `[plugins.<name>]` keys live in the [plugin reference](plugins.md).
-
-Every `plugin` JSON surface opens with `schemaVersion`; `list` and `search` wrap their entries in `{"schemaVersion": 1, "plugins": [...]}`, because a bare array has no room for a version.
+`plugin` exits `1` on any failure: an unresolvable cache root, an unreachable registry, a digest mismatch, an unknown capability, or a declaration that already exists. The install flow, the digest trust model, the cache layout and the `[plugins.<name>]` keys live in the [plugin reference](plugins.md). Every `plugin` JSON surface opens with `schemaVersion`; `list` and `search` wrap their entries in `{"schemaVersion": 1, "plugins": [...]}`, because a bare array has no room for a version.
 
 ---
 

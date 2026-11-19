@@ -53,13 +53,14 @@ verified, for which commit, with which conclusion, and when. `[gates] dir` (defa
 set the location; the file is one JSON object per gate.
 
 S9. `cutver publish --require-gate <name>` (repeatable) refuses to run when a required gate has no attestation for the
-commit being published, and the refusal names **the gate and the commit**; a `failure` conclusion refuses too, with
+commit being published — a required gate being everything `[gates] require` declares plus everything this invocation
+names — and the refusal names **the gate and the commit**; a `failure` conclusion refuses too, with
 the same voice. Verification happens at the same point as S2, before anything irreversible.
 
 S10. The attestation directory is exempt from `publish`'s clean-tree guard exactly like the declared notes file
 (`src/bump/exec/publish.rs:136`), because the attestation is an input to the command, not a change in the tree.
 
-S11. `cutver plan --json` fills `gates[]` with the gates the release would require and, when an attestation exists for
+S11. `cutver plan --json` fills `gates[]` with the gates `[gates] require` declares and, when an attestation exists for
 the commit it reports, its conclusion — so a CI job can see the gate state before asking for a tag.
 
 S12. Attestations are data, not trust: the tool records and reads them, and the docs state plainly that a forged
@@ -130,3 +131,33 @@ run instead of two, both configurations preserved. Implemented inside `test` rat
 gate does not need: a new job would have forced a change to the `needs` list and to the three-leg contract, i.e. to the
 one thing guarding the branch ruleset. The macOS entry now runs the lean build (the VI.4 guard) and then the `plugins`
 build and test on the same runner; `test-plugins` keeps ubuntu and windows and loses no coverage.
+
+L11 (evidence, run `44444105817` on `f290f37`): the fold works and the starvation is gone. All seven jobs green in one
+run, 6m wall clock, no leg cancelled: the folded entry `Test (macos-latest, default and plugins)` ran `Build`, `Test`,
+`Build (plugins feature)` and `Test (plugins feature)` in 345s on a single runner, with `Clippy` correctly skipped
+(ubuntu-only). PR #330 reads `mergeStateStatus: CLEAN`. A prior run had measured the two macOS legs at 148s (plugins,
+served) and 902s (lean, starved) — the fold costs serialization inside one OS and buys acquisition.
+
+L12 (decision, user): do **not** extend the fold to ubuntu or windows. Measured cost in the same run: folding ubuntu
+would serialize 58s + 90s, folding windows 170s + 220s, making windows the new critical path (~6.5-7m per run vs ~6m),
+and folding all three would leave `test-plugins` with nothing to run, forcing edits to `gate.needs`, its env wiring and
+`LEGS` in `tests/ci_workflow_contract.rs`. Neither pool showed contention: all four ubuntu/windows legs were acquired in
+every inspected run. The fold answers a measured scarcity, not a job count.
+
+L13 (decision, parent — three resolutions the implementation forced, recorded so the spec and the code cannot drift
+apart):
+
+- **`[gates] require` is a standing requirement, enforced by `publish`.** S11 named the array's contents but not their
+  source, and `plan` takes no `--require-gate`; the alternatives were worse — a `plan` that invented gates would be a
+  second authority, and reading them from the consumer's workflow is the YAML-owns-the-pipeline drift #326 exists to
+  end. The first implementation made `[gates] require` report-only and left `--require-gate` as the sole enforcement;
+  the independent verifier flagged that as a decorative declaration, the same defect class as #300
+  (`permissions.env` parsed and never enforced). Superseded: `publish` requires the union of `[gates] require` and
+  `--require-gate`, deduplicated, so a project declares its gates once and one invocation can add to them.
+- **`verified_at` is the UTC day (`YYYY-MM-DD`)**, from `changelog::format_date`, the repository's single clock
+  authority. A full timestamp needs a second date formatter in `src/changelog/update.rs`, outside this slice. A gate is
+  a per-release fact and the commit is recorded next to it, so the day is enough to decide; widening it is a follow-up.
+- **A damaged or foreign attestation is "no attestation", never an error.** A truncated document, or one naming another
+  gate, cannot vouch for anything, and refusing it must not crash a release. The refusal names the path and says it
+  "does not exist or does not read as an attestation", so the operator learns the file is there and unreadable rather
+  than absent — the condition is not swallowed, it is named.

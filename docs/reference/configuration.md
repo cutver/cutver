@@ -43,20 +43,19 @@ push = true
 ## Unknown Keys
 
 `cutver.toml` is not a permissive document: every unrecognised key is a hard
-error naming the enclosing table and the offending key. This is deliberate —
-silently ignored unknown keys once let a half-built `[workspace]` table look
-valid while the documentation drifted from the loader.
+error naming the enclosing table and the offending key. This is deliberate — silently
+ignored unknown keys once let a half-built `[workspace]` table look valid while the
+documentation drifted from the loader.
 
 ```text
 unknown configuration key 'mode' in [workspace] table in cutver.toml
 ```
 
 Two key sets are open by design: `[preflight]`, where every key other than
-`default_timeout` is a user-named step; and `[[manifest]]`, which accepts the
-union of every `kind`'s keys, so a key annotated for one `kind` below (such as
-`pattern`) is accepted on any manifest because `kind` selects the variant. An
-unknown key inside `[plugins.<name>]` or its `permissions` sub-table is rejected
-the same way.
+`default_timeout` is a user-named step; and `[[manifest]]`, which accepts the union of
+every `kind`'s keys, so a key annotated for one `kind` below (such as `pattern`) is accepted
+on any manifest because `kind` selects the variant. An unknown key inside `[plugins.<name>]`
+or its `permissions` sub-table is rejected the same way.
 
 ---
 
@@ -114,6 +113,15 @@ Declares files a release must produce. `publish` verifies every entry after vali
 
 ---
 
+### `[gates]`
+
+The attestation channel. `cutver attest` writes one JSON object per gate into `dir`, `cutver publish` refuses a release whose required gate is missing, failed or recorded for another commit, and `cutver plan --json` reports each gate's state. `require` is enforced, not just reported: a gate listed there must attest the release commit whether or not `--require-gate` repeats it on the command line. A `dir` naming the workspace root or walking upwards is refused, because the directory is exempt from the clean-tree guard exactly like a `--notes-file` — an input to the command, not a change in the tree. Attestations are data, not trust: `cutver` records and reads them, signs nothing and talks to no network, so an attestation is only as trustworthy as the machine that wrote it, and a forged file is a valid attestation to this tool.
+
+| Key | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `dir` | `string` | `".cutver/attestations"` | Workspace-relative directory holding one JSON object per gate. |
+| `require` | `list<string>` | `[]` | Gates `publish` requires and `cutver plan --json` reports, in this order. Names are file-safe: letters, digits, `-`, `_` and an inner `.`. |
+
 ### `[changelog]`
 
 | Key | Type | Default | Description |
@@ -169,15 +177,11 @@ A hook runs in its own process group on unix, which is what lets the timeout kil
 
 Each plugin gets its own table, written by `cutver plugin add` rather than by hand. The keys
 (`runtime`, `source`, `hash`, `command`, `capabilities`, `events`, `manifest_match`, `permissions`,
-`timeout_seconds`, `config`) and the two digest gates are documented in the
-[plugin reference](plugins.md).
+`timeout_seconds`, `config`) and the two digest gates are documented in the [plugin reference](plugins.md).
 
 ### `[plugins.<name>.config]`
 
-A free-form table that belongs to the plugin, not to `cutver`: no host behavior depends on a key inside it, an unknown key there is not rejected the way one in the enclosing table is, and the host does not deliver it either — `permissions.env` is the only channel an entry fills (`src/plugin/driver/wasm.rs:135-137`, `src/plugin/driver/process.rs:74-82`). The loader parses the table (`src/plugin/types.rs:186`) and `cutver plugin update` rewrites only `source` and `hash`, leaving this one untouched (`src/plugin/manage/update.rs:1-6`): it is the only table in `cutver.toml` whose contents `cutver` neither validates nor reads.
-
-The reference implementation is `github-publish`, in this repository's own `cutver.toml`, which records
-why each key is there (`cutver.toml:84-94`):
+A free-form table that belongs to the plugin, not to `cutver`: no host behavior depends on a key inside it, an unknown key there is not rejected the way one in the enclosing table is, and the host does not deliver it either — `permissions.env` is the only channel an entry fills (`src/plugin/driver/wasm.rs:135-137`, `src/plugin/driver/process.rs:74-82`). The loader parses the table (`src/plugin/types.rs:186`) and `cutver plugin update` rewrites only `source` and `hash`, leaving this one untouched (`src/plugin/manage/update.rs:1-6`): it is the only table in `cutver.toml` whose contents `cutver` neither validates nor reads. The reference implementation is `github-publish`, in this repository's own `cutver.toml`, which records why each key is there (`cutver.toml:84-94`):
 
 ```toml
 [plugins.github-publish.config]

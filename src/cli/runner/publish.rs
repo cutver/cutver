@@ -1,5 +1,9 @@
 //! `cutver publish`: the closing phase of a release prepared by `bump --defer-publish` (#259).
 
+use std::path::Path;
+
+use thiserror::Error;
+
 use crate::bump::{self, PublishRequest, PublishSummary};
 use crate::cli::style::Theme;
 use crate::cli::tree;
@@ -9,6 +13,15 @@ use super::dispatch::print_error;
 use crate::cli::machine::FailureCode;
 
 pub fn run_publish(config: &config::Config, request: PublishRequest) -> i32 {
+    // Refused before the clean-tree guard runs: the guard exempts a declared directory from the
+    // tree, because an input is not a change in the tree, and only the request can say whether the
+    // path was meant to be notes. A directory can never be.
+    if let Some(path) = request.notes_file.as_deref()
+        && let Err(rejected) = NotesInput::parse(path)
+    {
+        print_error(FailureCode::Publish, rejected);
+        return 1;
+    }
     match bump::run_publish(config, &request) {
         Ok(summary) => {
             print_publish_summary(&summary);
@@ -18,6 +31,32 @@ pub fn run_publish(config: &config::Config, request: PublishRequest) -> i32 {
             print_error(FailureCode::Publish, e);
             1
         }
+    }
+}
+
+/// Why `cutver publish` refused the path it was handed as release notes.
+///
+/// `--notes-file` names one file the closing phase reads and hands to the `on_post_release` plugins.
+/// A path that names a directory is not that file: reading it can only fail, and exempting it from
+/// the clean-tree guard would hide every change inside it, which is the opposite of what the
+/// exemption exists for (#302, #326 S10).
+#[derive(Debug, Error)]
+enum NotesInput {
+    #[error(
+        "`--notes-file` names a directory, not a notes file: '{path}'\n  Where: `cutver publish`, before the clean-tree check and before the tag, the pushes and the publish commands\n  Fix: pass the release-notes file itself (`--notes-file RELEASE_NOTES.md`), or `--notes-file -` to read the notes from standard input. A directory is exempt from the clean-tree check as an input, so accepting it would hide the work inside it. Nothing was tagged, pushed or executed."
+    )]
+    Directory { path: String },
+}
+
+impl NotesInput {
+    /// Accepts the path the caller declared, unless it names a directory that exists right now.
+    fn parse(path: &Path) -> Result<(), Self> {
+        if path.is_dir() {
+            return Err(Self::Directory {
+                path: path.display().to_string(),
+            });
+        }
+        Ok(())
     }
 }
 

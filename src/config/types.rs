@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use thiserror::Error;
 
 use super::artifact::Artifact;
+use super::gates::Gates;
 pub use super::path::{ManifestPath, PackageName};
 
 #[derive(Debug, Error)]
@@ -74,6 +75,10 @@ pub enum ConfigError {
     UnknownTable { table: String },
     #[error("unknown top-level key '{key}' in cutver.toml")]
     UnknownRootKey { key: String },
+    #[error(
+        "invalid `[gates] dir = \"{dir}\"` in cutver.toml: {reason}\n  Fix: declare a workspace-relative directory that stays inside the workspace, such as the default `.cutver/attestations`. A directory that names the workspace root or walks upwards would exempt the whole tree from the clean-tree guard."
+    )]
+    GatesDirInvalid { dir: String, reason: String },
 }
 
 #[derive(Debug, Deserialize)]
@@ -89,6 +94,10 @@ pub struct Config {
     /// Declared release assets, verified by `publish` before its first irreversible step (#326 S1).
     #[serde(default)]
     pub artifact: Vec<Artifact>,
+    /// The attestation channel: where gate attestations live and which gates a release requires
+    /// (#326 S8, S11).
+    #[serde(default)]
+    pub gates: Gates,
     #[serde(skip)]
     pub preflight: PreflightSteps,
     #[serde(skip)]
@@ -129,6 +138,7 @@ impl Default for Config {
             version: VersionSection::default(),
             manifest: Vec::new(),
             artifact: Vec::new(),
+            gates: Gates::default(),
             preflight: Vec::new(),
             preflight_default_timeout: None,
             changelog: Changelog::default(),

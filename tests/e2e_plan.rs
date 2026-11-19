@@ -244,7 +244,7 @@ fn a_plan_over_a_dirty_tree_changes_no_file() {
 }
 
 /// S2 and S6: one versioned object, the documented keys in the documented order, the shape of every
-/// entry, and `artifacts`/`gates` present and empty.
+/// entry, and `artifacts`/`gates` present and empty for a workspace that declares neither.
 #[test]
 fn the_plan_document_has_the_documented_keys_in_order() {
     let guard = fixture("plan-document", &armed_config());
@@ -339,9 +339,13 @@ fn the_plan_document_has_the_documented_keys_in_order() {
     assert_eq!(
         plan["artifacts"],
         serde_json::json!([]),
-        "present and empty until phase 3"
+        "present and empty: this workspace declares no `[[artifact]]`"
     );
-    assert_eq!(plan["gates"], serde_json::json!([]), "present and empty until phase 3");
+    assert_eq!(
+        plan["gates"],
+        serde_json::json!([]),
+        "present and empty: this workspace requires no `[gates] require` entry"
+    );
     assert!(
         plan["notes"].as_str().expect("a string").contains("1.3.0"),
         "notes are rendered, never null: {plan}"

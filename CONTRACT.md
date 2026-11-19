@@ -150,6 +150,12 @@ Every error surfaced to the user must answer three questions:
 - **Human Authorization Gate**: Agents must never author, generate, or register new skills unprompted. Implementation requires explicit human authorization.
 - **Precondition of Stability**: Skill creation can only be proposed or initiated after the active feature work is 100% functional, verified, and green.
 
+### 7. Checks Name Their Object
+- **One object per check.** A rule about the content of a commit must not read the working tree; a rule about the environment a plugin runs in must not fire while the configuration is merely loaded; a rule about a repository-relative path must not resolve against the process working directory. A check that reaches past its object produces confident answers to questions nobody asked. **Judgement**: no test can prove which object a check reads, so review owns it — and a check whose object is wrong is a defect even when it is green.
+- **No inherited ambient state.** Every subprocess names its working directory explicitly and never inherits the caller's. Every path declared repository-relative resolves against `root_dir` before a consumer reads it, and validation judges the declared spelling, never the resolved one. **Judgement with behavioural coverage**: the `tests/e2e_*` suites drive each boundary from an unrelated directory, which catches a regression of this shape without proving the property.
+- **A declared input is not drift.** A guard that protects the tree exempts exactly the paths the invocation named, compared canonically, and stays strict for everything else: exempting an entry must never degrade into not checking. **Enforced** by `tests/clean_tree_exemptions.rs`, which asserts that `--notes-file` and `[gates] dir` are exempt and nothing else is, for the collapsed tree descriptions git's porcelain really prints.
+- **Enforcement is derived, not reviewed.** A set that a rule speaks about is derived from the source and fails on the outlier, never listed by hand and trusted. **Enforced where a set is derivable**: `tests/container_build_inputs.rs` derives the image's embedded-file set from the sources, `tests/source_line_budget.rs` derives the source set by walking `src/`, and `tests/ci_workflow_contract.rs` derives the job graph from `ci.yml`. A rule whose set cannot be derived falls back to the levels in *Enforcement*, above.
+
 ---
 
 ## 🏛️ Pillar V: Structural Purity & Complexity Control

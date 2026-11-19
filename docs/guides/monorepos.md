@@ -161,6 +161,6 @@ cutver init --update
 
 ## Related Documentation
 
-- [Getting Started with cutver](getting-started.md): Standard release workflow and dry-run walkthrough.
+- [Getting Started with cutver](getting-started.md): The first release, read as a plan and then cut in two phases.
 - [Language Manifests and Surgical Diff Guarantees](../reference/manifests.md): Detailed behavior for Cargo, JSON, PyProject, Gradle, and Regex.
 - [Complete cutver.toml Configuration Reference](../reference/configuration.md): Exhaustive table and key definitions.

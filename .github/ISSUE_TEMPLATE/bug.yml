@@ -1,0 +1,95 @@
+name: Bug report
+description: cutver did something other than what it documents — a version, a tag, a changelog entry, an exit code.
+title: "[bug]: "
+# `bug` is the existing issue label for "something isn't working". `type:fix` is the label a pull
+# request wears for the `Exactly one type label` check; an issue is a request, not a change, so it does
+# not wear one.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Run `cutver doctor` first.** It checks the config syntax, verifies every declared manifest and
+        reports version drift, so it answers half of what this form asks before a human reads it:
+
+        ```bash
+        cutver doctor
+        ```
+
+        Paste the whole report below, including the parts that look fine. What the command checks is
+        [documented with the rest of the diagnostics](https://github.com/cutver/cutver/blob/main/docs/reference/cli-tools.md).
+
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened
+      description: The command you ran, the output it printed, and the exit code. Paste text rather than a screenshot, so the next reader can search it.
+      placeholder: |
+        $ cutver bump minor
+        ...
+        $ echo $?
+        1
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected instead
+      description: The behaviour you were promised, and where it was promised — a reference page, the README, `--help`, a documented example. If nothing promised it, say so — that is a documentation bug, and it is worth knowing before someone writes code for it.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Smallest reproduction
+      description: The fewest steps that still show it — a fresh directory, a `cutver.toml`, one command. If the bug needs real commit history, name the commits and say why they matter.
+      placeholder: |
+        1. git init, one commit, a Cargo.toml at 0.1.0
+        2. cutver bump auto --dry-run
+        3. prints ... instead of ...
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: cutver version
+      description: The output of `cutver --version`.
+      placeholder: "cutver 0.19.0"
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: OS, install source and shell
+      description: The host that reproduced it. The gate type-checks against the linux target because that is where `#[cfg(unix)]` code is visible, so the host is part of the report rather than small talk.
+      placeholder: Windows 11 · release binary · PowerShell 7
+    validations:
+      required: true
+
+  - type: textarea
+    id: doctor
+    attributes:
+      label: The output of `cutver doctor`
+      description: The complete report, not the line that looked wrong. Use `cutver doctor --json` if you are pasting it from a script.
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: config
+    attributes:
+      label: The relevant `cutver.toml` fragment
+      description: The sections the bug touches — `[git]`, `[manifests]`, `[[hooks]]`, `[plugins]`. Write `none` when cutver read no configuration; that is an answer, and an empty box is indistinguishable from an unfinished report.
+      render: toml
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: A link to the failing CI run, a comparison with an older version, a guess at the cause. Optional.

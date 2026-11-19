@@ -1,0 +1,77 @@
+name: Feature request
+description: An outcome cutver does not reach today, and where it belongs in the workflow.
+title: "[feature]: "
+# Same reasoning as `bug.yml`: `type:feat` is the label a pull request wears for the required type-label
+# check, while `enhancement` is the existing issue label for a request.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Growth is welcome — the tool earns its size — but scope here is a decision, not an accretion, so
+        this form asks for the outcome and for the boundary the request sits on.
+
+        The boundary is Pillar VII.1 of [the architectural and quality contract](https://github.com/cutver/cutver/blob/main/CONTRACT.md):
+        GitHub is a channel and never an identity, the core grows no HTTP client and no provider SDK,
+        and plugins extend the four typed slots and nothing else. A request that crosses that line is
+        a maintainer's call, stated in the pull request and in the changelog — the point of asking here
+        is that nobody discovers it in review.
+
+  - type: textarea
+    id: outcome
+    attributes:
+      label: The outcome you want
+      description: Describe the finished workflow, not the flag you imagine implementing it. What are you releasing, and what does cutver make you do by hand today?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: workflow
+    attributes:
+      label: The workflow this belongs to
+      description: Which command's job is this? Pick the one you would type, not the one whose code looks closest.
+      options:
+        - init
+        - bump
+        - plan
+        - publish
+        - attest
+        - doctor
+        - changelog
+        - open
+        - plugin
+        - cross-cutting (more than one of those)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: boundary
+    attributes:
+      label: Does it stay inside the scope boundary?
+      description: Answer for the request, not for the implementation you have in mind. A "no" is not a rejection — it is a scope decision, which is a different and slower path than a feature.
+      options:
+        - "Yes — it stays inside the repository: stdio, exit codes, files."
+        - "Yes — it fits one of the four typed plugin slots: ManifestV1, LifecycleV1, ChangelogV1, VersioningV1."
+        - "No — it needs a new capability in the core, so this is a scope decision for the maintainer."
+    validations:
+      required: true
+
+  - type: textarea
+    id: done
+    attributes:
+      label: What you would accept as done
+      description: The observable result — a command's output, an exit code, a file's contents, a changelog entry. This is what a reviewer holds the pull request against, so a vague answer here becomes a vague pull request.
+    validations:
+      required: true
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: What you do instead today
+      description: The script, the manual edit, the second tool. It is usually the cheapest description of the shape the feature has to fit. Optional.
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Prior art in another tool, a related issue, a sketch of the output. Optional.

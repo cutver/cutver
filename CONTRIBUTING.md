@@ -85,6 +85,9 @@ Keep code, tests and documentation in the same work-unit commit, and keep the pu
 
 ## The pull request
 
+Pull requests open with [the review checklist](.github/PULL_REQUEST_TEMPLATE.md) already in the
+body: four boxes, ticked only with evidence, in the order a reviewer reads them.
+
 Two checks are required on `main`: **`CI gate`** and **`Exactly one type label`**. The ruleset that requires
 them lives outside this repository, which is why the names are pinned by exact string in
 `tests/ci_workflow_contract.rs` — rename one side alone and every pull request waits forever on a check that

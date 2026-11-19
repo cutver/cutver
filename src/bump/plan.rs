@@ -42,9 +42,9 @@ mod resolve;
 #[cfg(test)]
 mod tests;
 
+use self::finish::{PlanArtifact, PlanGate};
 use self::guards::{branch_blocker, collision_blocker, dirty_tree_blocker, one_line};
 use self::resolve::resolve_next_version;
-
 /// How the release described by the plan will treat its changelog entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PlanMode {
@@ -101,8 +101,9 @@ pub(crate) struct ReleasePlan {
     /// One entry per declared `[[artifact]]`: the declaration plus the count it observes now (#326
     /// S4). Never a blocker — at plan time the assets are not built yet (L7).
     pub(crate) artifacts: Vec<PlanArtifact>,
-    /// Present and empty until phase 3 attests gates (#326 S6, L7).
-    pub(crate) gates: Vec<serde_json::Value>,
+    /// One entry per gate the release requires, with the conclusion an attestation covers for the
+    /// commit this plan reports (#326 S11).
+    pub(crate) gates: Vec<PlanGate>,
     /// One self-contained reason per guard a real run would abort on. A blocked plan still exits `0`
     /// (#326 S4, L6).
     pub(crate) blockers: Vec<String>,
@@ -160,19 +161,6 @@ pub(crate) struct PlanManifest {
     pub(crate) path: String,
     pub(crate) from: String,
     pub(crate) to: String,
-}
-
-/// One declared artifact plus what the plan observes at plan time (#326 S4).
-///
-/// `matched` is a count, not a verdict: the assets are built after the plan, so a blocker here
-/// would describe a state the workflow never sees (L7).
-#[derive(Debug, Serialize)]
-pub(crate) struct PlanArtifact {
-    pub(crate) glob: String,
-    pub(crate) at_least: usize,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) description: Option<String>,
-    pub(crate) matched: usize,
 }
 
 /// One step of the release, in the order the run performs it.

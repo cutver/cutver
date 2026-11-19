@@ -51,6 +51,9 @@ pub fn wants_machine(command: &Commands) -> bool {
             | PluginCommands::Remove { .. } => false,
         },
         Commands::Init { .. } | Commands::Publish { .. } | Commands::Open { .. } | Commands::External(_) => false,
+        // `attest` prints one human line and has no `--json` surface of its own, so its failure
+        // keeps the human path.
+        Commands::Attest { .. } => false,
     }
 }
 
@@ -63,6 +66,7 @@ pub fn select(command: &Commands) {
 /// subsystem, so a consumer can branch without matching prose, and it grows additively.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FailureCode {
+    Attest,
     Bump,
     Changelog,
     ChangelogCheck,
@@ -81,6 +85,7 @@ impl FailureCode {
     /// The stable, lowercase snake_case string the envelope carries in `error.code`.
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::Attest => "attest",
             Self::Bump => "bump",
             Self::Changelog => "changelog",
             Self::ChangelogCheck => "changelog_check",
@@ -224,6 +229,7 @@ mod tests {
     #[test]
     fn every_failure_class_has_its_documented_string() {
         let table = [
+            (FailureCode::Attest, "attest"),
             (FailureCode::Bump, "bump"),
             (FailureCode::Changelog, "changelog"),
             (FailureCode::ChangelogCheck, "changelog_check"),
@@ -246,6 +252,7 @@ mod tests {
     #[test]
     fn every_failure_class_exits_one_because_drift_is_an_outcome_and_usage_is_claps() {
         for code in [
+            FailureCode::Attest,
             FailureCode::Bump,
             FailureCode::Changelog,
             FailureCode::ChangelogCheck,

@@ -95,6 +95,7 @@ fn publish_request(tag: &str, commit: Option<String>) -> PublishRequest {
         tag: tag.to_string(),
         commit,
         notes_file: None,
+        require_gate: Vec::new(),
         dry_run: false,
     }
 }

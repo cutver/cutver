@@ -22,7 +22,7 @@ pub fn require_clean_tree(repo: impl AsRef<Path>, require: bool) -> Result<(), E
     require_clean_tree_except(repo, require, &[])
 }
 
-/// Fails closed on any change except an untracked file this invocation declared as its own input.
+/// Fails closed on any change except an untracked entry this invocation declared as its own input.
 ///
 /// `cutver publish --notes-file RELEASE_NOTES.md` is handed a file the release workflow rendered
 /// inside the checkout, so refusing it made the command reject its own argument (#302). The
@@ -30,6 +30,15 @@ pub fn require_clean_tree(repo: impl AsRef<Path>, require: bool) -> Result<(), E
 /// of `declared_inputs` after both are canonicalized, so `RELEASE_NOTES.md`, `./RELEASE_NOTES.md`, an
 /// absolute spelling and a path reached through a symlink are one file. A tracked file — modified,
 /// staged or deleted — always aborts, as does any other untracked entry.
+///
+/// A declared input that is a **directory** covers the untracked entries it holds, and nothing
+/// else. `git status` reports an untracked tree as its topmost entry (`?? .cutver/`), which no file
+/// path can match, so a directory this invocation produced would otherwise refuse the command it is
+/// an input to (#326 S10). Such an entry is exempt only when everything under it is a declared
+/// input, and only when it is a directory strictly inside the repository, so a declared `.` cannot
+/// whitelist the whole worktree and a scratch file beside the input is not exempt either. When the
+/// directory also holds a tracked file git lists the untracked files one by one instead, and each
+/// of those is exempt for living inside the declared directory.
 pub fn require_clean_tree_except(
     repo: impl AsRef<Path>,
     require: bool,
@@ -59,9 +68,10 @@ fn undeclared_changes(repo: &Path, porcelain: &str, declared_inputs: &[PathBuf])
         .iter()
         .filter_map(|path| canonical_in(repo, path))
         .collect();
+    let root = canonical_in(repo, Path::new("."));
     let mut remaining = String::new();
     for line in porcelain.lines() {
-        if is_untracked(line) && is_declared(repo, entry_path(line), &declared) {
+        if is_untracked(line) && is_declared(repo, entry_path(line), &declared, root.as_deref()) {
             continue;
         }
         remaining.push_str(line);
@@ -74,8 +84,80 @@ fn is_untracked(line: &str) -> bool {
     line.starts_with("??")
 }
 
-fn is_declared(repo: &Path, entry: &str, declared: &[PathBuf]) -> bool {
-    canonical_in(repo, Path::new(entry)).is_some_and(|path| declared.contains(&path))
+fn is_declared(repo: &Path, entry: &str, declared: &[PathBuf], root: Option<&Path>) -> bool {
+    let Some(path) = canonical_in(repo, Path::new(entry)) else {
+        return false;
+    };
+    // The declared file itself, spelled any way (#302): a symlinked notes file stays exempt, exactly
+    // as it was before the directory exemption existed.
+    if declared.iter().any(|input| input == &path) {
+        return true;
+    }
+    // Anything a declared directory holds. Both spellings are the same input — git lists the files
+    // one by one when the directory also carries a tracked file, and collapses the whole tree when
+    // it does not — so both shapes refuse a symlink the same way: a link is a path the declaration
+    // never named, and the collapsed shape already refuses one.
+    let inside = declared
+        .iter()
+        .any(|input| is_subtree(input, root) && path.starts_with(input));
+    (inside && !is_symlink(repo, entry)) || covers(&path, declared, root)
+}
+
+/// Whether the entry git reported is itself a symlink. `symlink_metadata` does not follow the link,
+/// so a link is refused instead of being resolved into whatever it points at.
+fn is_symlink(repo: &Path, entry: &str) -> bool {
+    std::fs::symlink_metadata(repo.join(entry)).is_ok_and(|metadata| metadata.file_type().is_symlink())
+}
+
+/// Whether `declared` may exempt a subtree: a directory strictly inside the repository. A declared
+/// `.` covers nothing, and neither does a declaration that resolves outside the root.
+fn is_subtree(declared: &Path, root: Option<&Path>) -> bool {
+    let Some(root) = root else {
+        return false;
+    };
+    declared != root && declared.starts_with(root) && declared.is_dir()
+}
+
+/// Whether an untracked `entry` is the tree git collapsed a declared directory into.
+///
+/// `git status --porcelain` reports an untracked tree as its **topmost** entry: with nothing tracked
+/// inside it, the attestation directory arrives as `?? .cutver/` and none of its files is listed.
+/// Such an entry is exempt only when everything under it is a declared input, so one scratch file
+/// beside the declared directory keeps the whole entry undeclared and the exemption can never widen
+/// into a general "untracked directories are fine". A file *inside* the declared directory is
+/// exempt instead, through the directory itself: the whole directory is the input.
+fn covers(entry: &Path, declared: &[PathBuf], root: Option<&Path>) -> bool {
+    if !is_subtree(entry, root) {
+        return false;
+    }
+    if !declared.iter().any(|input| input.starts_with(entry)) {
+        return false;
+    }
+    holds_only_declared(entry, declared)
+}
+
+/// Whether every file beneath `dir` is a declared input. Symlinks are not followed and not accepted:
+/// a link names a path outside the tree the declaration covers, so it fails closed.
+fn holds_only_declared(dir: &Path, declared: &[PathBuf]) -> bool {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return false;
+    };
+    for entry in entries {
+        let Ok(entry) = entry else { return false };
+        let Ok(file_type) = entry.file_type() else { return false };
+        let path = entry.path();
+        if file_type.is_symlink() {
+            return false;
+        }
+        if file_type.is_dir() {
+            if !holds_only_declared(&path, declared) {
+                return false;
+            }
+        } else if !declared.iter().any(|input| input == &path || path.starts_with(input)) {
+            return false;
+        }
+    }
+    true
 }
 
 /// One file, spelled any way: the path is resolved against the repository and canonicalized, so a

@@ -4,6 +4,7 @@ use crate::cli::args::{Cli, Commands};
 use crate::cli::machine::{self, FailureCode};
 use crate::cli::style::Theme;
 use crate::config;
+use crate::config::gates;
 
 use super::bump::{BumpOutput, run_bump};
 use super::changelog::run_changelog;
@@ -102,11 +103,19 @@ pub fn run(args: Cli) -> i32 {
             tag,
             commit,
             notes_file,
+            require_gate,
             dry_run,
         } => {
             let config = match load_config(args.config) {
                 Ok(c) => c,
                 Err(code) => return code,
+            };
+            let required = match parse_gates(&require_gate) {
+                Ok(required) => required,
+                Err(e) => {
+                    print_error(FailureCode::Publish, e);
+                    return 1;
+                }
             };
             run_publish(
                 &config,
@@ -114,9 +123,22 @@ pub fn run(args: Cli) -> i32 {
                     tag,
                     commit,
                     notes_file,
+                    require_gate: required,
                     dry_run,
                 },
             )
+        }
+        Commands::Attest {
+            gate,
+            commit,
+            conclusion,
+            run,
+        } => {
+            let config = match load_config(args.config) {
+                Ok(c) => c,
+                Err(code) => return code,
+            };
+            run_attest(&config, &gate, &commit, conclusion.into(), run.as_deref())
         }
         Commands::Open {
             target,
@@ -130,6 +152,44 @@ pub fn run(args: Cli) -> i32 {
 
 pub fn load_config(config_path: Option<PathBuf>) -> Result<config::Config, i32> {
     load_config_with_path(config_path).map(|(config, _)| config)
+}
+
+/// `cutver attest`: records one gate's verdict for one commit (#326 S8).
+///
+/// The command records what somebody else verified; it verifies nothing itself, which is why the
+/// docs say an attestation is only as trustworthy as the machine that wrote it (S12).
+fn run_attest(
+    config: &config::Config,
+    gate: &str,
+    commit: &str,
+    conclusion: gates::Conclusion,
+    run: Option<&str>,
+) -> i32 {
+    let gate = match gates::GateName::parse(gate) {
+        Ok(gate) => gate,
+        Err(e) => {
+            print_error(FailureCode::Attest, e);
+            return 1;
+        }
+    };
+    match gates::record(config, &gate, commit, conclusion, run) {
+        Ok(recorded) => {
+            println!(
+                "attested '{}' as {} for commit {} ({})",
+                recorded.attestation.gate, recorded.attestation.conclusion, recorded.attestation.commit, recorded.path
+            );
+            0
+        }
+        Err(e) => {
+            print_error(FailureCode::Attest, e);
+            1
+        }
+    }
+}
+
+/// Parses every `--require-gate` value into a gate name before anything is read or tagged.
+fn parse_gates(declared: &[String]) -> Result<Vec<gates::GateName>, gates::GateNameError> {
+    declared.iter().map(gates::GateName::parse).collect()
 }
 
 /// Loads the config and returns it alongside the resolved config file path.

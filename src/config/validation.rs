@@ -84,6 +84,7 @@ pub(crate) fn validate(config: &Config) -> Result<(), ConfigError> {
     if config.hooks.default_timeout == Some(0) {
         return Err(ConfigError::HooksInvalidTimeout("default_timeout".into()));
     }
+    config.gates.validate()?;
     for m in &config.manifest {
         if let ManifestKind::Template {
             template: Some(template),
@@ -133,6 +134,7 @@ const ROOT_KEYS: &[&str] = &[
     "hooks",
     "publish",
     "plugins",
+    "gates",
 ];
 const PROJECT_KEYS: &[&str] = &["name"];
 const VERSION_KEYS: &[&str] = &["current_source", "source", "strategy", "plugin"];
@@ -180,6 +182,8 @@ const HOOKS_KEYS: &[&str] = &["pre_bump", "post_bump", "default_timeout"];
 const PUBLISH_KEYS: &[&str] = &["push", "commands", "default_timeout"];
 /// `[[artifact]]` is a closed key set: a typo here is rejected exactly like one in `[publish]`.
 const ARTIFACT_KEYS: &[&str] = &["glob", "at_least", "description"];
+/// `[gates]` is a closed key set too: the attestation channel has exactly two knobs.
+const GATES_KEYS: &[&str] = &["dir", "require"];
 const PLUGIN_KEYS: &[&str] = &[
     "runtime",
     "source",
@@ -214,6 +218,7 @@ pub(crate) fn reject_unknown_keys(text: &str) -> Result<(), ConfigError> {
             "git" => check_section(value, GIT_KEYS, "git")?,
             "hooks" => check_section(value, HOOKS_KEYS, "hooks")?,
             "publish" => check_section(value, PUBLISH_KEYS, "publish")?,
+            "gates" => check_section(value, GATES_KEYS, "gates")?,
             "manifest" => check_manifests(value)?,
             "artifact" => check_artifacts(value)?,
             "plugins" => check_plugins(value)?,

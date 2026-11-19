@@ -83,9 +83,29 @@ pub enum Commands {
         /// notes from standard input, which declares no input at all
         #[arg(long, value_name = "PATH")]
         notes_file: Option<PathBuf>,
+        /// Refuse to publish unless this gate has an attestation for the commit being published
+        /// (repeatable). The attestation directory is exempt from the clean-tree check, exactly
+        /// like `--notes-file`
+        #[arg(long, value_name = "NAME")]
+        require_gate: Vec<String>,
         /// Validate and print the plan without creating a tag, pushing anything or running a command
         #[arg(long)]
         dry_run: bool,
+    },
+    /// Record a gate's verdict for a commit, so `publish --require-gate` can read it
+    Attest {
+        /// Gate this attestation covers; it becomes the file name in `[gates] dir`
+        #[arg(value_name = "GATE")]
+        gate: String,
+        /// The commit the gate verified, as the full sha `git rev-parse HEAD` prints
+        #[arg(long, value_name = "SHA")]
+        commit: String,
+        /// The verdict the gate reached
+        #[arg(long, value_enum)]
+        conclusion: Conclusion,
+        /// The run that produced the verdict, recorded with it and reported by `cutver plan`
+        #[arg(long, value_name = "URL")]
+        run: Option<String>,
     },
     /// Validate configuration and report version drift across declared manifests
     Doctor {
@@ -171,6 +191,23 @@ pub enum ChangelogCommands {
         #[arg(long, value_name = "BROWSER")]
         browser: Option<String>,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum Conclusion {
+    /// The gate passed for that commit
+    Success,
+    /// The gate ran and failed for that commit
+    Failure,
+}
+
+impl From<Conclusion> for crate::config::gates::Conclusion {
+    fn from(conclusion: Conclusion) -> Self {
+        match conclusion {
+            Conclusion::Success => Self::Success,
+            Conclusion::Failure => Self::Failure,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]

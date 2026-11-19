@@ -1,4 +1,4 @@
-use super::commands::{BumpLevel, ChangelogCommands, Cli, Commands};
+use super::commands::{BumpLevel, ChangelogCommands, Cli, Commands, Conclusion};
 use super::normalize::normalize_args;
 use super::plugin::PluginCommands;
 use clap::Parser;
@@ -128,6 +128,7 @@ fn publish_parses_its_arguments_and_requires_the_tag() {
         tag,
         commit,
         notes_file,
+        require_gate,
         dry_run,
     } = cli.command
     else {
@@ -136,6 +137,7 @@ fn publish_parses_its_arguments_and_requires_the_tag() {
     assert_eq!(tag, "v1.3.0");
     assert!(commit.is_none());
     assert!(notes_file.is_none());
+    assert!(require_gate.is_empty(), "no gate is required by default");
     assert!(!dry_run);
 
     let cli = Cli::try_parse_from([
@@ -147,6 +149,10 @@ fn publish_parses_its_arguments_and_requires_the_tag() {
         "abc1234",
         "--notes-file",
         "notes.md",
+        "--require-gate",
+        "ci",
+        "--require-gate",
+        "security",
         "--dry-run",
     ])
     .unwrap();
@@ -154,6 +160,7 @@ fn publish_parses_its_arguments_and_requires_the_tag() {
         tag,
         commit,
         notes_file,
+        require_gate,
         dry_run,
     } = cli.command
     else {
@@ -162,6 +169,11 @@ fn publish_parses_its_arguments_and_requires_the_tag() {
     assert_eq!(tag, "v1.3.0");
     assert_eq!(commit.as_deref(), Some("abc1234"));
     assert_eq!(notes_file, Some(PathBuf::from("notes.md")));
+    assert_eq!(
+        require_gate,
+        vec!["ci".to_string(), "security".to_string()],
+        "`--require-gate` repeats and keeps its order"
+    );
     assert!(dry_run);
 
     assert!(
@@ -651,4 +663,55 @@ fn plugin_is_declared_in_every_build_and_hidden_only_without_the_feature() {
     let command = Cli::command();
     let plugin = command.find_subcommand("plugin").expect("plugin must be declared");
     assert_eq!(plugin.is_hide_set(), !cfg!(feature = "plugins"));
+}
+
+#[test]
+fn attest_parses_its_arguments_and_requires_a_conclusion() {
+    let cli = Cli::try_parse_from([
+        "cutver",
+        "attest",
+        "ci",
+        "--commit",
+        "abc1234",
+        "--conclusion",
+        "success",
+    ])
+    .unwrap();
+    let Commands::Attest {
+        gate,
+        commit,
+        conclusion,
+        run,
+    } = cli.command
+    else {
+        panic!("expected attest")
+    };
+    assert_eq!(gate, "ci");
+    assert_eq!(commit, "abc1234");
+    assert_eq!(conclusion, Conclusion::Success);
+    assert!(run.is_none(), "the run is optional");
+
+    let cli = Cli::try_parse_from([
+        "cutver",
+        "attest",
+        "e2e-linux",
+        "--commit",
+        "abc1234",
+        "--conclusion",
+        "failure",
+        "--run",
+        "https://ci.example/run/7",
+    ])
+    .unwrap();
+    let Commands::Attest { conclusion, run, .. } = cli.command else {
+        panic!("expected attest")
+    };
+    assert_eq!(conclusion, Conclusion::Failure);
+    assert_eq!(run.as_deref(), Some("https://ci.example/run/7"));
+
+    // The conclusion is a closed set, and both `--commit` and `--conclusion` are required.
+    assert!(Cli::try_parse_from(["cutver", "attest", "ci", "--commit", "abc1234", "--conclusion", "maybe"]).is_err());
+    assert!(Cli::try_parse_from(["cutver", "attest", "ci", "--commit", "abc1234"]).is_err());
+    assert!(Cli::try_parse_from(["cutver", "attest", "ci", "--conclusion", "success"]).is_err());
+    assert!(Cli::try_parse_from(["cutver", "attest", "--commit", "abc1234", "--conclusion", "success"]).is_err());
 }

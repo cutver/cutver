@@ -300,6 +300,7 @@ mod tests {
                 kind: ManifestKind::CargoPackage,
             }],
             artifact: Default::default(),
+            gates: Default::default(),
             preflight: vec![(
                 "test".into(),
                 PreflightCommand {

@@ -1,0 +1,12 @@
+# The `[gates]` key inventory, pinned by `tests/e2e_gates.rs`: every key the table accepts, once.
+[version]
+current_source = "package.json"
+
+[[manifest]]
+path = "package.json"
+kind = "json"
+field = "version"
+
+[gates]
+dir = "ci/verdicts"
+require = ["ci", "security"]

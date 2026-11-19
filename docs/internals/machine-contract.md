@@ -31,11 +31,11 @@ when an existing key changes meaning or disappears.
 | `cutver plugin info <NAME> --json` | The registry entry, pretty-printed. | `1` |
 | `cutver plugin search --json` | `{"schemaVersion", "plugins": [...]}`. | `1` |
 
-`changelog` carries two keys that look alike and are not: `schemaVersion` is the contract version, and
-`version` is the release version the entry describes.
+`changelog` carries two keys that look alike and are not: `schemaVersion` is the contract version and
+`version` the release version the entry describes.
 
-The surfaces that do not emit JSON are deliberate: `init`, `open --print-url` (a URL), `publish` (the
-plan tree), `plan` without `--json` (the same tree the dry run prints) and `plugin
+The surfaces that do not emit JSON are deliberate: `init`, `attest`, `open --print-url` (a URL),
+`publish` (the plan tree), `plan` without `--json` (the same tree the dry run prints) and `plugin
 add|update|restore|remove` print human output only. Passing `--json` to them is a usage error, not a
 silent fallback.
 
@@ -80,6 +80,7 @@ The message is escaped, so the envelope is one JSON line however long the human 
 
 | `code` | Failure |
 | :--- | :--- |
+| `attest` | Recording a gate attestation: the gate name, the commit or the write. |
 | `bump` | The release run: preflight, manifests, git, the plan itself. |
 | `changelog` | Reading the changelog, resolving a release, rendering notes. |
 | `changelog_check` | `doctor --check-changelog` could not compare entries with tags. |
@@ -93,17 +94,16 @@ The message is escaped, so the envelope is one JSON line however long the human 
 | `publish` | The closing phase prepared by `bump --defer-publish`. |
 | `report` | Serializing or writing the `--json`/`--report` result after the release finished. |
 
-`init` and `external` have no machine surface today, so their failures still render for a human; the
-codes are reserved so a `--json` on them later does not have to invent one.
+`init`, `attest` and `external` have no machine surface today, so their failures still render for a
+human; the codes are reserved so a `--json` on them later does not have to invent one.
 
 ### Limits
 
 - A degradation warning (`warning: …`) stays human prose: it is not a failure. The command continues
   and exits `0`, so a consumer that got an envelope knows the run failed.
 - A `cutver-<name>` external subcommand's own stderr and exit code pass through unwrapped: cutver does
-  not own that output, and the exit code is the child's.
-- Clap usage errors — a missing argument, an unknown flag — exit before this code runs and are never
-  enveloped.
+  not own that output, and the exit code is the child's. Clap usage errors — a missing argument, an
+  unknown flag — exit before this code runs and are never enveloped.
 - Without machine mode nothing changes: the human path keeps `Error: …` on stderr, the unchanged exit
   codes, and the same rendered tree, dashboard and notes.
 
@@ -118,24 +118,19 @@ dashboard, no rendered drift block, no suggested-fix text.
 {
   "schemaVersion": 1,
   "ok": false,
-  "checks": [
-    { "name": "versions", "status": "drift" },
-    { "name": "changelog", "status": "skipped" }
-  ],
+  "checks": [{ "name": "versions", "status": "drift" }, { "name": "changelog", "status": "skipped" }],
   "version_drift": [{ "path": "b.json", "expected": "1.1.0", "actual": "1.0.0" }],
   "changelog_drift": null
 }
 ```
 
-- `ok` is `false` when any check that ran found drift.
-- `checks` holds one entry per declared check, always in that order: `versions`, then `changelog`.
-  `status` is `ok`, `drift`, or `skipped` — a check that did not run says so instead of looking like an
-  empty result. Without `--check-changelog` the changelog check is `skipped` and `changelog_drift` is
-  `null`.
-- `version_drift` is always an array, empty when every manifest agrees. `path` is relative to the
-  workspace root, as in the human block.
-- `changelog_drift` carries `missing_in_changelog` (a Git tag with no entry) and `orphan_sections` (an
-  entry with no tag) when the changelog check ran.
+- `ok` is `false` when any check that ran found drift. `checks` holds one entry per declared check,
+  always in that order: `versions`, then `changelog`. `status` is `ok`, `drift`, or `skipped` — a check
+  that did not run says so instead of looking like an empty result. Without `--check-changelog` the
+  changelog check is `skipped` and `changelog_drift` is `null`.
+- `version_drift` is always an array, empty when every manifest agrees; `path` is relative to the
+  workspace root, as in the human block. `changelog_drift` carries `missing_in_changelog` (a Git tag
+  with no entry) and `orphan_sections` (an entry with no tag) when the changelog check ran.
 
 A check that cannot run — an unreadable manifest, an unusable Git — fails the command with exit `1`
 and the error on stderr. That is why no check reports a `failed` status: a failed check never produces
@@ -161,7 +156,8 @@ is evidence rather than a report of something that happened.
   "preflight": [{ "name": "test", "command": "cargo test", "skipped": false }],
   "phases": [{ "name": "validate", "mutates": false, "steps": ["…"] }],
   "artifacts": [{ "glob": "dist/*.tar.gz", "at_least": 8, "description": "lean binaries", "matched": 8 }],
-  "gates": [], "blockers": []
+  "gates": [{ "name": "ci", "conclusion": "success", "commit": "abc1234", "verified_at": "2026-11-18", "run": null }],
+  "blockers": []
 }
 ```
 
@@ -171,12 +167,17 @@ the commit the release would be cut from; `branch` is the checked-out branch, `n
 - `notes` is the **rendered** entry the release would prepend, produced without writing the changelog.
   A plan that cannot render it fails with exit `1` and a `plan` envelope; it never emits `"notes": null`.
 - `phases` is the release in order — `validate` (`mutates: false`), `mutate` and `publish` (`mutates:
-  true`) — one step per thing the run would do, derived from the same computation `bump` runs, so it
-  cannot describe a pipeline that does not exist.
+  true`) — one step per thing the run would do, derived from the same computation `bump` runs, so it cannot
+  describe a pipeline that does not exist.
 - `artifacts` carries one entry per declared `[[artifact]]`: `glob`, `at_least`, `description` (only when
   set) and `matched`, the number of files the glob matches right now. It is a count, never a verdict — a
-  plan never blocks on a missing artifact, because the assets are built after it plans. `gates` is still
-  present and empty: nothing attests a gate yet, so a consumer can code against the shape without branching.
+  plan never blocks on a missing artifact, because the assets are built after it plans.
+- `gates` carries one entry per gate the release requires — `[gates] require` in union with
+  `--require-gate` — in declaration order: `name`, `conclusion` (`"success"`, `"failure"`) and the
+  `commit`, `verified_at` and `run` an attestation recorded. All four are `null` together when no
+  attestation covers the commit this plan reports, because one recorded for another commit is not
+  this release's, and a file that does not parse is not an attestation. A gate is data here, like a
+  blocker: `publish` is where a verdict refuses a release.
 - `blockers` lists the guards that would abort a real `bump` — a dirty tree under
   `[git] require_clean_tree`, a `[git] require_branch` that does not match, a release tag that already
   exists locally or on the remote, an invalid tag name — one self-contained line each, naming what to
@@ -190,11 +191,8 @@ the commit the release would be cut from; `branch` is the checked-out branch, `n
 The search result used to be a bare JSON array, which has no room for a version. It is now an object:
 
 ```jsonc
-// before
-[{"name": "github-publish", "…": "…"}]
-
-// after
-{"schemaVersion": 1, "plugins": [{"name": "github-publish", "…": "…"}]}
+[{"name": "github-publish", "…": "…"}]           // before
+{"schemaVersion": 1, "plugins": [{"name": "github-publish", "…": "…"}]}   // after
 ```
 
 The fix at the call site is one index step: `.plugins[]` instead of `.[]`.

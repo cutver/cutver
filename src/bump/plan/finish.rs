@@ -10,9 +10,12 @@ use crate::bump::exec::{
 };
 use crate::config::Config;
 use crate::config::artifact::matched_counts;
+use crate::config::gates;
 
 use super::guards::NAMED_NOTHING;
-use super::{ComputeRequest, PlanArtifact, PlanChangelog, PlanManifest, PlanPhase, ReleasePlan, relative};
+use super::{ComputeRequest, PlanChangelog, PlanManifest, PlanPhase, ReleasePlan, relative};
+
+use serde::Serialize;
 
 impl ReleasePlan {
     /// Stage 2: the release scope, the manifest changes and the changelog entry.
@@ -76,6 +79,7 @@ impl ReleasePlan {
                 .map(|command| format_command(command, &self.interp_ctx))
                 .collect::<Result<Vec<_>, _>>()?;
             self.artifacts = plan_artifacts(config)?;
+            self.gates = plan_gates(config, &self.commit);
             self.phases = self.derive_phases(config)?;
         } else {
             let plan = prepare_changelog(cl_params)?;
@@ -199,6 +203,29 @@ impl ReleasePlan {
     }
 }
 
+/// The document's gate entries: every gate the release requires, in declaration order, carrying the
+/// conclusion an attestation records for the commit this plan reports (#326 S11).
+///
+/// A gate with no attestation for that commit is reported, not omitted: a CI job reads the gate list
+/// and its state from one place, which is the whole point of asking before the tag exists.
+fn plan_gates(config: &Config, commit: &str) -> Vec<PlanGate> {
+    config
+        .gates
+        .require
+        .iter()
+        .map(|gate| {
+            let attested = gates::read(config, gate).filter(|attested| attested.covers(commit));
+            PlanGate {
+                name: gate.to_string(),
+                conclusion: attested.as_ref().map(|attested| attested.conclusion.as_str()),
+                commit: attested.as_ref().map(|attested| attested.commit.clone()),
+                verified_at: attested.as_ref().map(|attested| attested.verified_at.clone()),
+                run: attested.as_ref().and_then(|attested| attested.run.clone()),
+            }
+        })
+        .collect()
+}
+
 /// The document's artifact entries: each declaration plus the count its glob matches right now.
 ///
 /// A plan never blocks on a missing artifact (#326 S4, L7): the workflow builds the assets after it
@@ -216,4 +243,32 @@ fn plan_artifacts(config: &Config) -> Result<Vec<PlanArtifact>, Error> {
             matched,
         })
         .collect())
+}
+
+/// One declared artifact plus what the plan observes at plan time (#326 S4).
+///
+/// `matched` is a count, not a verdict: the assets are built after the plan, so a blocker here
+/// would describe a state the workflow never sees (L7).
+#[derive(Debug, Serialize)]
+pub(crate) struct PlanArtifact {
+    pub(crate) glob: String,
+    pub(crate) at_least: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) description: Option<String>,
+    pub(crate) matched: usize,
+}
+
+/// One gate the release requires, plus what the gate channel says about the commit this plan reports
+/// (#326 S11).
+///
+/// The four attested fields are `null` together when no attestation covers that commit: a plan
+/// reports the state of the commit it reports, never of another one, and it never blocks on a gate —
+/// `publish --require-gate` is where a verdict becomes a refusal.
+#[derive(Debug, Serialize)]
+pub(crate) struct PlanGate {
+    pub(crate) name: String,
+    pub(crate) conclusion: Option<&'static str>,
+    pub(crate) commit: Option<String>,
+    pub(crate) verified_at: Option<String>,
+    pub(crate) run: Option<String>,
 }

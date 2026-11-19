@@ -11,6 +11,8 @@ use semver::Version;
 use crate::bump::Error;
 use crate::bump::types::BumpLevel;
 use crate::changelog;
+use crate::config::Config;
+use crate::config::gates::{self, Attestation, GateName};
 use crate::git;
 
 pub(crate) fn build_context(
@@ -64,6 +66,75 @@ pub(crate) fn validate_tag_name(prefix: &str, tag: &str) -> Result<(), Error> {
             prefix: prefix.to_string(),
             source,
         })
+}
+
+/// Verifies that every gate this release requires attests the commit being published (#326 S9).
+///
+/// Runs beside the artifact verification, after `validate` and before `publish_prepared`, whose
+/// first write is the tag: a required gate that is missing, or whose recorded conclusion is `failure`,
+/// fails closed before anything irreversible. A dry run verifies too, so it reports the verdict the
+/// real run would.
+pub(crate) fn verify_gates(config: &Config, requested: &[GateName], commit: &str) -> Result<(), Error> {
+    for gate in required_gates(config, requested) {
+        let recorded = gates::read(config, gate);
+        let Some(attested) = recorded.as_ref().filter(|attested| attested.covers(commit)) else {
+            return Err(Error::GateMissing {
+                gate: gate.to_string(),
+                commit: commit.to_string(),
+                dir: gates::relative(config, &gates::dir(config)),
+                note: standing_note(config, gate, recorded.as_ref()),
+            });
+        };
+        if !attested.conclusion.passed() {
+            return Err(Error::GateFailed {
+                gate: gate.to_string(),
+                commit: commit.to_string(),
+                recorded: recorded_line(config, gate, attested),
+            });
+        }
+    }
+    Ok(())
+}
+
+/// The gates this release requires: the standing `[gates] require` declaration in union with this
+/// invocation's `--require-gate`, in that order and without repetition.
+///
+/// The declaration is enforced, not reported: a key named `require` that only `plan` read would be a
+/// decorative option, and a CI job that declares its gates once in `cutver.toml` would still have to
+/// repeat every one of them on the command line.
+fn required_gates<'a>(config: &'a Config, requested: &'a [GateName]) -> Vec<&'a GateName> {
+    let mut required: Vec<&GateName> = Vec::new();
+    for gate in config.gates.require.iter().chain(requested) {
+        if !required.contains(&gate) {
+            required.push(gate);
+        }
+    }
+    required
+}
+
+/// The line a refusal adds about what the gate channel does hold, so a stale or unreadable file is
+/// never mistaken for an absent one.
+fn standing_note(config: &Config, gate: &GateName, recorded: Option<&Attestation>) -> String {
+    match recorded {
+        None => format!(
+            "Note: '{}' does not exist or does not read as an attestation for this gate.",
+            gates::relative(config, &gates::path_of(config, gate))
+        ),
+        Some(attested) => format!(
+            "Note: the attestation on file covers commit {}, not the commit being published.",
+            attested.commit
+        ),
+    }
+}
+
+/// How a recorded failure describes itself: when it was recorded, where, and which run produced it.
+fn recorded_line(config: &Config, gate: &GateName, attested: &Attestation) -> String {
+    let run = attested.run.as_deref().unwrap_or("no run recorded");
+    format!(
+        "recorded {} in '{}', {run}",
+        attested.verified_at,
+        gates::relative(config, &gates::path_of(config, gate))
+    )
 }
 
 /// A release tag that already exists, or a remote that did not answer (#262).

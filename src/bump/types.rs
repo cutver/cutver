@@ -93,6 +93,23 @@ pub enum Error {
         required: usize,
     },
     #[error(
+        "required gate '{gate}' has no attestation for commit {commit} in '{dir}'\n  Where: `cutver publish` gate verification, after validation and before the tag, the pushes and the publish commands\n  {note}\n  Fix: record the verdict for this commit on the machine that verified it (`cutver attest {gate} --commit {commit} --conclusion success`), or drop `--require-gate {gate}` if this release does not depend on that gate. Attestations are data, not trust: cutver reads the file, it cannot verify the gate ran. Nothing was tagged, pushed or executed."
+    )]
+    GateMissing {
+        gate: String,
+        commit: String,
+        dir: String,
+        note: String,
+    },
+    #[error(
+        "required gate '{gate}' recorded a failure for commit {commit} ({recorded})\n  Where: `cutver publish` gate verification, after validation and before the tag, the pushes and the publish commands\n  Fix: the gate itself recorded a failure, so publishing would ship a release that did not pass it. Fix what the gate reported and record the passing verdict for this commit (`cutver attest {gate} --commit {commit} --conclusion success`), or drop `--require-gate {gate}` if this release does not depend on that gate. Nothing was tagged, pushed or executed."
+    )]
+    GateFailed {
+        gate: String,
+        commit: String,
+        recorded: String,
+    },
+    #[error(
         "declared artifact glob '{pattern}' escapes the workspace root '{root}'\n  Where: resolving `[[artifact]]` declarations, before anything is tagged, pushed or executed\n  Fix: declare a glob relative to the workspace root that never walks out of it: no leading separator or drive, and no '..'. Nothing was tagged, pushed or executed."
     )]
     ArtifactGlobEscapes { pattern: String, root: String },

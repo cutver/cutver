@@ -20,6 +20,7 @@ use crate::bump::types::BumpLevel;
 use crate::changelog;
 use crate::config::Config;
 use crate::config::artifact::matched_counts;
+use crate::config::gates::{self, GateName};
 use crate::git;
 use crate::git::ops::{tag_force_push_args, tag_push_args};
 use crate::plugin::PluginManager;
@@ -90,6 +91,8 @@ pub struct PublishRequest {
     pub commit: Option<String>,
     /// Release notes for the `on_post_release` payload. The value `-` means standard input.
     pub notes_file: Option<PathBuf>,
+    /// Gates this release must have an attestation for, in the order the caller asked (#326 S9).
+    pub require_gate: Vec<GateName>,
     pub dry_run: bool,
 }
 
@@ -134,10 +137,15 @@ pub fn run_publish(config: &Config, request: &PublishRequest) -> Result<PublishS
     } else {
         request.notes_file.iter().cloned().collect()
     };
+    // The attestation directory is the second input this invocation declares: an attestation is
+    // evidence the command reads, not a change in the tree the tag would carry (#326 S10).
+    let mut declared_inputs = declared_inputs;
+    declared_inputs.extend(gates::declared_input(config));
     git::status::require_clean_tree_except(&config.root_dir, config.git.require_clean_tree, &declared_inputs)?;
     let plugin_manager = Arc::new(PluginManager::from_config(&config.plugins)?);
     let (version, head) = validate(config, request, &plugin_manager)?;
     verify_artifacts(config)?;
+    guard::verify_gates(config, &request.require_gate, &head)?;
     publish_prepared(config, request, &version, &head, &plugin_manager)
 }
 

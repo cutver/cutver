@@ -36,6 +36,16 @@ The exact boundaries are documented in the
 
 ---
 
+## How do I see what a release will do before it runs?
+
+`cutver plan` computes the whole release and performs none of it: no file, no git mutation, no
+preflight, no `[publish]` command and no plugin dispatch — not even `on_pre_bump`, which
+`bump --dry-run` still dispatches. It exits `0` even when the plan carries blockers, because the
+release decision is yours, and a dirty tree on the wrong branch is the normal case: that is the state CI
+asks the question in. The [first release](getting-started.md) reads the plan before it cuts anything.
+
+---
+
 ## Do I need WebAssembly or Wasmtime if I only want minimal CI bumps?
 
 No. Cutver provides two distinct builds:

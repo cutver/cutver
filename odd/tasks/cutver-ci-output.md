@@ -99,3 +99,14 @@ L8 (review, independent verifier — two blockers, both found only by running wi
 - **B2 (blocker).** The flags existed only on `bump` and `plan` while the annotation fires on every command, so a runner
   could not opt out: `cutver doctor --no-ci` was a usage error. Global flags fix both halves, and `--ci` without a named
   sink now enables annotations instead of doing nothing.
+
+L9 (CI, first red run of 4A — one line, and a technique worth keeping): both ubuntu legs failed while Windows and the
+folded macOS entry passed, on `unused import: std::process::Command` at `tests/e2e_bump.rs:9`. The file opens with
+`#![cfg(unix)]`, so it does not exist on Windows and clippy on this host never type-checks it; the hermetic conversion
+left the import behind because the only surviving call is fully qualified.
+
+**The local check that closes this blind spot**: this host has the linux std target installed, so
+`cargo clippy --locked --workspace --all-targets --target x86_64-unknown-linux-gnu -- -D warnings` type-checks the
+unix-only files without waiting for CI — verified to have teeth by re-adding the import and watching it produce the
+exact CI error. It does **not** cover `--features plugins`, because `zstd-sys` needs a cross C toolchain this host lacks
+(`x86_64-linux-gnu-gcc`), so that leg still relies on CI.

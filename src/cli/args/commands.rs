@@ -10,6 +10,12 @@ pub struct Cli {
     /// Path to configuration file (defaults to discovering cutver.toml walking up from current directory)
     #[arg(short, long, global = true, value_name = "PATH")]
     pub config: Option<PathBuf>,
+    /// Turn the CI channel on: write this run's outputs to `$GITHUB_OUTPUT` and its summary to `$GITHUB_STEP_SUMMARY`, and annotate a failure on stderr even when neither file is named and `GITHUB_ACTIONS` is unset. The channel never writes stdout, so `--json` is unaffected
+    #[arg(long, global = true)]
+    pub ci: bool,
+    /// Turn the CI channel off: no outputs, no step summary and no failure annotation, even on a detected CI
+    #[arg(long = "no-ci", global = true, conflicts_with = "ci")]
+    pub no_ci: bool,
     #[command(subcommand)]
     pub command: Commands,
 }

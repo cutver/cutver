@@ -6,7 +6,6 @@ use common::*;
 use cutver::bump::run as bump_run;
 use cutver::config;
 use cutver::semver_bump::Bump;
-use std::process::Command;
 
 #[test]
 fn bump_minor_happy_path() {
@@ -99,8 +98,7 @@ check = "true""#,
     assert!(!tag_exists(guard.fixture(), "v1.3.0"));
 
     // Verify workspace-relative paths in CLI dry-run output
-    let output = Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&guard.fixture().dir)
+    let output = cutver_command(&guard.fixture().dir)
         .args(["bump", "minor", "--dry-run"])
         .output()
         .expect("failed to execute cutver bump --dry-run");
@@ -476,8 +474,7 @@ edition = "2024"
     initial_commit(fixture);
 
     // Run cutver init to scaffold default config and template
-    let init_out = Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&fixture.dir)
+    let init_out = cutver_command(&fixture.dir)
         .arg("init")
         .output()
         .expect("failed to execute cutver init");
@@ -498,8 +495,7 @@ edition = "2024"
         &["commit", "--allow-empty", "-m", "feat: exciting feature (#10)"],
     );
 
-    let bump_out = Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&fixture.dir)
+    let bump_out = cutver_command(&fixture.dir)
         .args(["bump", "minor"])
         .output()
         .expect("failed to execute cutver bump");

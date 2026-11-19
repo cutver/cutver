@@ -3,7 +3,6 @@
 mod common;
 
 use common::*;
-use std::process::Command;
 
 #[test]
 fn test_style_no_color_suppresses_ansi_sequences() {
@@ -27,8 +26,7 @@ field = "version"
     initial_commit(fixture);
 
     // Run bump dry-run with NO_COLOR=1
-    let output = Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&fixture.dir)
+    let output = cutver_command(&fixture.dir)
         .env("NO_COLOR", "1")
         .args(["bump", "patch", "--dry-run"])
         .output()
@@ -45,8 +43,7 @@ field = "version"
     assert!(stdout.contains("Release Plan:"));
 
     // Run doctor with NO_COLOR=1
-    let output = Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&fixture.dir)
+    let output = cutver_command(&fixture.dir)
         .env("NO_COLOR", "1")
         .args(["doctor"])
         .output()
@@ -83,8 +80,7 @@ field = "version"
     initial_commit(fixture);
 
     // Run bump dry-run with CLICOLOR_FORCE=1 (piped execution normally has no TTY)
-    let output = Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&fixture.dir)
+    let output = cutver_command(&fixture.dir)
         .env("CLICOLOR_FORCE", "1")
         .args(["bump", "patch", "--dry-run"])
         .output()
@@ -101,8 +97,7 @@ field = "version"
     assert!(stdout.contains("\x1b[1mSIMULATION MODE\x1b[0m"));
 
     // Run doctor with CLICOLOR_FORCE=1
-    let output = Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&fixture.dir)
+    let output = cutver_command(&fixture.dir)
         .env("CLICOLOR_FORCE", "1")
         .args(["doctor"])
         .output()
@@ -124,8 +119,7 @@ fn test_style_error_output_with_clicolor_force_and_no_color() {
     let fixture = guard.fixture();
 
     // 1. Error with CLICOLOR_FORCE=1
-    let output = Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&fixture.dir)
+    let output = cutver_command(&fixture.dir)
         .env("CLICOLOR_FORCE", "1")
         .args(["doctor"])
         .output()
@@ -136,8 +130,7 @@ fn test_style_error_output_with_clicolor_force_and_no_color() {
     assert!(stderr.contains("\x1b[31mError:\x1b[0m") || stderr.contains("\x1b[31mError loading config:\x1b[0m"));
 
     // 2. Error with NO_COLOR=1
-    let output = Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&fixture.dir)
+    let output = cutver_command(&fixture.dir)
         .env("NO_COLOR", "1")
         .args(["doctor"])
         .output()
@@ -179,8 +172,7 @@ path = "CHANGELOG.md"
     fixture.write("CHANGELOG.md", changelog_content);
 
     // 1. With CLICOLOR_FORCE=1 -> ANSI escape sequences emitted
-    let output = Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&fixture.dir)
+    let output = cutver_command(&fixture.dir)
         .env("CLICOLOR_FORCE", "1")
         .args(["changelog", "latest", "-H"])
         .output()
@@ -201,8 +193,7 @@ path = "CHANGELOG.md"
     assert!(stdout.contains("\x1b[90m(#72)\x1b[0m"));
 
     // 2. With NO_COLOR=1 -> Zero ANSI escape codes, pristine raw Markdown
-    let output = Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&fixture.dir)
+    let output = cutver_command(&fixture.dir)
         .env("NO_COLOR", "1")
         .args(["changelog", "latest", "-H"])
         .output()
@@ -219,8 +210,7 @@ path = "CHANGELOG.md"
     assert!(stdout.contains("- **cli**: add changelog styling (#72)"));
 
     // 3. Default piped output without CLICOLOR_FORCE -> Zero ANSI escape codes
-    let output = Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&fixture.dir)
+    let output = cutver_command(&fixture.dir)
         .args(["changelog", "latest", "-H"])
         .output()
         .expect("failed to execute cutver binary");
@@ -263,8 +253,7 @@ path = "CHANGELOG.md"
     fixture.write("CHANGELOG.md", changelog_content);
 
     // With CLICOLOR_FORCE=1: OSC 8 hyperlinks and accessible footnotes rendered
-    let output = Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&fixture.dir)
+    let output = cutver_command(&fixture.dir)
         .env("CLICOLOR_FORCE", "1")
         .args(["changelog", "latest", "-H"])
         .output()
@@ -290,8 +279,7 @@ path = "CHANGELOG.md"
     );
 
     // With NO_COLOR=1: pristine raw markdown, zero OSC 8 sequences, zero footnotes
-    let output_no_color = Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&fixture.dir)
+    let output_no_color = cutver_command(&fixture.dir)
         .env("NO_COLOR", "1")
         .args(["changelog", "latest", "-H"])
         .output()

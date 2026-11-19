@@ -5,9 +5,11 @@
 //! `tempfile::tempdir()` project with an injected fixture transport: no test
 //! touches the network, and the cache root is never the ambient one.
 
+mod common;
+
+use common::cutver_command;
 use std::fs;
 use std::path::PathBuf;
-use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use cutver::plugin::error::{InstallError, TransportError};
@@ -506,8 +508,7 @@ fn version_without_a_matching_release_fails_closed() {
 fn cli_rejects_an_http_registry_before_any_work() {
     let project = Project::new(BASE_CONFIG);
 
-    let output = Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(project.dir.path())
+    let output = cutver_command(project.dir.path())
         .env("CUTVER_PLUGIN_CACHE_DIR", &project.cache_dir)
         .env("NO_COLOR", "1")
         .args([

@@ -1,7 +1,6 @@
 mod common;
 
-use common::Fixture;
-use std::process::Command;
+use common::{Fixture, cutver_command};
 
 #[test]
 fn test_e2e_external_subcommand_dispatch_and_exit_code() {
@@ -31,8 +30,7 @@ fn test_e2e_external_subcommand_dispatch_and_exit_code() {
     new_path.push(sep);
     new_path.push(&orig_path);
 
-    let cutver_bin = env!("CARGO_BIN_EXE_cutver");
-    let output = Command::new(cutver_bin)
+    let output = cutver_command(&fixture.dir)
         .args(["custom", "hello", "world"])
         .env("PATH", &new_path)
         .output()
@@ -45,11 +43,7 @@ fn test_e2e_external_subcommand_dispatch_and_exit_code() {
 
 #[test]
 fn test_e2e_external_subcommand_not_found() {
-    let cutver_bin = env!("CARGO_BIN_EXE_cutver");
-    let output = Command::new(cutver_bin)
-        .args(["unknownsubcommand12345"])
-        .output()
-        .unwrap();
+    let output = cutver_command(".").args(["unknownsubcommand12345"]).output().unwrap();
 
     assert_eq!(output.status.code(), Some(1));
     let stderr = String::from_utf8_lossy(&output.stderr);

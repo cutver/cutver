@@ -14,7 +14,7 @@ mod common;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::Output;
 
 use common::*;
 use serde_json::Value;
@@ -80,9 +80,15 @@ fn fixture(name: &str, config: &str) -> FixtureGuard {
 }
 
 /// Runs the cutver binary with the fixture as its working directory.
+///
+/// The CI channel's three variables are removed: a runner that sets them for its own steps would
+/// annotate every expected failure and fill its sinks from this test, and `tests/ci_output.rs` owns
+/// the channel's own assertions.
 fn cutver_in(fixture: &Fixture, args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_cutver"))
-        .current_dir(&fixture.dir)
+    cutver_command(&fixture.dir)
+        .env_remove("GITHUB_ACTIONS")
+        .env_remove("GITHUB_OUTPUT")
+        .env_remove("GITHUB_STEP_SUMMARY")
         .args(args)
         .output()
         .expect("failed to execute the cutver binary")

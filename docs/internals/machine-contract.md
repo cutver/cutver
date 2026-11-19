@@ -1,8 +1,8 @@
 # Machine Contract
 
 > Outcome first: every JSON object `cutver` prints opens with `schemaVersion`, so a consumer can tell
-> whether it is reading the schema it was written for instead of silently misreading a field. Human
-> output is unaffected: this page is the contract for `--json`, `--report` and their exit codes.
+> whether it reads the schema it was written for instead of silently misreading a field. Human output
+> is unaffected: this page is the contract for `--json`, `--report` and their exit codes.
 
 The rule is one key, in one place (`src/cli/json.rs`):
 
@@ -12,10 +12,8 @@ The rule is one key, in one place (`src/cli/json.rs`):
 
 `schemaVersion` is always the **first** key, its value is an integer, and the payload's keys follow in
 the order the surface documents. Version `1` only grows additively: a new key is not a new version,
-because a consumer that ignores unknown keys keeps reading the same values. The number changes only
-when an existing key changes meaning or disappears.
-
----
+because a consumer that ignores unknown keys keeps reading the same values. It changes only when an
+existing key changes meaning or disappears.
 
 ## Surfaces
 
@@ -39,8 +37,6 @@ The surfaces that do not emit JSON are deliberate: `init`, `attest`, `open --pri
 add|update|restore|remove` print human output only. Passing `--json` to them is a usage error, not a
 silent fallback.
 
----
-
 ## Exit Codes
 
 The exit code is the outcome and never the format — `--json` does not move it:
@@ -51,18 +47,15 @@ The exit code is the outcome and never the format — `--json` does not move it:
 | `1` | General error | Configuration, git, preflight, plugin, registry or serialization failure. |
 | `2` | Drift detected | `cutver doctor` found version drift, or `CHANGELOG.md` disagrees with the Git tags. |
 
-A machine reads the outcome from the exit code first and the object second. `doctor --json` is the case
-that makes the split visible: the diagnosis is on stdout as data, the code is `2` when it found drift,
-and nothing is rendered for a human to scrape.
-
----
+A machine reads the outcome from the exit code first and the object second. `doctor --json` makes
+the split visible: the diagnosis is on stdout as data, the code is `2` when it found drift, and
+nothing is rendered for a human to scrape.
 
 ## Errors
 
 When an invocation asked for machine output, its failure is machine output too: one compact object on
-**stderr**, nothing added to stdout. `--json` selects it, and so does `--report <PATH>` for `bump` — the
-flag a machine needs to read the object alone, so its failure has to be readable alone; no second flag
-has to be remembered in CI.
+**stderr**, nothing added to stdout. `--json` selects it, and so does `--report <PATH>` for `bump`: the
+flag for a machine that must read the object alone, so its failure is readable alone too.
 
 ```json
 {"schemaVersion":1,"error":{"code":"config","exitCode":1,"message":"no cutver.toml found …"}}
@@ -73,10 +66,10 @@ has to be remembered in CI.
 - `exitCode` always equals the process exit code, so the code and the object cannot disagree. It is
   `1`: `2` is drift, and drift is an outcome `doctor` reports as data rather than a failure.
 - `message` is the text the human path prints, without the coloured `Error:` marker, newlines
-  included — `Where:` and `Fix:` lines stay inside the string. The two sites that print their own
-  marker (`Error loading config:`, `Error checking changelog:`) keep it, so the diagnosis reads alike.
+  included, so `Where:` and `Fix:` lines stay inside the string. The two sites that print their own
+  marker (`Error loading config:`, `Error checking changelog:`) keep it, so both read alike.
 
-The message is escaped, so the envelope is one JSON line however long the human text is.
+A message is escaped, so the envelope is one JSON line however long the human text is.
 
 | `code` | Failure |
 | :--- | :--- |
@@ -99,15 +92,35 @@ human; the codes are reserved so a `--json` on them later does not have to inven
 
 ### Limits
 
-- A degradation warning (`warning: …`) stays human prose: it is not a failure. The command continues
-  and exits `0`, so a consumer that got an envelope knows the run failed.
+- A degradation warning (`warning: …`) stays human prose: it is not a failure, so the command
+  continues and exits `0`.
 - A `cutver-<name>` external subcommand's own stderr and exit code pass through unwrapped: cutver does
   not own that output, and the exit code is the child's. Clap usage errors — a missing argument, an
   unknown flag — exit before this code runs and are never enveloped.
-- Without machine mode nothing changes: the human path keeps `Error: …` on stderr, the unchanged exit
-  codes, and the same rendered tree, dashboard and notes.
+- Without machine mode nothing changes: the human path keeps `Error: …` on stderr, the exit codes,
+  and the same rendered tree, dashboard and notes.
 
----
+## CI output channel
+
+On GitHub Actions — `GITHUB_ACTIONS` reading `true`, trimmed and case-insensitive, **and**
+`GITHUB_OUTPUT` or `GITHUB_STEP_SUMMARY` naming a file — `bump` and `plan` fill the runner's sinks as
+well. The contract above does not change: **no CI output is written to stdout**, so every `--json`
+surface is byte-for-byte what it was with CI off. `--ci` and `--no-ci` are global, so every
+subcommand accepts them: `--ci` turns the channel on without `GITHUB_ACTIONS`, the annotation
+included when no sink is named, and `--no-ci` turns it off entirely.
+
+- `$GITHUB_OUTPUT` receives the payload's field names, one `key=value` per line, appended and never
+  truncated. `bump`: `released`, `deferred`, `version`, `tag`, `commit`; `plan`: `next_version`, `tag`,
+  `commit`. A value the run lacks is omitted, so a `--dry-run` bump writes no `commit`.
+- `$GITHUB_STEP_SUMMARY` receives one bounded markdown block per run: what was released, or the plan
+  in brief. Every value is condensed to one line and fenced inside a code span long enough for the
+  backticks it carries, so a tag or a prefix cannot inject markdown, and a changelog entry is never
+  copied there.
+- A failure writes one `::error::` annotation to **stderr** — never stdout — carrying the human
+  message with `%`, CR and LF percent-escaped, so it stays one line. It precedes the machine envelope
+  when both are emitted; a successful run annotates nothing.
+- A sink that cannot be written degrades to a `warning:` line and the exit code still reports the
+  release. Outside CI nothing is opened, annotated or created.
 
 ## `doctor --json`
 
@@ -125,24 +138,21 @@ dashboard, no rendered drift block, no suggested-fix text.
 ```
 
 - `ok` is `false` when any check that ran found drift. `checks` holds one entry per declared check,
-  always in that order: `versions`, then `changelog`. `status` is `ok`, `drift`, or `skipped` — a check
-  that did not run says so instead of looking like an empty result. Without `--check-changelog` the
-  changelog check is `skipped` and `changelog_drift` is `null`.
+  always in that order: `versions`, then `changelog`, and `status` is `ok`, `drift`, or `skipped` — a
+  check that did not run says so instead of looking like an empty result. Without `--check-changelog`
+  the changelog check is `skipped` and `changelog_drift` is `null`.
 - `version_drift` is always an array, empty when every manifest agrees; `path` is relative to the
   workspace root, as in the human block. `changelog_drift` carries `missing_in_changelog` (a Git tag
   with no entry) and `orphan_sections` (an entry with no tag) when the changelog check ran.
 
 A check that cannot run — an unreadable manifest, an unusable Git — fails the command with exit `1`
-and the error on stderr. That is why no check reports a `failed` status: a failed check never produces
-this object.
-
----
+and the error on stderr, which is why no check reports a `failed` status.
 
 ## `cutver plan --json`
 
 `plan` computes the release the workspace is about to cut and mutates nothing — no file, no git
-mutation, no `[preflight]`, no `[hooks]`, no `[publish] commands` and no plugin dispatch — so the object
-is evidence rather than a report of something that happened.
+mutation, no `[preflight]`, no `[hooks]`, no `[publish] commands`, no plugin dispatch — so the object
+is evidence, not a report of something that happened.
 
 ```json
 {
@@ -167,11 +177,11 @@ the commit the release would be cut from; `branch` is the checked-out branch, `n
 - `notes` is the **rendered** entry the release would prepend, produced without writing the changelog.
   A plan that cannot render it fails with exit `1` and a `plan` envelope; it never emits `"notes": null`.
 - `phases` is the release in order — `validate` (`mutates: false`), `mutate` and `publish` (`mutates:
-  true`) — one step per thing the run would do, derived from the same computation `bump` runs, so it cannot
-  describe a pipeline that does not exist.
-- `artifacts` carries one entry per declared `[[artifact]]`: `glob`, `at_least`, `description` (only when
-  set) and `matched`, the number of files the glob matches right now. It is a count, never a verdict — a
-  plan never blocks on a missing artifact, because the assets are built after it plans.
+  true`) — one step per thing the run would do, derived from the same computation `bump` runs, so it
+  cannot describe a pipeline that does not exist.
+- `artifacts` carries one entry per declared `[[artifact]]`: `glob`, `at_least`, `description` (only
+  when set) and `matched`, the number of files the glob matches right now. It is a count, never a
+  verdict: a plan never blocks on a missing artifact, because the assets are built after it plans.
 - `gates` carries one entry per gate the release requires — `[gates] require` in union with
   `--require-gate` — in declaration order: `name`, `conclusion` (`"success"`, `"failure"`) and the
   `commit`, `verified_at` and `run` an attestation recorded. All four are `null` together when no
@@ -184,15 +194,6 @@ the commit the release would be cut from; `branch` is the checked-out branch, `n
   fix. **A blocked plan still exits `0`**: the release decision belongs to the consumer, and exit `1`
   keeps its single meaning, "no plan could be computed".
 
----
-
 ## Migration: `plugin search --json` (breaking in `1`)
 
-The search result used to be a bare JSON array, which has no room for a version. It is now an object:
-
-```jsonc
-[{"name": "github-publish", "…": "…"}]           // before
-{"schemaVersion": 1, "plugins": [{"name": "github-publish", "…": "…"}]}   // after
-```
-
-The fix at the call site is one index step: `.plugins[]` instead of `.[]`.
+It was a bare array, which has no room for a version: read `.plugins[]` instead of `.[]`.

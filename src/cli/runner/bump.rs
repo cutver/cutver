@@ -114,7 +114,8 @@ pub fn write_report(summary: &Summary, path: &Path) -> Result<(), ReportError> {
     })
 }
 
-/// Prints the release result on stdout (tree or JSON) and writes the report file when asked.
+/// Prints the release result on stdout (tree or JSON), writes the report file when asked, and feeds
+/// the CI channel when the run detected one.
 fn emit(summary: &Summary, output: &BumpOutput) -> Result<(), ReportError> {
     if output.json {
         println!("{}", render_summary_json(summary)?);
@@ -124,6 +125,7 @@ fn emit(summary: &Summary, output: &BumpOutput) -> Result<(), ReportError> {
     if let Some(path) = &output.report {
         write_report(summary, path)?;
     }
+    crate::cli::ci::on_bump_success(summary);
     Ok(())
 }
 

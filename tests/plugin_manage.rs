@@ -5,10 +5,13 @@
 //! `CUTVER_PLUGIN_CACHE_DIR` pointing inside that directory, so no test touches
 //! the ambient cache, the network or a real plugin (Pillar IV.1).
 
+mod common;
+
 use std::fs;
 use std::path::PathBuf;
-use std::process::{Command, Output};
+use std::process::Output;
 
+use common::cutver_command;
 use tempfile::TempDir;
 
 /// `sha256("hello")`; hardcoded so the test crate needs no hashing dependency.
@@ -22,10 +25,6 @@ current_source = "Cargo.toml"
 path = "Cargo.toml"
 kind = "cargo-package"
 "#;
-
-fn bin() -> &'static str {
-    env!("CARGO_BIN_EXE_cutver")
-}
 
 struct Project {
     dir: TempDir,
@@ -49,8 +48,7 @@ impl Project {
         I: IntoIterator<Item = S>,
         S: AsRef<std::ffi::OsStr>,
     {
-        Command::new(bin())
-            .current_dir(self.dir.path())
+        cutver_command(self.dir.path())
             .env("CUTVER_PLUGIN_CACHE_DIR", &self.cache)
             .env("NO_COLOR", "1")
             .args(args)

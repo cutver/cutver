@@ -34,11 +34,13 @@ pub(crate) fn run_plan(
         Ok(plan) => {
             if !json {
                 crate::cli::tree::print_plan(&plan);
+                crate::cli::ci::on_plan_success(&plan);
                 return 0;
             }
             match render_plan_json(&plan) {
                 Ok(object) => {
                     println!("{object}");
+                    crate::cli::ci::on_plan_success(&plan);
                     0
                 }
                 Err(e) => {

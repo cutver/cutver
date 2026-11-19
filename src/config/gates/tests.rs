@@ -96,17 +96,21 @@ fn a_file_that_does_not_read_as_an_attestation_is_absent() {
 /// S10: the declared directory may not name the workspace root or walk upwards.
 #[test]
 fn the_gates_dir_must_stay_inside_the_workspace() {
-    for dir in [
-        "",
-        "  ",
-        ".",
-        "..",
-        "./attestations",
-        "../attestations",
-        "/absolute",
-        "C:/absolute",
-    ] {
+    for dir in ["", "  ", ".", "..", "./attestations", "../attestations"] {
         let (_tmp, config) = workspace("dir-validation", dir);
+        match config.gates.validate() {
+            Err(ConfigError::GatesDirInvalid { dir: reported, .. }) => assert_eq!(reported, dir),
+            other => panic!("`[gates] dir = {dir:?}` must be refused, got {other:?}"),
+        }
+    }
+    // An absolute path is spelled per host, and only the spelling the host can represent as absolute
+    // is the one under test: `C:/absolute` is a plain relative directory name on unix, so refusing it
+    // there would be the bug, not the guarantee. `/absolute` has a root but no prefix on Windows.
+    for dir in ["/absolute", "C:/absolute"] {
+        if !std::path::Path::new(dir).is_absolute() {
+            continue;
+        }
+        let (_tmp, config) = workspace("dir-validation-absolute", dir);
         match config.gates.validate() {
             Err(ConfigError::GatesDirInvalid { dir: reported, .. }) => assert_eq!(reported, dir),
             other => panic!("`[gates] dir = {dir:?}` must be refused, got {other:?}"),

@@ -73,7 +73,7 @@ attestation is only as trustworthy as the machine that wrote it. No signing, no 
 - [x] T3 — S2: verification in `publish` before the first irreversible step, with the fail-closed error.
 - [x] T4 — S4: `artifacts[]` in `cutver plan --json`.
 - [x] T5 — S5, S7: no-change proof for undeclared projects + docs.
-- [ ] T6 — S8-S12 (3B): `cutver attest`, `--require-gate`, the clean-tree exemption, `gates[]` in plan, docs.
+- [x] T6 — S8-S12 (3B): `cutver attest`, `--require-gate`, the clean-tree exemption, `gates[]` in plan, docs.
 - [x] T7 — runner capacity (delivery, not a spec): fold both macOS configurations into one `test`
       entry, drop macOS from `test-plugins`, add `workflow_dispatch`. Unblocks 3A's `CI gate`
       without touching the gate's `needs` or the three-leg contract.
@@ -161,3 +161,26 @@ apart):
   gate, cannot vouch for anything, and refusing it must not crash a release. The refusal names the path and says it
   "does not exist or does not read as an attestation", so the operator learns the file is there and unreadable rather
   than absent — the condition is not swallowed, it is named.
+
+L14 (review, three rounds — each one found something the code review of the diff alone would not have):
+
+- **R1/D1 (blocker, round 2).** The first implementation exempted a *collapsed* untracked entry only. A tracked `.gitkeep`
+  in `.cutver/attestations` makes git stop collapsing and list the attestation individually, so `publish` aborted on
+  `?? .cutver/attestations/ci.json` — the exemption failed in the realistic shape. Fixed in `src/git/status.rs` by
+  `is_subtree` plus a prefix match, so a declared directory covers its contents whichever way git spells them.
+- **D5 (round 2).** `[gates] require` was parsed and only reported; `publish` enforced `--require-gate` alone. That is the
+  #300 class exactly (a declaration nothing enforces). Superseded in L13: the union is required, deduplicated.
+- **R1 (round 3, change-caused).** Widening the exemption to directories silently changed a *pre-existing* command: a
+  `--notes-file` naming a directory passed the guard and died later with `Access is denied`. It reaches no irreversible
+  step, but an unrequested change to an existing command's failure is a regression; the request now rejects it up front,
+  before the guard, naming the flag and the fix.
+- **R2 (round 3).** Symlinks were refused in the collapsed shape and exempt in the listed one. No escape was possible,
+  but two shapes answering differently to the same question is a defect; both now fail closed through `symlink_metadata`,
+  which never follows the link.
+
+L15 (delivery, parent): T6 is one commit and one PR — `456b4e2`, 31 files, 2545 authored lines (~700 production,
+~1470 tests, ~200 docs), past the ~400-line slice advisory in `CONTRACT.md:111`. The slice boundary is the whole gate
+channel and it does not cut at file level: `tests/e2e_gates.rs` mixes the S8 and S9 cases and `tests/e2e_gates_channel.rs`
+mixes S10 and S11, so a file-level split leaves an intermediate commit whose suite is red. The honest re-slice, if review
+load demands it, is two PRs with those test files split along S8/S10 versus S9/S11. Recorded, not hidden: L5 drew the same
+conclusion for 3A, and the next phase slices up front instead of after.

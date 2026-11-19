@@ -41,8 +41,8 @@ Plugin support ships as its own artifact, so most users never build from source.
 
 | Build | Command | Result |
 | :--- | :--- | :--- |
-| Lean (default) | `cargo install cutver` | ~1.25 MB compressed, no `plugin` command, no plugin runtime. |
-| Plugin-enabled archive | `cutver-plugins-<version>-<slug>` or the `:plugins` image | ~5 MB compressed, `plugin` command and the WebAssembly runtime. |
+| Lean (default) | `cargo install cutver` | No `plugin` command and no plugin runtime; materially smaller than the plugin build. |
+| Plugin-enabled archive | `cutver-plugins-<version>-<slug>` or the `:plugins` image | `plugin` command and the WebAssembly runtime; larger, because that runtime is linked in. |
 | Plugin-enabled, Homebrew | `brew install Row0902/tap/cutver-plugins` | Same as above; installs the `cutver` binary. |
 | Plugin-enabled, Scoop | `scoop bucket add row https://github.com/Row0902/scoop-bucket && scoop install cutver-plugins` | Same as above, on Windows. |
 | Plugin-enabled, pre-artifact versions | `cargo install cutver --features plugins` | Same build, compiled locally. |
@@ -50,6 +50,10 @@ Plugin support ships as its own artifact, so most users never build from source.
 Both failure modes name the remedy, so a lean binary is never a dead end: `cutver plugin` fails closed
 with `--features plugins`, and loading a `[plugins.<name>]` entry at release time fails with the same
 instruction instead of a `runtime` setting that cannot help.
+
+Sizes are per-target and change every release, so none is quoted here: the release workflow writes the
+bytes and MiB of every archive it uploads into that run's job summary, and the archives are on the
+[releases page](https://github.com/cutver/cutver/releases).
 
 ## Commands
 

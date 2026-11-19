@@ -4,10 +4,14 @@ Pick the build that fits your workflow, then verify it in one command.
 
 Two builds ship for every platform:
 
-- **Recommended: `cutver-plugins` (~5 MB)** — adds the full WebAssembly plugin runtime (`cutver plugin add/remove/list`).
-- **Lean build: `cutver` (~1.25 MB)** — the core engine alone, for minimal, zero-overhead CI runners.
+- **Recommended: `cutver-plugins`** — adds the full WebAssembly plugin runtime (`cutver plugin add/remove/list`).
+- **Lean build: `cutver`** — the core engine alone, for minimal, zero-overhead CI runners. No WebAssembly
+  runtime is linked in at all, which makes it materially smaller than the plugin build.
 
-Every published artifact is cosign-signed and listed on the [releases page](https://github.com/cutver/cutver/releases).
+Sizes are not quoted here because they are per-target and change every release: the release workflow
+measures every archive it uploads and writes the bytes and MiB of each one into that run's job summary.
+Every published artifact is cosign-signed and listed on the
+[releases page](https://github.com/cutver/cutver/releases).
 
 ---
 
@@ -17,8 +21,8 @@ Every published artifact is cosign-signed and listed on the [releases page](http
 scoop bucket add row https://github.com/Row0902/scoop-bucket
 
 # Pick one:
-scoop install cutver            # Lean (~1.25 MB)
-scoop install cutver-plugins    # Plugin runtime (~5 MB)
+scoop install cutver            # Lean build
+scoop install cutver-plugins    # Plugin runtime
 ```
 
 ---
@@ -27,8 +31,8 @@ scoop install cutver-plugins    # Plugin runtime (~5 MB)
 
 ```bash
 # Pick one:
-brew install Row0902/tap/cutver            # Lean (~1.25 MB)
-brew install Row0902/tap/cutver-plugins    # Plugin runtime (~5 MB)
+brew install Row0902/tap/cutver            # Lean build
+brew install Row0902/tap/cutver-plugins    # Plugin runtime
 ```
 
 ---

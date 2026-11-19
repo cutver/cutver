@@ -18,6 +18,10 @@
 //! `tests/ci_workflow_contract.rs` binds the documentation loop: a declaration, its check, and the
 //! place the check runs are one decision written three times, and drift between them is silent.
 //!
+//! The measurement has a home of its own: the release workflow reports every artifact's size in its
+//! run summary and gates nothing on it. That half is asserted here too, because "the measurement does
+//! not go" is only true while something still measures.
+//!
 //! Covers S1 and S10.
 
 use std::path::PathBuf;
@@ -25,6 +29,7 @@ use std::path::PathBuf;
 const MANIFEST: &str = "Cargo.toml";
 const GATE: &str = "scripts/check.sh";
 const CI: &str = ".github/workflows/ci.yml";
+const RELEASE: &str = ".github/workflows/release.yml";
 /// The crates the lean graph may never reach. `extism` is the direct dependency; `wasmtime` is what it
 /// drags in, and naming both means a future direct `wasmtime` dependency is caught by the same rule.
 const FORBIDDEN: [&str; 2] = ["extism", "wasmtime"];
@@ -135,5 +140,215 @@ fn the_graph_check_runs_in_the_gate_and_in_ci() {
             graph_step.contains(forbidden) || ci.contains(forbidden),
             "ci.yml's graph step must name {forbidden} among the crates it forbids; it reads {graph_step:?}"
         );
+    }
+}
+
+/// The steps of a workflow, split the way YAML splits them: a step opens at a `- ` item indented six
+/// spaces (a job's `steps:` list) and runs to the next one. A bare line scan cannot tell a step from
+/// a comment or from text in the next step, which is how a workflow assertion silently stops testing
+/// anything.
+fn step_blocks(workflow: &str) -> Vec<Vec<&str>> {
+    let mut blocks: Vec<Vec<&str>> = Vec::new();
+    for line in workflow.lines() {
+        let indent = line.len() - line.trim_start().len();
+        if indent == 6 && line.trim_start().starts_with("- ") {
+            blocks.push(vec![line]);
+        } else if let Some(open) = blocks.last_mut() {
+            open.push(line);
+        }
+    }
+    blocks
+}
+
+/// Pillar VI.4 ends with "the number is gone; the measurement is not", and this is the measurement's
+/// only binding: the workflow that publishes the binaries writes each artifact's size into the run
+/// summary and derives nothing else from it. Two claims, both required. If the step disappears, size
+/// is neither enforced nor reported — the declaration-without-its-check that S1 removed. If a
+/// threshold comes back, the clause says the opposite of what the pipeline does.
+#[test]
+fn the_release_reports_artifact_size_and_never_gates_on_it() {
+    let release = repo_text(RELEASE);
+    let blocks = step_blocks(&release);
+
+    let reporters: Vec<&Vec<&str>> = blocks
+        .iter()
+        .filter(|block| block.iter().any(|line| line.contains("GITHUB_STEP_SUMMARY")))
+        .collect();
+    assert!(
+        !reporters.is_empty(),
+        "{RELEASE} must write the artifacts' sizes into $GITHUB_STEP_SUMMARY: the ~4 MB budget was \
+         dropped for being a number nothing measured, so dropping the measurement too would keep \
+         neither the number nor the evidence that replaced it"
+    );
+
+    // Both build jobs report, and each table says which build it came from: the defect being fixed
+    // was one number standing in for two builds and three targets.
+    let split = release
+        .find("\n  build-plugins:")
+        .expect("the release workflow must keep a lean `build` job and a `build-plugins` job");
+    let (lean_job, plugins_job) = release.split_at(split);
+    for (job, body, label) in [
+        ("build", lean_job, "Lean build"),
+        ("build-plugins", plugins_job, "Plugin-enabled build"),
+    ] {
+        let reporter = blocks
+            .iter()
+            .find(|block| body.contains(block[0]) && block.iter().any(|line| line.contains("GITHUB_STEP_SUMMARY")))
+            .unwrap_or_else(|| {
+                panic!(
+                    "{RELEASE} must report sizes in the `{job}` job; no step there writes \
+                     $GITHUB_STEP_SUMMARY"
+                )
+            });
+        assert!(
+            reporter.iter().any(|line| line.contains("wc -c")),
+            "the `{job}` size step must measure with `wc -c` (`stat` and `ls -l` disagree across the \
+             three runners); it reads {reporter:?}"
+        );
+        assert!(
+            reporter.iter().any(|line| line.trim() == "shell: bash"),
+            "the `{job}` size step must set `shell: bash`: the Windows runner defaults to `pwsh`, where \
+             `wc` does not exist, and the step must still report rather than fail"
+        );
+        assert!(
+            reporter.iter().any(|line| line.contains(label)),
+            "the `{job}` size table must name the build (`{label}`): one figure covering both builds \
+             is the confusion the docs carried; it reads {reporter:?}"
+        );
+        // Report only. A comparison here, or an exit status derived from the number, is the merge
+        // gate the clause removed.
+        for line in reporter {
+            for gate in ["-gt", "-ge", "-lt", "-le", "exit ", "threshold"] {
+                assert!(
+                    !line.contains(gate),
+                    "the `{job}` size step must report and nothing else, but it reads {line:?}: a \
+                     threshold is the merge gate Pillar VI.4 removed, so size is never a pass/fail"
+                );
+            }
+        }
+    }
+
+    // Nothing anywhere in the release path may turn a measured size into a pass/fail either. Comments
+    // are skipped: a commented-out gate enforces nothing, and the rule being written down next to its
+    // check is what keeps the next reader from adding one back.
+    for (number, line) in release.lines().enumerate() {
+        if line.trim_start().starts_with('#') {
+            continue;
+        }
+        let lowered = line.to_lowercase();
+        for marker in [
+            "max_size",
+            "max-size",
+            "size_limit",
+            "size-limit",
+            "budget",
+            "threshold",
+        ] {
+            assert!(
+                !lowered.contains(marker),
+                "{RELEASE}:{} reads {line:?}, which reintroduces a size limit. Size is measured and \
+                 published per release, never enforced",
+                number + 1
+            );
+        }
+    }
+}
+
+/// The body of one job: from its two-space `id:` line to the next job key at the same indent. The
+/// previous test slices the workflow by text and can be fooled by a step that moved into a job that
+/// never fills `dist/`; this walks the job boundaries the file actually declares.
+fn job_body<'a>(workflow: &'a str, id: &str) -> Vec<&'a str> {
+    let header = format!("  {id}:");
+    let mut body = Vec::new();
+    let mut inside = false;
+    for line in workflow.lines() {
+        if line == header {
+            inside = true;
+            body.push(line);
+            continue;
+        }
+        if !inside {
+            continue;
+        }
+        let is_job_key =
+            line.len() > 2 && line.starts_with("  ") && !line.starts_with("   ") && line.trim_end().ends_with(':');
+        if is_job_key {
+            break;
+        }
+        body.push(line);
+    }
+    body
+}
+
+/// S1: every job that hands `dist/*` to `upload-artifact` reports its size, after the step that fills
+/// `dist/` and before the upload, measuring `dist/` itself. A report placed earlier writes an empty
+/// table and still exits 0, which is a heading, not a measurement — and a heading is the shape of the
+/// defect that let a size claim outlive the version it was measured on.
+#[test]
+fn every_asset_uploading_job_reports_after_packaging() {
+    let release = repo_text(RELEASE);
+    let ids: Vec<String> = release
+        .lines()
+        .filter(|line| line.len() > 2 && line.starts_with("  ") && !line.starts_with("   "))
+        .filter_map(|line| line.trim_end().strip_suffix(':').map(|id| id.trim().to_string()))
+        .collect();
+    let mut checked = 0;
+    for id in &ids {
+        let body = job_body(&release, id);
+        if !body.iter().any(|line| line.trim() == "path: dist/*") {
+            continue;
+        }
+        checked += 1;
+        let report = body
+            .iter()
+            .position(|line| !line.trim_start().starts_with('#') && line.contains("GITHUB_STEP_SUMMARY"))
+            .unwrap_or_else(|| panic!("job `{id}` uploads `dist/*` but no step writes $GITHUB_STEP_SUMMARY"));
+        let package = body
+            .iter()
+            .rposition(|line| line.contains("- name: Package ("))
+            .expect("a packaging step that fills dist/");
+        let upload = body
+            .iter()
+            .position(|line| line.contains("- name: Upload artifact"))
+            .expect("an upload step");
+        assert!(
+            package < report && report < upload,
+            "job `{id}`: the report is at {report} and must sit between Package ({package}) and Upload ({upload});              earlier than the packaging it reports an empty table and exits 0"
+        );
+        let step = &body[report..upload];
+        assert!(
+            step.iter().any(|line| line.contains(">> \"$GITHUB_STEP_SUMMARY\"")),
+            "job `{id}`: the summary write must not be commented out; it reads {step:?}"
+        );
+        assert!(
+            step.iter()
+                .any(|line| line.trim_start() == "for artifact in dist/*; do"),
+            "job `{id}`: the report must measure the archives the job uploads, in `dist/`; it reads {step:?}"
+        );
+    }
+    assert_eq!(checked, 2, "both build jobs upload `dist/*`; found {checked}");
+}
+
+/// S1: a gate is not a word. `[ "$bytes" \> 4000000 ]` is a threshold carrying none of the names the
+/// reporter-block scan looks for, so no line that mentions a measured size may compare it.
+#[test]
+fn no_comparison_touches_a_measured_size() {
+    let release = repo_text(RELEASE);
+    for (number, line) in release.lines().enumerate() {
+        let code = line.trim_start();
+        if code.starts_with('#') {
+            continue;
+        }
+        let lowered = code.to_lowercase();
+        if !(lowered.contains("bytes") || lowered.contains("size")) {
+            continue;
+        }
+        for operator in ["-gt", "-ge", "-lt", "-le", r"\>", r"\<"] {
+            assert!(
+                !code.contains(operator),
+                "{RELEASE}:{} compares a measured size ({operator}): {code:?}. Size is reported, never gated",
+                number + 1
+            );
+        }
     }
 }

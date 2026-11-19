@@ -14,6 +14,32 @@ Validating `cutver.toml`, tracking the primary manifest, and reporting preflight
 
 ---
 
+## Release Plan — `cutver plan`
+
+The whole release as data, before anything changes: the deduced version, every manifest diff, the
+changelog body, the commit and the tag. No file is written, no preflight step runs and no plugin is
+dispatched — not even `on_pre_bump`, which the simulation below still dispatches. The same tree is what
+the [first release walkthrough](getting-started.md) teaches you to read first.
+
+```text
+ℹ Release Plan: 0.1.0 -> 0.2.0 (minor (deduced from 1 feature))
+├── Manifests
+│   └── package.json (0.1.0 -> 0.2.0)
+├── Preflight
+│   └── test: npm test
+├── Changelog
+│   └── CHANGELOG.md (prepends 0.2.0)
+├── Git
+│   ├── commit: chore(release): v0.2.0 [skip ci]
+│   └── tag: v0.2.0
+└── Publish
+    └── push: true
+
+Nothing was written, staged, committed, tagged or pushed.
+```
+
+---
+
 ## Atomic Bump Simulation — `cutver bump auto --dry-run`
 
 The boxed SIMULATION MODE banner, SemVer deduction from conventional commits, and the hierarchical

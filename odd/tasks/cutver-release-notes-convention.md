@@ -41,10 +41,10 @@ that every published tag has a notes file. Both are follow-ups with their own ev
 
 | ID | Work | Specs | Route | Commit |
 | :--- | :--- | :--- | :--- | :--- |
-| T1 | Render step prefers `.github/releases/<tag>.md`, falls back to the template | S1, S2 | `gentle-ai-worker` | pending |
-| T2 | Contract test pins the preference and the fallback together | S3 | `gentle-ai-worker` | pending |
-| T3 | `CONTRIBUTING.md` names the convention where maintenance is described | S1 | `gentle-ai-worker` | pending |
-| T4 | Backfill `.github/releases/v0.20.0.md` from the body applied to the release | S4 | inline | pending |
+| T1 | Render step prefers `.github/releases/<tag>.md`, falls back to the template | S1, S2 | `gentle-ai-worker` | `237b87b` |
+| T2 | Contract test pins the preference and the fallback together | S3 | `gentle-ai-worker` | `237b87b` |
+| T3 | `CONTRIBUTING.md` names the convention where maintenance is described | S1 | `gentle-ai-worker` | `237b87b` |
+| T4 | Backfill `.github/releases/v0.20.0.md` from the body applied to the release | S4 | inline | `237b87b` |
 | T5 | Global skill `release-notes-creator` at `C:\Users\Admin\.agents\skills\` | S5 | inline (outside the repo) | — |
 | T6 | Local gate + independent verification (risk item 5) | S1-S5 | `gentle-ai-verify` | — |
 

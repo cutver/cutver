@@ -49,12 +49,12 @@ already declared for the closure report rather than carried silently.
 
 | ID | Work | Specs | Route | Commit |
 | :--- | :--- | :--- | :--- | :--- |
-| T1 | Workflow: the bump step owns the outputs, the report step and its argument are deleted, the fail-closed guard lands | S1, S2 | inline | `e7406ae` |
-| T2 | Contract test pins the new shape, existing assertions kept | S3 | inline | `e7406ae` |
-| T3 | The two integration pages stop teaching `jq`; `--report` kept everywhere it is the documented surface | S4, S5 | inline | `e7406ae` |
+| T1 | Workflow: the bump step owns the outputs, the report step and its argument are deleted, the fail-closed guard lands | S1, S2 | inline | `43d42be` |
+| T2 | Contract test pins the new shape, existing assertions kept | S3 | inline | `43d42be` |
+| T3 | The two integration pages stop teaching `jq`; `--report` kept everywhere it is the documented surface | S4, S5 | inline | `43d42be` |
 | T4 | Local gate + independent verification (risk item 5) | S1-S5 | `gentle-ai-verify` | — |
 
-| T5 | Close the four advisory gaps the verifier opened in the pins | S1, S2, S3 | `gentle-ai-worker` | `4014e56` |
+| T5 | Close the four advisory gaps the verifier opened in the pins | S1, S2, S3 | `gentle-ai-worker` | `3d2d5d1` |
 
 ## Log
 

@@ -61,8 +61,8 @@ that every published tag has a notes file. Both are follow-ups with their own ev
 | T4 | Backfill `.github/releases/v0.20.0.md` from the body applied to the release | S4 | inline | `237b87b` |
 | T5 | Global skill `release-notes-creator` at `C:\Users\Admin\.agents\skills\` | S5 | inline (outside the repo) | — |
 | T6 | Local gate + independent verification (risk item 5) | S1-S5 | `gentle-ai-verify` | — |
-| T7 | Close A1: pin the fallback as the `else` branch and `RELEASE_NOTES.md` as single-writer | S3a | `gentle-ai-worker` | pending |
-| T8 | Close A2/A3: an empty notes file fails at the render step; a mis-named one warns | S2a | `gentle-ai-worker` | pending |
+| T7 | Close A1: pin the fallback as the `else` branch and `RELEASE_NOTES.md` as single-writer | S3a | `gentle-ai-worker` | `c2d9575` |
+| T8 | Close A2/A3: an empty notes file fails at the render step; a mis-named one warns | S2a | `gentle-ai-worker` | `c2d9575` |
 
 ## Log
 

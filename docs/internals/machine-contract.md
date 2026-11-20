@@ -98,6 +98,9 @@ human; the codes are reserved so a `--json` on them later does not have to inven
 
 - A degradation warning (`warning: …`) stays human prose: it is not a failure, so the command
   continues and exits `0`.
+- A **deprecation** is the same kind of line with one difference: it is also data. It names the
+  spelling, its replacement and the release that removes it, and `doctor --json` carries it in
+  `warnings`. A detected CI gets the same sentence as a `::warning::` annotation.
 - A `cutver-<name>` external subcommand's own stderr and exit code pass through unwrapped: cutver does
   not own that output, and the exit code is the child's. Clap usage errors — a missing argument, an
   unknown flag — exit before this code runs and are never enveloped.

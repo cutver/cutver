@@ -60,6 +60,28 @@ every `kind`'s keys, so a key annotated for one `kind` below (such as `pattern`)
 on any manifest because `kind` selects the variant. An unknown key inside `[plugins.<name>]`
 or its `permissions` sub-table is rejected the same way.
 
+### Deprecated Keys
+
+Three spellings still parse but are deprecated. Each one keeps working, and each one warns on stderr
+in exactly one sentence naming the spelling, its replacement and the release that removes it:
+
+| Deprecated | Replacement | Removed in |
+| :--- | :--- | :--- |
+| `[version] source` | `current_source` | 1.0.0 |
+| `[[manifest]] kind = "toml"` | `kind = "cargo-package"` | 1.0.0 |
+| `[[manifest]] kind = "pyproject-toml"` | `kind = "pyproject"` | 1.0.0 |
+
+```text
+warning: [version].source is deprecated, use current_source; it will be removed in 1.0.0
+```
+
+The warning goes to stderr, never stdout, so `--json` stays parseable; under a detected CI the same
+sentence is also a `::warning::` annotation, and the exit code never changes. `cutver doctor --json`
+carries the same sentences in its `warnings` array, and `cutver init --update` prints them, which are
+the two migration surfaces [the contract](../../CONTRACT.md#2-configuration-backward-compatibility)
+names. A key that was never valid is not deprecated: it still fails closed (see above), so a typo
+never hides behind a warning.
+
 ---
 
 ## Configuration Tables

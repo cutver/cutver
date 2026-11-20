@@ -108,6 +108,56 @@ the commit the release would be cut from; `branch` is the checked-out branch, `n
   fix. **A blocked plan still exits `0`**: the release decision belongs to the consumer, and exit `1`
   keeps its single meaning, "no plan could be computed".
 
+## `changelog latest --json`
+
+The release context as data: what a template interpolates, plus what a consumer needs to decide. The
+aliases (`owner`, `repo`, `project`) are template surface, not redundancy to tidy away — dropping one
+breaks a template that reads it.
+
+```json
+{
+  "schemaVersion": 1,
+  "version": "0.21.0",
+  "previous_version": "0.20.0",
+  "tag": "v0.21.0",
+  "previous_tag": "v0.20.0",
+  "date": "2026-11-20",
+  "compare_url": "https://github.com/cutver/cutver/compare/v0.20.0...v0.21.0",
+  "repository": "https://github.com/cutver/cutver",
+  "features": "- feat(cli): …",
+  "fixes": "", "breaking": "", "perf": "", "refactor": "", "docs": "", "maintenance": "", "other": "",
+  "all_changes": "### Features
+…",
+  "commits": [{ "type": "feat", "scope": "cli", "description": "…", "hash": "a309d26", "pr_number": 348 }],
+  "sections": [{ "heading": "Features", "entries": [], "is_breaking": false }],
+  "contributors": ["…"], "first_time_contributors": [],
+  "major": 0, "minor": 21, "patch": 0, "is_prerelease": false, "prerelease": null, "build": null,
+  "year": 2026, "month": 11, "day": 20,
+  "repo_owner": "cutver", "owner": "cutver", "repo_name": "cutver", "repo": "cutver",
+  "forge": "github", "project_name": "cutver", "project": "cutver"
+}
+```
+
+Every one of the 37 keys:
+
+| Key | What it carries |
+| :--- | :--- |
+| `schemaVersion` | The contract version, first, always `1`. |
+| `version`, `previous_version` | The release from the changelog heading, and the one before it (`null` for the first). |
+| `tag`, `previous_tag` | The two tags, prefix included. |
+| `date` | The heading date, or today when the heading carries none. |
+| `compare_url`, `repository` | The forge URL and `compare/<previous_tag>...<tag>`; `null` without both. |
+| `features`, `fixes`, `breaking`, `perf`, `refactor`, `docs`, `maintenance`, `other` | One pre-rendered markdown block per category, empty when the release has none. |
+| `all_changes` | Every category in one Keep-a-Changelog block. |
+| `commits` | One record per commit: `type`, `commit_type`, `scope`, `description`, `clean_description`, `is_breaking`, `body`, `breaking_description`, `breaking_change_description`, `hash`, `short_hash`, `author`, `author_email`, `pr_number`, `pr_url`, `issue_numbers`, `commit_url`, `line`, `bullet`. |
+| `sections` | The grouped form: `heading`, `entries`, and `is_breaking`, true for the breaking section and no other, so a template never infers it from a heading. |
+| `contributors`, `first_time_contributors` | Authors between the tags, and those in no earlier range. |
+| `major`, `minor`, `patch`, `is_prerelease`, `prerelease`, `build` | The version parsed, so no template splits or detects a string. |
+| `year`, `month`, `day` | `date` split, for the same reason. |
+| `repo_owner`, `owner`, `repo_name`, `repo`, `project_name`, `project`, `forge` | The forge identity: owner, name, its aliases, and the forge itself. Without an origin remote all seven are `null` together, so a template renders an empty string instead of failing. |
+
+`changelog show --version <v> --json` prints the same object for an older release.
+
 ## Related Documentation
 
 - [The Machine Contract](machine-contract.md): `schemaVersion` first, the exit-code table and the machine error envelope every surface here obeys.

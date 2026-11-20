@@ -71,62 +71,6 @@ const BUMP_KEYS: [&str; 8] = [
     "publish_commands",
 ];
 
-/// The keys the release context carries on `cutver changelog latest|show --json`.
-///
-/// Source of truth: `ReleaseContext`'s hand-written `Serialize` (`src/changelog/context/release.rs`),
-/// which registers every key; `docs/templates/release-notes.md` documents the same fields as template
-/// variables, and `docs/reference/cli-tools.md` names the surface ("the object opens with
-/// `schemaVersion` and then the release context keys").
-///
-/// Three pairs are deliberate aliases for templates (`owner`/`repo_owner`, `repo`/`repo_name`,
-/// `project`/`project_name`), so `owner`, `repo` and `project` are pinned even though they duplicate
-/// a value: a template that reads them breaks if they go.
-///
-/// The keys below are emitted but not enumerated in `docs/internals/machine-contract.md` nor in
-/// `docs/templates/release-notes.md` — they are owned by the struct only: `first_time_contributors`
-/// (documented in `docs/adr/0003-context-derived-changelog-sections.md`), `major`, `minor`, `patch`,
-/// `is_prerelease`, `prerelease`, `build`, `year`, `month`, `day`, `repo_owner`, `owner`, `repo_name`,
-/// `repo`, `forge`, `project_name`, `project`. They are pinned anyway — an undocumented key is still
-/// a key a consumer reads — and the documentation gap is reported rather than assumed away.
-const CHANGELOG_KEYS: [&str; 36] = [
-    "version",
-    "previous_version",
-    "tag",
-    "previous_tag",
-    "date",
-    "compare_url",
-    "repository",
-    "features",
-    "fixes",
-    "breaking",
-    "perf",
-    "refactor",
-    "docs",
-    "maintenance",
-    "other",
-    "all_changes",
-    "commits",
-    "sections",
-    "contributors",
-    "first_time_contributors",
-    "major",
-    "minor",
-    "patch",
-    "is_prerelease",
-    "prerelease",
-    "build",
-    "year",
-    "month",
-    "day",
-    "repo_owner",
-    "owner",
-    "repo_name",
-    "repo",
-    "forge",
-    "project_name",
-    "project",
-];
-
 /// The keys `cutver doctor --json` must carry.
 ///
 /// Source of truth: `docs/internals/machine-contract-surfaces.md` § `doctor --json` (the example
@@ -321,7 +265,7 @@ fn changelog_latest_keeps_every_release_context_key_in_schema_version_one() {
     assert_surface(
         "`cutver changelog latest --json`",
         &document,
-        &CHANGELOG_KEYS,
+        &CHANGELOG_CONTEXT_KEYS,
         PRETTY_PREFIX,
     );
 

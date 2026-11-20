@@ -159,7 +159,11 @@ fn test_versioning_plugin_invalid_semver_fails_closed() {
     let failing_script = fixture.dir.join("invalid_plugin.sh");
     fixture.write(
         "invalid_plugin.sh",
+        // The plugin must consume the envelope to EOF before answering (#318). Answering first and
+        // exiting would let the host's `write_all` land on a closed pipe, and the run would fail
+        // with `Broken pipe` instead of the invalid semver this test is about.
         r#"#!/bin/sh
+cat > /dev/null
 cat << 'JSON'
 {"next_version": "not-semver", "rationale": "malformed"}
 JSON

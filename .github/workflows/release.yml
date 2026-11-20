@@ -44,7 +44,7 @@ jobs:
       # `build-plugins`, `smoke` and `smoke-plugins` are green: a run whose smoke fails leaves no tag
       # to delete, no crate version burned and no draft to clean up (#259). That is why the bump step
       # defers — `cutver bump --defer-publish` stops after the branch push and reports what it left
-      # for the closing job in .cutver-release.json.
+      # for the closing job in its own step outputs.
       #
       # The `main` ruleset requires `CI gate`, and the bump commit is created inside this job, so no
       # check run can exist for it when `cutver bump` pushes: the push must therefore authenticate
@@ -130,36 +130,32 @@ jobs:
 
       # `--defer-publish` is what keeps this job harmless: the bump commit and its branch push are
       # the only writes it performs. The tag, the registry and the release wait for `publish`.
+      #
+      # The step owns the job outputs. `cutver bump` appends `released`, `deferred`, `version`, `tag`
+      # and `commit` to `$GITHUB_OUTPUT` itself (phase 4A of #326), so no step after this one parses a
+      # report file and the release result has one owner. `--dry-run` reports `released=false`, which
+      # is what keeps every downstream job skipped instead of half-run.
       - name: Release (bump only)
-        id: release
+        id: cutver
         run: |
-          args=(--defer-publish --report .cutver-release.json)
+          args=(--defer-publish)
           if [ "${{ inputs.dry_run }}" = "true" ]; then
             args+=(--dry-run)
           fi
           cutver bump "${{ inputs.bump || 'auto' }}" "${args[@]}"
+          # Fail closed. Every downstream job is gated on `released`, so an unwritten output would
+          # report a green run that published nothing — the failure the report-file check caught
+          # before this step read the tool's own channel.
+          if ! grep -q '^released=' "$GITHUB_OUTPUT"; then
+            echo "::error::cutver bump wrote no step outputs; nothing was published."
+            exit 1
+          fi
         env:
           # Declared in permissions.env, so these are the only keys the plugin sees: both the WASM
           # and the process runtime clear the rest of the environment before the plugin starts.
           # The app token is what makes the release attributed to cutver-release[bot].
           GITHUB_TOKEN: ${{ steps.release-token.outputs.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-
-      # The machine-readable result of the bump, and the only source the other jobs read. A
-      # `--dry-run` reports `released=false`, so every downstream job stays skipped; a real run
-      # reports the commit they check out instead of a tag that does not exist yet.
-      - name: Read the release report
-        id: cutver
-        run: |
-          report=.cutver-release.json
-          if [ ! -f "$report" ]; then
-            echo "::error::cutver bump wrote no release report; nothing was published."
-            exit 1
-          fi
-          for key in released deferred version tag commit; do
-            value=$(jq -r --arg k "$key" '.[$k] // "" | tostring' "$report")
-            echo "$key=$value" >> "$GITHUB_OUTPUT"
-          done
 
       - name: Render the release notes
         if: steps.cutver.outputs.released == 'true'

@@ -46,6 +46,38 @@ fn job<'a>(workflow: &'a str, id: &str) -> &'a str {
     &rest[..end]
 }
 
+/// The lines of a workflow fragment that are not comments.
+///
+/// A comment can name a command — the version job's preamble explains why the bump step defers and
+/// says `cutver bump` while doing it — so a pin has to read what the runner executes, not the prose
+/// around it.
+fn code(text: &str) -> String {
+    text.lines()
+        .filter(|line| !line.trim_start().starts_with('#'))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// The one step of a job body whose code contains `marker`, split on the six-space step marker.
+///
+/// Binding an `id:` to the step that runs a command needs the step's own text: `job()` returns the
+/// whole body, where `id: cutver` could sit on any step and still satisfy a `contains`.
+fn step_containing<'a>(job_body: &'a str, marker: &str) -> &'a str {
+    let starts: Vec<usize> = job_body
+        .match_indices("\n      - ")
+        .map(|(index, _)| index + 1)
+        .collect();
+    assert!(!starts.is_empty(), "the job body declares no step");
+    for (position, start) in starts.iter().enumerate() {
+        let end = starts.get(position + 1).copied().unwrap_or(job_body.len());
+        let block = &job_body[*start..end];
+        if code(block).contains(marker) {
+            return block;
+        }
+    }
+    panic!("no step in this job body runs `{marker}`")
+}
+
 fn declared_plugin() -> PluginConfig {
     let config_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("cutver.toml");
     let cfg = config::load(config_path).expect("the repository cutver.toml must load");
@@ -183,21 +215,43 @@ fn workflow_requests_the_plugin_build_and_forwards_dry_run() {
 fn the_version_job_publishes_nothing_irreversible() {
     let workflow = repo_text(".github/workflows/release.yml");
     let version = job(&workflow, "version");
+    let version_code = code(version);
+    let bump_step = step_containing(version, "cutver bump");
+    let bump_code = code(bump_step);
     for forbidden in ["cutver publish", "cargo publish", "git tag"] {
         assert!(
-            !version.contains(forbidden),
+            !version_code.contains(forbidden),
             "the version job must not run `{forbidden}`: an irreversible step there means a run whose \
              smoke fails has already published a tag, a crate version or a public release"
         );
     }
     assert!(
-        version.contains("--defer-publish"),
+        bump_code.contains("--defer-publish"),
         "the bump step must pass `--defer-publish`, or `cutver bump` runs the tag, the registry and \
          `on_post_release` inside the version job again"
     );
     assert!(
-        version.contains("id: cutver"),
-        "the job outputs must come from the report-reading step, not from the bump step"
+        version_code.contains("id: cutver"),
+        "the job outputs must come from a step that carries `id: cutver`, which is what \
+         `steps.cutver.outputs.*` reads"
+    );
+    // Phase 4B of #326: the bump step owns the job outputs. `cutver bump` writes the five keys to
+    // `$GITHUB_OUTPUT` itself, so a `--report` or a `jq` back in this job is not a style regression:
+    // it is a second authority over the release result, and two authorities drift.
+    assert!(
+        bump_code.contains("id: cutver"),
+        "the job outputs read `steps.cutver.outputs.*`, so the step that runs `cutver bump` must \
+         carry `id: cutver` — and it must be that step, not a second one that parses its output"
+    );
+    assert!(
+        !bump_code.contains("--report"),
+        "the bump step must not pass `--report`: the report file is a local and script surface, and \
+         the workflow reads the tool's step outputs instead"
+    );
+    assert!(
+        !version_code.contains("jq"),
+        "the version job must not parse a release report with `jq`: `cutver bump` writes the outputs \
+         the downstream jobs read, so a parser here would silently go stale"
     );
 }
 

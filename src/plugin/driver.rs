@@ -27,13 +27,30 @@ pub trait PluginDriver: std::fmt::Debug + Send + Sync {
 /// VI.1): only the declared keys cross the boundary, and each declared key must really exist.
 /// A declared key that is unset is an error naming the plugin and the key, never a silent `""`,
 /// because an empty grant hides a broken pipeline instead of failing closed (Pillar VI.2).
+///
+/// Boundary constructor binding the pure [`env_grants_from_lookup`] resolver to the process
+/// environment, the same seam `crate::plugin::cache` and `crate::cli::ci` use.
 pub fn resolve_env_grants(plugin: &PluginName, declared: &[String]) -> Result<BTreeMap<String, String>, PluginError> {
+    env_grants_from_lookup(plugin, declared, |key| std::env::var(key).ok())
+}
+
+/// Pure resolver over an injected `lookup`, so a test never mutates the process environment.
+///
+/// A key the lookup cannot produce is [`PluginError::UnsetEnvGrant`] naming the plugin and the
+/// key — both an absent variable and a value that is not valid UTF-8, which the `std::env::var`
+/// boundary adapter collapses into `None`. A grant is therefore never a silent empty string
+/// (Pillar VI.2).
+pub fn env_grants_from_lookup(
+    plugin: &PluginName,
+    declared: &[String],
+    lookup: impl Fn(&str) -> Option<String>,
+) -> Result<BTreeMap<String, String>, PluginError> {
     declared
         .iter()
         .map(|key| {
-            std::env::var(key)
+            lookup(key)
                 .map(|value| (key.clone(), value))
-                .map_err(|_| PluginError::UnsetEnvGrant {
+                .ok_or_else(|| PluginError::UnsetEnvGrant {
                     name: plugin.clone(),
                     key: key.clone(),
                 })

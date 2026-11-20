@@ -90,6 +90,13 @@ The exit status outranks stdout: a non-zero exit is `ExecutionFailed` carrying t
 when stdout held a valid answer (`src/plugin/driver/process.rs:203-212`). A zero exit with an empty or
 malformed stdout is `InvalidPayload` instead.
 
+A plugin that answers and exits `0` **before** reading its envelope to EOF loses its own answer. The
+host's write then lands on a closed pipe, and the run fails with `failed to write the invocation
+envelope ... to stdin` even though a valid response was produced (`src/plugin/driver/process.rs:126-135,203-223`).
+Read stdin to EOF first and answer afterwards, the way the `cat` in the example above does. Skipping it
+does not only risk the error: it makes the outcome depend on which side finishes first, which is a race
+in the plugin, not in `cutver`.
+
 ## `permissions.env`
 
 Environment is the only grant this runtime applies, and it applies it in both directions.

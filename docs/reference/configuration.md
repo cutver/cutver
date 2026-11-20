@@ -38,6 +38,9 @@ post_bump = "cargo check"
 push = true
 ```
 
+A complete file that the loader accepts and the test suite executes — three manifests, preflight steps,
+hooks, artifacts, gates and a publish command — is [the worked example cutver.toml](../../examples/cutver.toml).
+
 ---
 
 ## Unknown Keys

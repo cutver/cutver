@@ -16,7 +16,7 @@ Most release tools re-serialize entire files using generic object serializers. T
 | `pyproject` | `pyproject.toml` | `toml_edit` AST | Native PEP 621 (`[project] version`) and Poetry (`[tool.poetry] version`). Preserves comments and custom tables. |
 | `json` | `*.json` | Byte-span scanner | Replaces **strictly** the string byte range containing the version. Key order, indentation, and newlines remain untouched; input must be strict JSON, so a comment-bearing JSONC file fails to parse. |
 | `gradle` | `build.gradle`, `*.gradle.kts` | Regex byte replacement | Updates `versionName` string and increments `versionCode` integer without altering Gradle DSL structure. |
-| `regex` | Arbitrary text files | Regex capture group | Replaces matched token with `replacement`, substituting `{{version}}`. |
+| `regex` | Arbitrary text files | Regex capture group | Reads capture group 1 and replaces the whole match with `replacement`, substituting `{{version}}`. |
 | `plugin` | Any file an installed `manifest.v1` plugin handles | Wasm plugin (`manifest.v1`) | Format preservation is the plugin's responsibility. Requires a plugin-enabled build. |
 | `template` | Any file generated from a template | MiniJinja over the release context | The whole target file is replaced. A sink generates output; it never supplies a version. |
 
@@ -76,13 +76,26 @@ Replaces `versionName` with target SemVer string and increments integer `version
 
 ### Universal Fallback (`regex`)
 
+For a `version.txt` holding `release/v1.2.3`:
+
 ```toml
 [[manifest]]
 path = "version.txt"
 kind = "regex"
-pattern = 'release/v\d+\.\d+\.\d+'
-replacement = 'release/{{version}}'
+pattern = 'release/v([0-9]+\.[0-9]+\.[0-9]+)'
+replacement = 'release/v{{version}}'
 ```
+
+The pattern **must capture the version in group 1**: `read_version` parses that group, and falls back
+to the whole match only when the pattern has no group at all (`src/manifest/regex.rs:20-27`). The
+whole match is what `write_version` replaces, so `replacement` has to rebuild the text around the
+version, and `{{version}}` is the only substitution it performs (`:30-38`). Every match in the file is
+replaced, not just the first.
+
+> **Gotcha**: a pattern with no capture group looks right and cannot read.
+> `pattern = 'release/v\d+\.\d+\.\d+'` hands the whole match to the SemVer parser, which reads
+> `release/v1.2.3` and fails with `invalid version string`. The parentheses are the contract, not a
+> style choice.
 
 ### Plugin (`plugin`)
 

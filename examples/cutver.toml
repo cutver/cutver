@@ -1,0 +1,87 @@
+# cutver.toml — a project that exercises most of what cutver 0.20.0 can do.
+# Every block below is read by the tool. Docs: https://github.com/cutver/cutver/tree/main/docs
+
+[project]
+name = "acme-cli"
+
+[version]
+# Where the current version is read from. Omit it and cutver uses the first [[manifest]].
+current_source = "Cargo.toml"
+# strategy = "plugin"   # route the next version to a versioning.v1 plugin instead of the CLI argument
+
+# --- One version, three files -----------------------------------------------------------
+# `cutver bump` rewrites all three in the same commit. `cutver doctor` fails when they drift,
+# and `cutver plan` predicts the whole release from them without writing anything.
+
+[[manifest]]
+path = "Cargo.toml"
+kind = "cargo-package"
+primary = true
+
+[[manifest]]
+path = "package.json"          # the npm wrapper that ships the same binary
+kind = "json"
+field = "version"
+
+[[manifest]]
+path = "scripts/install.sh"    # any file with a version literal: capture group 1 is the version
+kind = "regex"
+pattern = 'VERSION="([0-9]+\.[0-9]+\.[0-9]+)"'
+replacement = 'VERSION="{{version}}"'
+
+# --- The changelog ------------------------------------------------------------------------
+[changelog]
+path = "CHANGELOG.md"
+format = "keep-a-changelog"    # "plugin" dispatches a changelog.v1 plugin instead
+mode = "conventional"          # group entries by commit type
+include_scopes = true
+ignore_release_commits = true  # never list the release commit itself
+ignore_scopes = ["release"]
+new_contributors = true        # adds a "New Contributors" section when someone is new
+# template_file = "release-notes.md"   # full control: MiniJinja, with grouped `sections`
+
+# --- What a release is not allowed to do --------------------------------------------------
+[git]
+tag_prefix = "v"
+floating_major_tag = true                     # keeps v1 pointing at the newest v1.x
+commit_message = "chore(release): v{version} [skip ci]"
+require_clean_tree = true
+require_branch = "main"                       # a release can only be cut from main
+
+# --- Checks that run before anything is touched ------------------------------------------
+[preflight]
+default_timeout = 900                         # seconds, for steps that do not set their own
+format = "cargo fmt --all --check"
+tests = { command = "cargo test --workspace", timeout = 1800 }
+clippy = "cargo clippy --workspace --all-targets -- -D warnings"
+
+# pre_bump runs before any manifest edit; post_bump runs after the edits and before the commit.
+# A hook that outlives default_timeout is killed with its whole process tree.
+[hooks]
+default_timeout = 300
+pre_bump = "test \"$(git rev-parse --abbrev-ref HEAD)\" = main"
+post_bump = "cargo build --release"
+
+# --- Declared artifacts: verified to exist before the tag is created ----------------------
+[[artifact]]
+glob = "target/release/acme"
+at_least = 1
+description = "the release binary"
+
+[[artifact]]
+glob = "dist/*.tar.gz"
+at_least = 2
+description = "per-platform archives"
+
+# --- Attested gates: publish refuses a release whose gate is missing or failed ------------
+[gates]
+dir = ".cutver/attestations"
+require = ["ci", "smoke"]
+# Record a verdict, usually from the CI job that ran it:
+#   cutver attest ci --commit "$(git rev-parse HEAD)" --conclusion success --run "$RUN_URL"
+
+# --- What publishing does once everything above is green -----------------------------------
+[publish]
+push = true                     # branch, then tag, then the floating major tag — one ref per push
+default_timeout = 900
+commands = ["cargo publish"]    # runs only after the tag exists, never before build and smoke

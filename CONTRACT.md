@@ -122,7 +122,7 @@ Every error surfaced to the user must answer three questions:
 
 ### 2. Configuration Backward Compatibility
 - Configuration syntax in `cutver.toml` must maintain backwards compatibility.
-- Deprecated syntax must remain functional with clear migration warnings emitted in `cutver doctor` and `cutver init --update`.
+- Deprecated syntax must remain functional with clear migration warnings emitted in `cutver doctor` and `cutver init --update`, both of which read one table of deprecated spellings (`src/config/deprecations.rs`, enforced by `tests/config_deprecations.rs`).
 - Breaking schema changes require a major version bump and automated migration tooling.
 - Machine surfaces — JSON output, exit codes, the plan and attestation files — carry a separate policy: **Pillar VII.2**.
 
@@ -229,6 +229,6 @@ Crossing this boundary is a **judgement** call for the maintainer, stated in the
 `schemaVersion` implies a policy that had never been written down. Every machine surface — `bump`, `plan`, `doctor`, `changelog`, `plugin` JSON, exit codes, the plan file and the attestation files — follows it:
 
 - **Additive within a schema version.** New fields may appear; existing fields keep their name, type, meaning and position, because field order is part of the contract.
-- **A break is a major bump with a deprecation cycle**, not a release: the old surface keeps working and warns, and the removal happens in a later release than the rename. The warning channel this depends on is tracked in #272, and a major bump without a live channel is a break with no migration.
+- **A break is a major bump with a deprecation cycle**, not a release: the old surface keeps working and warns, and the removal happens in a later release than the rename. The channel is live (#272): one table of deprecated spellings in `src/config/deprecations.rs`, a `warning: …` line on stderr always, the same sentence as a `::warning::` annotation under CI, and the sentence as data in `doctor --json`.
 - **A surface is never removed in the release that renames it.** Renames take two releases at minimum.
 - Configuration compatibility is a separate promise, stated for `cutver.toml` in **Pillar IV.2**.

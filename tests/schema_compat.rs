@@ -132,7 +132,9 @@ const CHANGELOG_KEYS: [&str; 36] = [
 /// Source of truth: `docs/internals/machine-contract-surfaces.md` § `doctor --json` (the example
 /// object and its bullets), owned by `DoctorReport` (`src/cli/doctor.rs:20`). Drift is data on
 /// stdout with exit `2`, so these keys are the whole machine-readable outcome of the diagnosis.
-const DOCTOR_KEYS: [&str; 4] = ["ok", "checks", "version_drift", "changelog_drift"];
+/// `warnings` is the deprecation channel `CONTRACT.md` Pillar IV.2 names `doctor` for (#272): a
+/// runner that reads the diagnosis has to be able to act on a rename without scraping stderr.
+const DOCTOR_KEYS: [&str; 5] = ["ok", "checks", "version_drift", "changelog_drift", "warnings"];
 
 /// The keys `cutver plugin list --json` must carry.
 ///

@@ -24,6 +24,10 @@ included when no sink is named, and `--no-ci` turns it off entirely.
 - A failure writes one `::error::` annotation to **stderr** — never stdout — carrying the human
   message with `%`, CR and LF percent-escaped, so it stays one line. It precedes the machine envelope
   when both are emitted; a successful run annotates nothing.
+- A deprecated spelling in `cutver.toml` writes one `::warning::` annotation with the same sentence
+  the human line carries, and the run keeps its exit code: a deprecation is not a failure. The
+  spellings and the release that removes each one are in the
+  [configuration reference](../reference/configuration.md#deprecated-keys).
 - A sink that cannot be written degrades to a `warning:` line and the exit code still reports the
   release. Outside CI nothing is opened, annotated or created.
 
@@ -38,10 +42,15 @@ dashboard, no rendered drift block, no suggested-fix text.
   "ok": false,
   "checks": [{ "name": "versions", "status": "drift" }, { "name": "changelog", "status": "skipped" }],
   "version_drift": [{ "path": "b.json", "expected": "1.1.0", "actual": "1.0.0" }],
-  "changelog_drift": null
+  "changelog_drift": null,
+  "warnings": ["[version].source is deprecated, use current_source; it will be removed in 1.0.0"]
 }
 ```
 
+- `warnings` is the deprecation channel as data: one sentence per deprecated spelling the document
+  uses, naming the spelling, its replacement and the release that removes it. It is `[]` for a
+  canonical document and never absent, and it never changes `ok` or the exit code — a deprecated
+  spelling still works, which is exactly what makes it a warning.
 - `ok` is `false` when any check that ran found drift. `checks` holds one entry per declared check,
   always in that order: `versions`, then `changelog`, and `status` is `ok`, `drift`, or `skipped` — a
   check that did not run says so instead of looking like an empty result. Without `--check-changelog`

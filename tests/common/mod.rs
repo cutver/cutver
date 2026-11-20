@@ -296,3 +296,55 @@ pub fn is_iso_date(date: &str) -> bool {
             .enumerate()
             .all(|(i, b)| i == 4 || i == 7 || b.is_ascii_digit())
 }
+
+/// The keys the release context carries on `cutver changelog latest|show --json`.
+///
+/// Source of truth: `ReleaseContext`'s hand-written `Serialize` (`src/changelog/context/release.rs`),
+/// which registers every key, and the page that enumerates them,
+/// `docs/internals/machine-contract-surfaces.md` § `changelog latest --json`
+/// (`tests/changelog_context_docs.rs` keeps the two in step, in both directions).
+///
+/// Three pairs are deliberate aliases for templates (`owner`/`repo_owner`, `repo`/`repo_name`,
+/// `project`/`project_name`), so `owner`, `repo` and `project` are pinned even though they duplicate
+/// a value: a template that reads them breaks if they go.
+///
+/// `schemaVersion` is not listed here because every surface carries it first; the documentation test
+/// expects it in the same table, so the page is checked for all 37 keys the object emits.
+pub const CHANGELOG_CONTEXT_KEYS: [&str; 36] = [
+    "version",
+    "previous_version",
+    "tag",
+    "previous_tag",
+    "date",
+    "compare_url",
+    "repository",
+    "features",
+    "fixes",
+    "breaking",
+    "perf",
+    "refactor",
+    "docs",
+    "maintenance",
+    "other",
+    "all_changes",
+    "commits",
+    "sections",
+    "contributors",
+    "first_time_contributors",
+    "major",
+    "minor",
+    "patch",
+    "is_prerelease",
+    "prerelease",
+    "build",
+    "year",
+    "month",
+    "day",
+    "repo_owner",
+    "owner",
+    "repo_name",
+    "repo",
+    "forge",
+    "project_name",
+    "project",
+];

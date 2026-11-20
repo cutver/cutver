@@ -676,6 +676,63 @@ fn release_notes_artifact_is_kept_but_does_not_feed_the_promotion() {
     );
 }
 
+/// S1/S3: the render step prefers a hand-written notes file for the tag being released and keeps the
+/// template render as its fallback, in the same step.
+///
+/// The notes live at `.github/releases/<tag>.md`, so the path comes from the tag the bump step reported
+/// and no convention has to be remembered. The template stays because the convention is optional: a
+/// release with no notes file has to publish exactly the body it publishes today. A pin that only
+/// checked the preferred path would let the fallback be deleted and would turn "optional with
+/// fallback" into "required" — the next dispatch with no notes file would then copy an absent path
+/// and publish nothing. Both halves are read from one step's code, because they are one decision.
+#[test]
+fn the_render_step_prefers_the_per_tag_notes_file_and_keeps_the_template_fallback() {
+    const NOTES_NAME: &str = "notes=\".github/releases/${{ steps.cutver.outputs.tag }}.md\"";
+    const PREFERRED: &str = "cp \"$notes\" RELEASE_NOTES.md";
+    const TEMPLATE: &str = "cutver changelog latest --template .github/templates/cutver/RELEASE.md";
+    let workflow = repo_text(".github/workflows/release.yml");
+    let version = job(&workflow, "version");
+    let step = code(step_containing(version, "name: Render the release notes"));
+
+    assert!(
+        step.contains(NOTES_NAME),
+        "the render step must look for `.github/releases/<tag>.md` using the tag the bump step \
+         reported: a fixed file name renders one release's notes for every release, and the file the \
+         author committed is then read for one tag only: {step}"
+    );
+    assert!(
+        step.contains("if [ -f \"$notes\" ]"),
+        "the render step must test the notes file for existence before using it: copying an absent \
+         path fails the step, so a dispatch with no notes file publishes no body at all: {step}"
+    );
+    let preferred = step.find(PREFERRED).unwrap_or_else(|| {
+        panic!(
+            "the render step must prefer the notes file when it exists: without it the notes are in \
+             the tree, reviewed and never used, and the release ships the commit-level render anyway: {step}"
+        )
+    });
+    let Some(template_line) = step.lines().find(|line| line.contains(TEMPLATE)) else {
+        panic!(
+            "the render step must keep `{TEMPLATE}` as its fallback, in this step: deleting it \
+             turns an optional convention into a mandatory one, and a dispatch with no notes file \
+             publishes no body: {step}"
+        )
+    };
+    assert!(
+        template_line.contains("> RELEASE_NOTES.md"),
+        "the fallback must still write RELEASE_NOTES.md, which is the file the `release-notes` \
+         artifact and `cutver publish` consume: {template_line}"
+    );
+    let template = step
+        .find(TEMPLATE)
+        .expect("the fallback was found on a line of this step");
+    assert!(
+        preferred < template,
+        "the preference must come before the template render, as the branch the existence test falls \
+         through to: a render first makes every hand-written file dead: {step}"
+    );
+}
+
 /// The plugin authenticates with whatever token reaches it, so that token decides who the release
 /// is attributed to. `secrets.GITHUB_TOKEN` publishes as github-actions[bot], which is the
 /// attribution regression issue #166 removed. Both jobs that hand the plugin a token mint it

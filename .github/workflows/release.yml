@@ -160,9 +160,20 @@ jobs:
           GITHUB_TOKEN: ${{ steps.release-token.outputs.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
 
+      # The body is hand-written when the release has notes in the tree. The file is named after the
+      # tag the bump step reported, so the mapping is mechanical, and it is reviewed in the pull
+      # request that produced the release instead of living only on the release page. It is optional:
+      # the template render below is the fallback, so a release with no notes file behaves exactly as
+      # before rather than requiring one.
       - name: Render the release notes
         if: steps.cutver.outputs.released == 'true'
-        run: cutver changelog latest --template .github/templates/cutver/RELEASE.md > RELEASE_NOTES.md
+        run: |
+          notes=".github/releases/${{ steps.cutver.outputs.tag }}.md"
+          if [ -f "$notes" ]; then
+            cp "$notes" RELEASE_NOTES.md
+          else
+            cutver changelog latest --template .github/templates/cutver/RELEASE.md > RELEASE_NOTES.md
+          fi
 
       - name: Save Release Notes Artifact
         if: steps.cutver.outputs.released == 'true'

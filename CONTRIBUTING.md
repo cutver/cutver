@@ -83,6 +83,10 @@ commit itself follows the same grammar, `chore(release): v<version> [skip ci]`, 
 Keep code, tests and documentation in the same work-unit commit, and keep the pull request under roughly
 300–400 lines of effective diff. Past that a reviewer reads the shape and skips the detail.
 
+A release's notes may live in the tree at `.github/releases/<tag>.md` — `v0.20.0.md` — in English, committed
+before the dispatch, so they are reviewed in the pull request that produced the release. `release.yml` uses that
+file when it exists and renders the template otherwise: optional, never a step a release cannot start without.
+
 ## The pull request
 
 Pull requests open with [the review checklist](.github/PULL_REQUEST_TEMPLATE.md) already in the

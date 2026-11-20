@@ -61,11 +61,7 @@ jobs:
 
       - name: Release (bump only)
         id: cutver
-        run: |
-          cutver bump auto --defer-publish --report .cutver-release.json
-          for key in released deferred version tag commit; do
-            echo "$key=$(jq -r --arg k "$key" '.[$k] // ""' .cutver-release.json)" >> "$GITHUB_OUTPUT"
-          done
+        run: cutver bump auto --defer-publish
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
 
@@ -84,8 +80,10 @@ jobs:
 Why the two commands instead of one: `--defer-publish` makes the bump create the release commit and
 push the branch, and `cutver publish` does everything after it — the tag, the floating major tag,
 `[publish].commands` and the `on_post_release` plugins. Anything between the two runs against the exact
-commit the report names, which is what lets a build and a smoke test sit in front of the tag. The
-[release report](../reference/cli.md#cutver-bump) is the only thing a later step needs to read.
+commit the step output names, which is what lets a build and a smoke test sit in front of the tag. The
+step outputs are also the only thing a later step reads: `cutver bump` writes `released`, `deferred`,
+`version`, `tag` and `commit` to `$GITHUB_OUTPUT` itself, so the job hands them on without a report
+file and a second parser in between.
 
 `plugin restore` is needed when `cutver.toml` declares plugins: it hydrates the cache from the `source`
 and `hash` the configuration owns, so the workflow never pins a plugin version of its own. Drop the

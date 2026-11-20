@@ -46,6 +46,70 @@ fn job<'a>(workflow: &'a str, id: &str) -> &'a str {
     &rest[..end]
 }
 
+/// The lines of a workflow fragment that are not comments.
+///
+/// A comment can name a command — the version job's preamble explains why the bump step defers and
+/// says `cutver bump` while doing it — so a pin has to read what the runner executes, not the prose
+/// around it.
+fn code(text: &str) -> String {
+    text.lines()
+        .filter(|line| !line.trim_start().starts_with('#'))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// The one step of a job body whose code contains `marker`, split on the six-space step marker.
+///
+/// Binding an `id:` to the step that runs a command needs the step's own text: `job()` returns the
+/// whole body, where `id: cutver` could sit on any step and still satisfy a `contains`.
+fn step_containing<'a>(job_body: &'a str, marker: &str) -> &'a str {
+    let starts: Vec<usize> = job_body
+        .match_indices("\n      - ")
+        .map(|(index, _)| index + 1)
+        .collect();
+    assert!(!starts.is_empty(), "the job body declares no step");
+    for (position, start) in starts.iter().enumerate() {
+        let end = starts.get(position + 1).copied().unwrap_or(job_body.len());
+        let block = &job_body[*start..end];
+        if code(block).contains(marker) {
+            return block;
+        }
+    }
+    panic!("no step in this job body runs `{marker}`")
+}
+
+/// The `key: value` pairs a job declares under its top-level `outputs:` map, comments dropped.
+///
+/// Reading the map as pairs is what separates an output that is sourced from a step from one that
+/// is a constant: a `contains` on the whole job body cannot tell `steps.cutver.outputs.version` from
+/// `steps.release.outputs.version`, and both render a string that looks like an output name.
+fn declared_outputs(job_body: &str) -> Vec<(String, String)> {
+    const MARKER: &str = "\n    outputs:\n";
+    let start = job_body
+        .find(MARKER)
+        .unwrap_or_else(|| panic!("the job must declare its outputs under `outputs:`"))
+        + MARKER.len();
+    let mut outputs = Vec::new();
+    for line in job_body[start..].lines() {
+        let Some(line) = line.strip_prefix("      ") else {
+            break;
+        };
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let (key, value) = line
+            .split_once(':')
+            .unwrap_or_else(|| panic!("an output must be declared as `key: value`, got `{line}`"));
+        outputs.push((key.trim().to_string(), value.trim().to_string()));
+    }
+    assert!(
+        !outputs.is_empty(),
+        "the version job must declare the outputs its dependants read"
+    );
+    outputs
+}
+
 fn declared_plugin() -> PluginConfig {
     let config_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("cutver.toml");
     let cfg = config::load(config_path).expect("the repository cutver.toml must load");
@@ -183,22 +247,187 @@ fn workflow_requests_the_plugin_build_and_forwards_dry_run() {
 fn the_version_job_publishes_nothing_irreversible() {
     let workflow = repo_text(".github/workflows/release.yml");
     let version = job(&workflow, "version");
+    let version_code = code(version);
+    let bump_step = step_containing(version, "cutver bump");
+    let bump_code = code(bump_step);
     for forbidden in ["cutver publish", "cargo publish", "git tag"] {
         assert!(
-            !version.contains(forbidden),
+            !version_code.contains(forbidden),
             "the version job must not run `{forbidden}`: an irreversible step there means a run whose \
              smoke fails has already published a tag, a crate version or a public release"
         );
     }
     assert!(
-        version.contains("--defer-publish"),
+        bump_code.contains("--defer-publish"),
         "the bump step must pass `--defer-publish`, or `cutver bump` runs the tag, the registry and \
          `on_post_release` inside the version job again"
     );
     assert!(
-        version.contains("id: cutver"),
-        "the job outputs must come from the report-reading step, not from the bump step"
+        version_code.contains("id: cutver"),
+        "the job outputs must come from a step that carries `id: cutver`, which is what \
+         `steps.cutver.outputs.*` reads"
     );
+    // Phase 4B of #326: the bump step owns the job outputs. `cutver bump` writes the five keys to
+    // `$GITHUB_OUTPUT` itself, so a `--report` or a `jq` back in this job is not a style regression:
+    // it is a second authority over the release result, and two authorities drift.
+    assert!(
+        bump_code.contains("id: cutver"),
+        "the job outputs read `steps.cutver.outputs.*`, so the step that runs `cutver bump` must \
+         carry `id: cutver` — and it must be that step, not a second one that parses its output"
+    );
+    assert!(
+        !version_code.contains("--report"),
+        "no step in the version job may pass `--report`: the report file is a local and script \
+         surface, and the workflow reads the tool's step outputs instead — a step that writes it and \
+         another that reads it back is a second authority over the release result next to the tool"
+    );
+    assert!(
+        !version_code.contains(".cutver-release.json"),
+        "no step in the version job may name `.cutver-release.json`: reading the report back — with \
+         `jq`, `python3` or any other tool — makes the workflow parse the release result instead of \
+         reading the step outputs the bump step wrote"
+    );
+    assert!(
+        !workflow.contains(".cutver-release.json"),
+        "release.yml must not name `.cutver-release.json` anywhere: the release result has one owner, \
+         the bump step's outputs, and a reader anywhere in the file is the coupling phase 4B removed"
+    );
+    assert!(
+        !version_code.contains("jq"),
+        "the version job must not parse a release report with `jq`: `cutver bump` writes the outputs \
+         the downstream jobs read, so a parser here would silently go stale"
+    );
+}
+
+/// S2: the bump step fails closed when the tool wrote no usable release status.
+///
+/// The report-file existence check was the old guard against a run that published nothing and left
+/// every downstream job skipped. Its replacement must accept exactly the two values the gated `if:`
+/// conditions compare against: presence alone is not enough, because a `released=` line with an
+/// empty value renders `steps.cutver.outputs.released` empty and skips the same jobs on the same
+/// green run.
+#[test]
+fn the_bump_step_fails_closed_when_the_tool_wrote_no_outputs() {
+    const GUARD: &str = "grep -qE '^released=(true|false)$' \"$GITHUB_OUTPUT\"";
+    let workflow = repo_text(".github/workflows/release.yml");
+    let version = job(&workflow, "version");
+    let bump_code = code(step_containing(version, "cutver bump"));
+
+    let call_at = bump_code
+        .find("cutver bump \"")
+        .expect("the version job must run `cutver bump`");
+    let guard_at = bump_code.find(GUARD).unwrap_or_else(|| {
+        panic!(
+            "the bump step must read exactly `released=true` or `released=false` from \
+             $GITHUB_OUTPUT: a presence-only match lets an empty value through, and every job gated \
+             on `released == 'true'` is then skipped on a green run: {bump_code}"
+        )
+    });
+    assert!(
+        call_at < guard_at,
+        "the guard must read $GITHUB_OUTPUT after `cutver bump` wrote it: checked before the call it \
+         reads a stale or absent file and fails a healthy release: {bump_code}"
+    );
+    assert!(
+        bump_code.contains("exit 1"),
+        "the guard must fail the job, not warn: a warning leaves the downstream jobs skipped and the \
+         run green, which is the silent no-release the report-file check used to catch: {bump_code}"
+    );
+    assert!(
+        bump_code.contains("::error::cutver bump wrote no usable 'released' step output; nothing was published."),
+        "the guard must fail with the actionable `::error::` line that says nothing was published: \
+         an exit without it surfaces as a bare step failure with no cause: {bump_code}"
+    );
+    assert!(
+        !bump_code.contains("grep -q '^released='"),
+        "the guard must not regress to matching the bare `released=` prefix: an empty value passes it \
+         and every downstream job is skipped on a green run: {bump_code}"
+    );
+}
+
+/// #259/S1: an argument array the call never expands publishes the release from the version job.
+///
+/// `--defer-publish` is what keeps this job harmless, and it only defers if it reaches the command:
+/// the flag sitting in `args` while the invocation runs `cutver bump <level>` creates the tag,
+/// publishes the crate and fires `on_post_release` before a single smoke has run.
+#[test]
+fn the_bump_call_expands_the_defer_flag_it_declares() {
+    let workflow = repo_text(".github/workflows/release.yml");
+    let version = job(&workflow, "version");
+    let bump_code = code(step_containing(version, "cutver bump"));
+
+    assert!(
+        bump_code.contains("args=(--defer-publish)"),
+        "the bump step must declare `--defer-publish`: without it `cutver bump` runs the tag, the \
+         registry and `on_post_release` inside the version job"
+    );
+    let call = bump_code
+        .lines()
+        .find(|line| line.contains("cutver bump \"${{ inputs.bump || 'auto' }}\""))
+        .unwrap_or_else(|| {
+            panic!("the version job must invoke `cutver bump` with the requested bump level: {bump_code}")
+        });
+    assert!(
+        call.contains("\"${args[@]}\""),
+        "the `cutver bump` invocation must expand the argument array: a flag left in `args` and \
+         never passed to the command is the same as no flag, and the bump publishes irreversibly \
+         before smoke runs: {call}"
+    );
+}
+
+/// S1: every job output must read a key `cutver bump` writes, from the step that ran it.
+///
+/// The bump step appends `released`, `deferred`, `version`, `tag` and `commit` to `$GITHUB_OUTPUT`
+/// (phase 4A of #326). An output pointing at another step, or naming a key nobody writes, resolves
+/// to an empty string, and the `needs.version.outputs.*` gate it feeds then skips the release it was
+/// supposed to run.
+#[test]
+fn every_version_job_output_reads_a_key_the_tool_writes() {
+    /// The keys `cutver bump` writes to `$GITHUB_OUTPUT`.
+    const WRITTEN: [&str; 5] = ["released", "deferred", "version", "tag", "commit"];
+    let workflow = repo_text(".github/workflows/release.yml");
+    let version = job(&workflow, "version");
+    let outputs = declared_outputs(version);
+
+    for key in ["tag", "released", "version", "commit"] {
+        let expected = format!("${{{{ steps.cutver.outputs.{key} }}}}");
+        let value = outputs
+            .iter()
+            .find(|(declared, _)| declared == key)
+            .map(|(_, value)| value.as_str())
+            .unwrap_or_else(|| {
+                panic!(
+                    "the version job must keep its `{key}` output: every downstream job reads \
+                     `needs.version.outputs.{key}`, and a missing output is an empty string"
+                )
+            });
+        assert_eq!(
+            value, expected,
+            "`{key}` must read `{expected}`: the bump step owns the release result, so a value taken \
+             from any other step is empty and the release it gates never runs"
+        );
+    }
+
+    for (key, value) in &outputs {
+        let Some(reference) = value.strip_prefix("${{ steps.") else {
+            // A constant output (`notes`) reads no step at all.
+            continue;
+        };
+        let (step, output) = reference
+            .split_once(".outputs.")
+            .unwrap_or_else(|| panic!("`{key}` must read `steps.<id>.outputs.<name>`, not `{value}`"));
+        assert_eq!(
+            step, "cutver",
+            "`{key}` must read the step that carries `id: cutver`, not `{step}`: no other step wrote \
+             a release result, so the output is empty"
+        );
+        let output = output.trim_end_matches(" }}");
+        assert!(
+            WRITTEN.contains(&output),
+            "`{key}` must read a key `cutver bump` writes ({WRITTEN:?}), not `{output}`: an unwritten \
+             key resolves to an empty string and skips the jobs gated on it"
+        );
+    }
 }
 
 /// The only job that publishes must run after every verification job, on one exact `needs:` line:

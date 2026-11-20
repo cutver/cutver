@@ -81,7 +81,7 @@ pub enum ConfigError {
     GatesDirInvalid { dir: String, reason: String },
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 pub struct Config {
     #[serde(skip)]
     pub root_dir: PathBuf,
@@ -102,6 +102,9 @@ pub struct Config {
     pub preflight: PreflightSteps,
     #[serde(skip)]
     pub preflight_default_timeout: Option<u64>,
+    /// Deprecated spellings this document used: warned at load, reported by `doctor --json` (#272).
+    #[serde(skip)]
+    pub deprecations: Vec<&'static super::deprecations::Deprecation>,
     #[serde(default)]
     pub changelog: Changelog,
     #[serde(default)]
@@ -127,26 +130,6 @@ impl Config {
             .iter()
             .find(|m| m.path == self.version.current_source)
             .or_else(|| self.manifest.first())
-    }
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            root_dir: PathBuf::new(),
-            project: Project::default(),
-            version: VersionSection::default(),
-            manifest: Vec::new(),
-            artifact: Vec::new(),
-            gates: Gates::default(),
-            preflight: Vec::new(),
-            preflight_default_timeout: None,
-            changelog: Changelog::default(),
-            git: Git::default(),
-            hooks: Hooks::default(),
-            publish: Publish::default(),
-            plugins: HashMap::new(),
-        }
     }
 }
 

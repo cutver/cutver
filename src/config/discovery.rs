@@ -16,6 +16,7 @@ pub fn load(path: impl AsRef<Path>) -> Result<Config, ConfigError> {
     let text = fs::read_to_string(&path)?;
     let mut config: Config = toml::from_str(&text)?;
     reject_unknown_keys(&text)?;
+    config.deprecations = super::deprecations::report(&text)?;
     let (preflight, default_timeout) = parse_preflight(&text)?;
     config.preflight = preflight;
     config.preflight_default_timeout = default_timeout;
@@ -35,10 +36,9 @@ pub fn load(path: impl AsRef<Path>) -> Result<Config, ConfigError> {
     }
     resolve_plugin_filesystem(&mut config)?;
     validate(&config)?;
-    // A template sink's `template` is validated as repository-relative and then has to stop being
-    // relative: `src/manifest/dispatch.rs` hands the string to `TemplateEditor`, which reads it
-    // against the process CWD. Resolved after `validate` on purpose — validation must see the
-    // spelling the user wrote, not the resolved path (#287).
+    // A template sink's `template` is validated as repository-relative and then must stop being relative:
+    // `src/manifest/dispatch.rs` hands the string to `TemplateEditor`, which reads it against the process
+    // CWD. Resolved after `validate` on purpose — validation must see the spelling the user wrote (#287).
     for m in &mut config.manifest {
         if let ManifestKind::Template {
             template: Some(template),

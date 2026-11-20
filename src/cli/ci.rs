@@ -160,6 +160,18 @@ pub fn annotate_error(message: &str) {
     eprintln!("::error::{}", escape_command_data(message));
 }
 
+/// Writes the deprecation annotation when CI is detected, independently of machine mode (#272).
+///
+/// A deprecation is not a failure: the command keeps working, the exit code does not move, and the
+/// human line stays on stderr next to the annotation. The annotation is what a runner turns into a
+/// visible notice on the pull request or the run.
+pub fn annotate_warning(message: &str) {
+    if !channel().detected() {
+        return;
+    }
+    eprintln!("::warning::{}", escape_command_data(message));
+}
+
 /// Everything the channel carries for a finished `bump`: the outputs, then the summary.
 pub fn on_bump_success(finished: &Summary) {
     let channel = channel();

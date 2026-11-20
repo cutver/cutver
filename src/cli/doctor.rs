@@ -26,6 +26,9 @@ pub struct DoctorReport {
     pub version_drift: Vec<VersionDriftJson>,
     /// `null` when `--check-changelog` was not passed; the `changelog` check then says `skipped`.
     pub changelog_drift: Option<ChangelogDriftJson>,
+    /// The deprecations this `cutver.toml` still carries, which the runner fills: `CONTRACT.md` names
+    /// `doctor` as a migration-warning surface, so what the human reads is what a runner can read.
+    pub warnings: Vec<String>,
 }
 
 impl DoctorReport {
@@ -52,6 +55,7 @@ impl DoctorReport {
             checks,
             version_drift,
             changelog_drift,
+            warnings: Vec::new(),
         }
     }
 }
@@ -287,7 +291,6 @@ mod tests {
         let theme = Theme::new(false);
         let config = Config {
             root_dir: PathBuf::from("."),
-            project: Default::default(),
             version: VersionSection {
                 current_source: "Cargo.toml".into(),
                 strategy: "manual".into(),
@@ -299,8 +302,6 @@ mod tests {
                 primary: true,
                 kind: ManifestKind::CargoPackage,
             }],
-            artifact: Default::default(),
-            gates: Default::default(),
             preflight: vec![(
                 "test".into(),
                 PreflightCommand {
@@ -308,12 +309,7 @@ mod tests {
                     timeout: None,
                 },
             )],
-            preflight_default_timeout: None,
-            changelog: Default::default(),
-            git: Default::default(),
-            hooks: Default::default(),
-            publish: Default::default(),
-            plugins: Default::default(),
+            ..Default::default()
         };
 
         let rendered = render_dashboard(&config, true, &theme);

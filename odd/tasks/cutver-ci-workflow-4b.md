@@ -17,11 +17,13 @@ S1. The version job reads the bump result from the step's own `$GITHUB_OUTPUT`. 
 (`tag`, `released`, `version`, `commit`) keep their names and their `steps.cutver.outputs.*` source,
 so every downstream job is untouched.
 
-S2. The bump step fails closed when the tool wrote no step outputs. The report-file existence check
-was the old guard against a run that produced nothing and silently skipped every downstream job;
-its replacement is an assertion on the same step that `released=` is present in `$GITHUB_OUTPUT`
-(always written on success, `false` on a `--dry-run`, per `src/cli/ci/fields.rs::bump`), with the
-same actionable `::error::` line.
+S2. The bump step fails closed when the tool wrote no usable step outputs. The report-file existence
+check was the old guard against a run that produced nothing and silently skipped every downstream job;
+its replacement is an assertion on the same step that `released=` reached `$GITHUB_OUTPUT` **with one
+of the two values the gated `if:` conditions compare against** — `released` is always written on
+success and `false` on a `--dry-run` (`src/cli/ci/fields.rs::bump`), so presence alone would let an
+empty value skip every gated job on a green run. It fails with an actionable `::error::` line that
+says nothing was published.
 
 S3. `tests/release_pipeline_contract.rs` pins the new shape and keeps every existing assertion in
 `the_version_job_publishes_nothing_irreversible`: `id: cutver` sits on the step that runs
@@ -52,6 +54,8 @@ already declared for the closure report rather than carried silently.
 | T3 | The two integration pages stop teaching `jq`; `--report` kept everywhere it is the documented surface | S4, S5 | inline | `e7406ae` |
 | T4 | Local gate + independent verification (risk item 5) | S1-S5 | `gentle-ai-verify` | — |
 
+| T5 | Close the four advisory gaps the verifier opened in the pins | S1, S2, S3 | `gentle-ai-worker` | `4014e56` |
+
 ## Log
 
 L1. Maintainer, verbatim: «Vamos con 326 4B y lo del dispatch de ensayo lo vamos viendo».
@@ -64,3 +68,21 @@ text with `release.yml`.
 L3. Decision (parent), 4B scope: one PR, from a fresh `origin/main`, no attestation section and no
 dispatch inside it (S6). The evidence for the workflow change is the contract test plus the gate; the
 dispatch is a maintainer decision that stays open.
+
+L4. Independent verification (`gentle-ai-verify`, read-only, 2026-11-20): S1, S2, S4, S5 met; S3 met
+with a pin narrower than its wording; S6 out of scope. No blockers, six advisories. Four became T5:
+(a) `--report` was forbidden only on the bump step while S3 says the whole job, and a *new* step
+parsing `.cutver-release.json` with a different tool left every assertion green (reproduced);
+(b) nothing pinned the S2 guard — deleting it kept the contract suite green (reproduced);
+(c) the `--defer-publish` pin matched the step's text, so leaving the flag in the `args` array but
+dropping `"${args[@]}"` from the invocation stayed green while the bump published (reproduced);
+(d) the guard was presence-only, so a `released=` line with an empty value passed it (probe G5).
+The verifier confirmed the positive side by probe: `--defer-publish` writes the five keys on the real
+path and four on `--dry-run`, `on_bump_success` runs on both success paths, no `GITHUB_OUTPUT` means
+no file written, and the guard exits 1 on an empty or `released`-less file.
+
+L5. Advisory not taken into this PR, recorded instead: `.agents/skills/cutver-actions/SKILL.md:47-52`
+still shows `--report .cutver-release.json` and "the commit the report names" as the workflow recipe.
+That catalog is synced from the sibling `cutver/skills` repository (never edited by hand here), and S4
+keeps `--report` a legitimate surface, so repointing it is a skills-catalog change with its own pin —
+not a workflow change hidden in a release-pipeline PR.

@@ -143,11 +143,14 @@ jobs:
             args+=(--dry-run)
           fi
           cutver bump "${{ inputs.bump || 'auto' }}" "${args[@]}"
-          # Fail closed. Every downstream job is gated on `released`, so an unwritten output would
-          # report a green run that published nothing — the failure the report-file check caught
-          # before this step read the tool's own channel.
-          if ! grep -q '^released=' "$GITHUB_OUTPUT"; then
-            echo "::error::cutver bump wrote no step outputs; nothing was published."
+          # Fail closed. Every downstream job is gated on `released`, so an output that is missing —
+          # or written with any value other than the two those `if:` conditions compare against —
+          # renders `steps.cutver.outputs.released` empty and skips every gated job: a green run that
+          # published nothing. That is the failure the report-file check caught before this step read
+          # the tool's own channel, and `cutver bump` always writes `true` (or `false` on
+          # `--dry-run`), so `true|false` is the whole legal set.
+          if ! grep -qE '^released=(true|false)$' "$GITHUB_OUTPUT"; then
+            echo "::error::cutver bump wrote no usable 'released' step output; nothing was published."
             exit 1
           fi
         env:

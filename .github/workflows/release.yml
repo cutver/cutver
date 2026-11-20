@@ -160,9 +160,44 @@ jobs:
           GITHUB_TOKEN: ${{ steps.release-token.outputs.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
 
+      # The body is hand-written when the release has notes in the tree. The file is named after the
+      # tag the bump step reported, so the mapping is mechanical, and it is reviewed in the pull
+      # request that produced the release instead of living only on the release page. It is optional:
+      # the template render is the `else` branch, the fallback that keeps the convention from becoming
+      # mandatory, so a release with no notes file behaves exactly as before. It has to stay *inside*
+      # that branch, not on a line after the `fi`: as a neighbour it renders on every dispatch,
+      # overwrites the committed notes and makes the preference dead.
+      #
+      # An empty or whitespace-only notes file fails right here, with a line naming it: `cutver publish
+      # --notes-file -` refuses an empty stream (#306), and that refusal would only arrive after the
+      # bump push and every build and smoke leg, nineteen minutes into a run that then fails at its
+      # last step. It fails rather than falling back because an empty file is an authoring mistake —
+      # someone created it and meant to fill it — so silently shipping the rendered body would hide
+      # it behind a body nobody chose. A notes file written for another tag is named in a warning, so
+      # a mis-named one is visible instead of being quietly replaced by the render; a repository that
+      # keeps no notes files at all gets that scan with no output, because the absent-directory glob
+      # is skipped rather than echoed.
       - name: Render the release notes
         if: steps.cutver.outputs.released == 'true'
-        run: cutver changelog latest --template .github/templates/cutver/RELEASE.md > RELEASE_NOTES.md
+        run: |
+          notes=".github/releases/${{ steps.cutver.outputs.tag }}.md"
+          if [ -f "$notes" ]; then
+            if ! grep -q '[^[:space:]]' "$notes"; then
+              echo "::error::$notes is empty; write the notes or delete the file so the template renders."
+              exit 1
+            fi
+            cp "$notes" RELEASE_NOTES.md
+          else
+            existing=""
+            for other in .github/releases/*.md; do
+              [ -f "$other" ] || continue
+              existing="${existing:+$existing, }$(basename "$other")"
+            done
+            if [ -n "$existing" ]; then
+              echo "::warning::no notes file for ${{ steps.cutver.outputs.tag }}; .github/releases has: $existing. Rendering the template instead."
+            fi
+            cutver changelog latest --template .github/templates/cutver/RELEASE.md > RELEASE_NOTES.md
+          fi
 
       - name: Save Release Notes Artifact
         if: steps.cutver.outputs.released == 'true'

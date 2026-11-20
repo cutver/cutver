@@ -110,6 +110,27 @@ fn declared_outputs(job_body: &str) -> Vec<(String, String)> {
     outputs
 }
 
+/// The `else` and `fi` that belong to the line containing `exists`, as indices into its lines.
+///
+/// "The next `fi`" is the wrong question once the branch holds an `if` of its own: the block that
+/// closes the test is the one at the same indentation, which is also how the shell reads it.
+fn branch_of(text: &str, exists: &str) -> (usize, usize, usize) {
+    let lines: Vec<&str> = text.lines().collect();
+    let indent = |line: &str| line.len() - line.trim_start().len();
+    let at = lines
+        .iter()
+        .position(|line| line.contains(exists))
+        .unwrap_or_else(|| panic!("no line contains `{exists}`: {text}"));
+    let column = indent(lines[at]);
+    let else_at = (at..lines.len())
+        .find(|index| lines[*index].trim() == "else" && indent(lines[*index]) == column)
+        .unwrap_or_else(|| panic!("`{exists}` must have an `else` branch at its own indentation: {text}"));
+    let fi_at = (else_at..lines.len())
+        .find(|index| lines[*index].trim() == "fi" && indent(lines[*index]) == column)
+        .unwrap_or_else(|| panic!("the `else` of `{exists}` must close with its own `fi`: {text}"));
+    (at, else_at, fi_at)
+}
+
 fn declared_plugin() -> PluginConfig {
     let config_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("cutver.toml");
     let cfg = config::load(config_path).expect("the repository cutver.toml must load");
@@ -673,6 +694,283 @@ fn release_notes_artifact_is_kept_but_does_not_feed_the_promotion() {
     assert_eq!(
         promotion, "gh release edit \"$TAG\" --draft=false",
         "the promotion must only publish the draft: a `--title` or a body there overrides the plugin"
+    );
+}
+
+/// S1/S3: the render step prefers a hand-written notes file for the tag being released and keeps the
+/// template render as its fallback, in the same step.
+///
+/// The notes live at `.github/releases/<tag>.md`, so the path comes from the tag the bump step reported
+/// and no convention has to be remembered. The template stays because the convention is optional: a
+/// release with no notes file has to publish exactly the body it publishes today. A pin that only
+/// checked the preferred path would let the fallback be deleted and would turn "optional with
+/// fallback" into "required" — the next dispatch with no notes file would then copy an absent path
+/// and publish nothing. Both halves are read from one step's code, because they are one decision.
+#[test]
+fn the_render_step_prefers_the_per_tag_notes_file_and_keeps_the_template_fallback() {
+    const NOTES_NAME: &str = "notes=\".github/releases/${{ steps.cutver.outputs.tag }}.md\"";
+    const PREFERRED: &str = "cp \"$notes\" RELEASE_NOTES.md";
+    const TEMPLATE: &str = "cutver changelog latest --template .github/templates/cutver/RELEASE.md";
+    let workflow = repo_text(".github/workflows/release.yml");
+    let version = job(&workflow, "version");
+    let step = code(step_containing(version, "name: Render the release notes"));
+
+    assert!(
+        step.contains(NOTES_NAME),
+        "the render step must look for `.github/releases/<tag>.md` using the tag the bump step \
+         reported: a fixed file name renders one release's notes for every release, and the file the \
+         author committed is then read for one tag only: {step}"
+    );
+    assert!(
+        step.contains("if [ -f \"$notes\" ]"),
+        "the render step must test the notes file for existence before using it: copying an absent \
+         path fails the step, so a dispatch with no notes file publishes no body at all: {step}"
+    );
+    let preferred = step.find(PREFERRED).unwrap_or_else(|| {
+        panic!(
+            "the render step must prefer the notes file when it exists: without it the notes are in \
+             the tree, reviewed and never used, and the release ships the commit-level render anyway: {step}"
+        )
+    });
+    let Some(template_line) = step.lines().find(|line| line.contains(TEMPLATE)) else {
+        panic!(
+            "the render step must keep `{TEMPLATE}` as its fallback, in this step: deleting it \
+             turns an optional convention into a mandatory one, and a dispatch with no notes file \
+             publishes no body: {step}"
+        )
+    };
+    assert!(
+        template_line.contains("> RELEASE_NOTES.md"),
+        "the fallback must still write RELEASE_NOTES.md, which is the file the `release-notes` \
+         artifact and `cutver publish` consume: {template_line}"
+    );
+    let template = step
+        .find(TEMPLATE)
+        .expect("the fallback was found on a line of this step");
+    assert!(
+        preferred < template,
+        "the preference must come before the template render, as the branch the existence test falls \
+         through to: a render first makes every hand-written file dead: {step}"
+    );
+}
+
+/// S3a: the template render must be the `else` branch of the existence test, not a line beside it.
+///
+/// Moving the render to a line after the `fi` keeps every string
+/// `the_render_step_prefers_the_per_tag_notes_file_and_keeps_the_template_fallback` looks for, passes
+/// this suite, and makes the preference dead: the render then runs on every dispatch, overwrites the
+/// notes the author committed and every release ships the commit-level body the convention exists to
+/// replace. The branch is what S2 promises, so this pin reads the lines in the order the shell takes
+/// them instead of asking whether each string exists somewhere in the step.
+#[test]
+fn the_fallback_render_is_the_else_branch_of_the_existence_test() {
+    const EXISTS: &str = "if [ -f \"$notes\" ]";
+    const TEMPLATE: &str = "cutver changelog latest --template .github/templates/cutver/RELEASE.md";
+    let workflow = repo_text(".github/workflows/release.yml");
+    let version = job(&workflow, "version");
+    let step = code(step_containing(version, "name: Render the release notes"));
+
+    let (_, branch, end) = branch_of(&step, EXISTS);
+    let render = step
+        .lines()
+        .position(|line| line.contains(TEMPLATE))
+        .unwrap_or_else(|| panic!("the render step must keep `{TEMPLATE}` as its fallback: {step}"));
+    assert!(
+        branch < render && render < end,
+        "the template render must sit between the `else` (line {}) and the `fi` (line {}) of \
+         `{EXISTS}`, and it is on line {}: as a neighbour of that block it renders on every dispatch, \
+         overwrites the notes the author committed and makes the preference dead, so every release \
+         ships the commit-level body while the notes file sits unread in the tree: {step}",
+        branch + 1,
+        end + 1,
+        render + 1
+    );
+}
+
+/// S3a: `RELEASE_NOTES.md` has exactly one writer in the whole workflow, and it is the render step.
+///
+/// The `release-notes` artifact carries that one file to `cutver publish`, which streams it as the
+/// release body. A second writer — another step that redirects into the same path, or copies its own
+/// source over it — means the body comes from two places and which one ships depends on the step
+/// order, not on the file the author committed.
+#[test]
+fn only_the_render_step_writes_the_notes_file_the_artifact_carries() {
+    const NOTES: &str = "RELEASE_NOTES.md";
+    const REDIRECT: &str = "> RELEASE_NOTES.md";
+    const COPY: &str = "cp \"$notes\" RELEASE_NOTES.md";
+
+    /// The lines that write the notes file: a shell redirect into it, a copy that names it as the
+    /// destination, or a `tee`. Reading it is not a write, and the artifact's `path:` and the `cat`
+    /// in the publish job both legitimately name it.
+    fn writers(text: &str) -> Vec<String> {
+        text.lines()
+            .map(str::trim)
+            .filter(|line| {
+                line.contains(NOTES)
+                    && (line.contains(REDIRECT)
+                        || line.contains(">RELEASE_NOTES.md")
+                        || (line.starts_with("cp ") && line.ends_with(NOTES))
+                        || line.contains("tee "))
+            })
+            .map(str::to_string)
+            .collect()
+    }
+
+    let workflow = repo_text(".github/workflows/release.yml");
+    let version = job(&workflow, "version");
+    let step = code(step_containing(version, "name: Render the release notes"));
+    let everywhere = writers(&code(&workflow));
+
+    assert_eq!(
+        everywhere.len(),
+        2,
+        "RELEASE_NOTES.md must have exactly two writes in the whole workflow — the redirect and the \
+         copy that are the two halves of the preference: a third means another step writes the file \
+         the `release-notes` artifact carries, so the release body comes from two places and the last \
+         step to run decides which one ships: {everywhere:?}"
+    );
+    assert_eq!(
+        code(&workflow).matches(REDIRECT).count(),
+        1,
+        "exactly one `{REDIRECT}` redirect must exist in release.yml: a second one renders some other \
+         body over the notes the artifact carries"
+    );
+    assert_eq!(
+        code(&workflow).matches(COPY).count(),
+        1,
+        "exactly one `{COPY}` must exist in release.yml: a second copy makes another source the \
+         release body"
+    );
+    assert_eq!(
+        writers(&step),
+        everywhere,
+        "both writes must live in the render step, not in a step beside it: the `release-notes` \
+         artifact carries whatever that step wrote, so a writer elsewhere is a second author of the \
+         release body: {step}"
+    );
+}
+
+/// S2a: a notes file that exists but carries no text fails at the render step, not at the publish.
+///
+/// `cutver publish --notes-file -` refuses an empty or whitespace-only stream (#306), and that
+/// refusal lands after the bump push and every build and smoke leg: nineteen minutes into a dispatch
+/// that then fails at its last step with the branch already moved. Failing here costs one dispatch.
+/// The guard is `grep -q '[^[:space:]]'` and not `-s`, because a file holding a single newline passes
+/// `-s` and is exactly the file the closing phase refuses.
+///
+/// It fails rather than falling through to the render because an empty file is an authoring mistake —
+/// someone created the file and meant to fill it — so quietly shipping the template body would hide
+/// the mistake behind a body nobody chose.
+#[test]
+fn an_empty_notes_file_fails_at_the_render_step() {
+    const EXISTS: &str = "if [ -f \"$notes\" ]";
+    const GUARD: &str = "if ! grep -q '[^[:space:]]' \"$notes\"; then";
+    const ERROR: &str = "::error::$notes is empty; write the notes or delete the file so the template renders.";
+    const COPY: &str = "cp \"$notes\" RELEASE_NOTES.md";
+    let workflow = repo_text(".github/workflows/release.yml");
+    let version = job(&workflow, "version");
+    let step = code(step_containing(version, "name: Render the release notes"));
+
+    assert!(
+        !step.contains("[ -s \"$notes\" ]"),
+        "the emptiness check must reject whitespace, not just zero bytes: `-s` accepts a file holding \
+         only a newline, the artifact carries it, and `cutver publish` refuses the stream at the end \
+         of the release: {step}"
+    );
+    assert!(
+        step.contains(GUARD),
+        "the render step must test the notes file for content with `{GUARD}`: without it a file that \
+         exists and carries nothing is copied to RELEASE_NOTES.md, and the release fails nineteen \
+         minutes later inside `cutver publish` with the bump already pushed: {step}"
+    );
+    let exists = step.find(EXISTS).expect("the existence test");
+    let guard = step.find(GUARD).expect("the guard was found on a line of this step");
+    let copy = step.find(COPY).expect("the preference copy");
+    assert!(
+        exists < guard && guard < copy,
+        "the emptiness guard must run after the file is found and before it is copied: after the copy \
+         the artifact already carries the empty body, and outside the `if` it rejects the absent file \
+         the fallback exists for: {step}"
+    );
+    assert!(
+        step.contains(ERROR),
+        "the guard must fail with `{ERROR}`: an exit without a line naming the file surfaces as a bare \
+         step failure, and nothing says which notes file is empty: {step}"
+    );
+    assert!(
+        step.contains("exit 1"),
+        "the guard must fail the step, not warn: an `::error::` annotation on a step that goes on to \
+         render would leave the run green with no body: {step}"
+    );
+}
+
+/// S2a: a notes file written for another tag is named, so a mis-named one is visible.
+///
+/// `.github/releases/0.21.0.md` for `v0.21.0` is the mistake this watches for: the tag's file is
+/// absent, the fallback renders, and without a word the release ships the commit-level body while
+/// the notes the author wrote sit in the tree. Naming the files that are there is what makes the
+/// mismatch readable in the log.
+///
+/// A repository that never uses notes files must stay silent: the scan has to tolerate an absent or
+/// empty `.github/releases` with no error and no output, or every release of every project without
+/// the convention carries a warning about a directory that is not meant to exist.
+#[test]
+fn a_notes_file_for_another_tag_is_named_instead_of_silently_ignored() {
+    const EXISTS: &str = "if [ -f \"$notes\" ]";
+    const SCAN: &str = "for other in .github/releases/*.md; do";
+    const SKIP: &str = "[ -f \"$other\" ] || continue";
+    const GUARDED: &str = "if [ -n \"$existing\" ]; then";
+    const WARNING: &str = "::warning::no notes file for ${{ steps.cutver.outputs.tag }}; .github/releases has: ";
+    const TRAILER: &str = ". Rendering the template instead.";
+    let workflow = repo_text(".github/workflows/release.yml");
+    let version = job(&workflow, "version");
+    let step = code(step_containing(version, "name: Render the release notes"));
+
+    assert!(
+        step.contains(SCAN),
+        "the fallback branch must scan `.github/releases/*.md` for notes files of other tags: \
+         without the scan a mis-named file is silently replaced by the commit-level render: {step}"
+    );
+    assert!(
+        step.contains(SKIP),
+        "the scan must skip the unmatched glob with `{SKIP}`: an absent directory leaves the pattern \
+         literal, and a step that then names `.github/releases/*.md` as a notes file warns about a \
+         directory no project without the convention has: {step}"
+    );
+    assert!(
+        step.contains(GUARDED),
+        "the warning must be emitted only when the scan found a file, guarded by `{GUARDED}`: an \
+         unguarded echo warns on every release of a repository that keeps no notes files, and a \
+         warning that always fires is a warning nobody reads: {step}"
+    );
+    assert!(
+        step.contains(WARNING) && step.contains(TRAILER),
+        "the warning must read `{WARNING}<the files>{TRAILER}`: it has to name the tag that has no \
+         notes and the files that exist, and say which body renders instead, or the reader cannot \
+         tell a mis-named file from a release that has none: {step}"
+    );
+    let (_, branch, end) = branch_of(&step, EXISTS);
+    let lines: Vec<&str> = step.lines().collect();
+    let warning = lines
+        .iter()
+        .position(|line| line.contains(WARNING))
+        .expect("the warning was found on a line of this step");
+    assert!(
+        branch < warning && warning < end,
+        "the warning belongs to the fallback branch (lines {}..{}): emitted in the preference branch \
+         it describes a release that is using its notes file, and emitted after the `fi` it fires on \
+         runs that took no fallback: {step}",
+        branch + 1,
+        end + 1
+    );
+    assert!(
+        lines.iter().position(|line| line.contains(SCAN)).expect("the scan")
+            < lines
+                .iter()
+                .position(|line| line.contains(GUARDED))
+                .expect("the list guard"),
+        "the guard has to read a list the scan already filtered, or the pattern itself becomes a \
+         `has:` entry: {step}"
     );
 }
 

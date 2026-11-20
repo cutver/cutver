@@ -3,6 +3,55 @@
 All notable changes to this project are documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com).
 
+## v0.20.0 — 2026-11-20
+
+> [!WARNING]
+> **Breaking changes**
+
+> - **cli**: version every JSON surface and let doctor report drift as data in [#327](https://github.com/cutver/cutver/pull/327) ([ce22249](https://github.com/cutver/cutver/commit/ce22249cead1f313d788b541804dcad51ab60a88)) by @Row0902
+>   > **Migration**: `plugin search --json` emits
+`{"schemaVersion": 1, "plugins": [...]}` instead of a bare array, so callers
+read `.plugins[]` instead of `.[]`. Every other surface keeps its keys, their
+order and their values; `schemaVersion` is the only new key and it is first.
+
+### ✨ Features
+- **ci**: read the release result from the step outputs, not a parsed report in [#342](https://github.com/cutver/cutver/pull/342) ([ed35ccc](https://github.com/cutver/cutver/commit/ed35cccfe6a5a5a999ceef866923412f90e2ac14)) by @Row0902
+- **cli**: speak the CI contract with outputs, a summary and annotations in [#332](https://github.com/cutver/cutver/pull/332) ([e446632](https://github.com/cutver/cutver/commit/e446632c8f0cebac7fc4a398b2367ba04d943526)) by @Row0902
+- **cli**: require attested gates before publishing and report them in the plan in [#331](https://github.com/cutver/cutver/pull/331) ([27b4036](https://github.com/cutver/cutver/commit/27b403667b41e51bcef97efb4f4d63bd7cfb31fc)) by @Row0902
+- **config**: verify declared release artifacts before publish tags in [#330](https://github.com/cutver/cutver/pull/330) ([72cdedb](https://github.com/cutver/cutver/commit/72cdedba587335ef7e4b4be5ec1c7c92d308b1cd)) by @Row0902
+- **cli**: add a read-only plan that turns the release into data in [#329](https://github.com/cutver/cutver/pull/329) ([ed4e7fe](https://github.com/cutver/cutver/commit/ed4e7fe3218bf530b4a49aa39053db4d0fc60019)) by @Row0902
+- **cli**: make a machine failure one JSON envelope on stderr in [#328](https://github.com/cutver/cutver/pull/328) ([5219ea7](https://github.com/cutver/cutver/commit/5219ea7465bb609a199c96b09e73136cc8644ded)) by @Row0902
+- **changelog**: expose grouped sections to release notes templates in [#311](https://github.com/cutver/cutver/pull/311) ([9467646](https://github.com/cutver/cutver/commit/94676467d5a7375f5c994a201f3d953b52cb6d2c)) by @Row0902
+- **publish**: take the release notes from a stream in [#310](https://github.com/cutver/cutver/pull/310) ([fe88de1](https://github.com/cutver/cutver/commit/fe88de1b426faa1b519be781155aeb2bdc0bf08f)) by @Row0902
+
+### 🐛 Fixes
+- **setup**: pin the install action by commit and document what it verifies in [#325](https://github.com/cutver/cutver/pull/325) ([80ebf5e](https://github.com/cutver/cutver/commit/80ebf5e7552c4ae00b94f947f9546d8734b98533)) by @Row0902
+- **hooks**: bound both hooks with the shared supervised spawn in [#314](https://github.com/cutver/cutver/pull/314) ([c63b635](https://github.com/cutver/cutver/commit/c63b635402f352652afd87d7123085814c14515a)) by @Row0902
+- **doctor**: list changelog versions through the tag prefix in [#313](https://github.com/cutver/cutver/pull/313) ([b117673](https://github.com/cutver/cutver/commit/b117673d2f84d466a7a3bb7d4bc34c89ebfaec53)) by @Row0902
+- **changelog**: read headings with the configured tag prefix in [#312](https://github.com/cutver/cutver/pull/312) ([3e61c42](https://github.com/cutver/cutver/commit/3e61c42cec3238269a60abe0c7d69ff0d48a3916)) by @Row0902
+
+### 📚 Documentation
+- **reference**: split the two pages one fact away from the ceiling in [#340](https://github.com/cutver/cutver/pull/340) ([cc1406d](https://github.com/cutver/cutver/commit/cc1406d5d6b4934e944ba3db8531c0a20eb26850)) by @Row0902
+- **guides**: show the plan in the tour and answer for it in the faq in [#339](https://github.com/cutver/cutver/pull/339) ([1f2e335](https://github.com/cutver/cutver/commit/1f2e335d8b0ae09b8b33f25a7cfc8a75a7c188d7)) by @Row0902
+- **guides**: teach the two-phase release with real transcripts in [#338](https://github.com/cutver/cutver/pull/338) ([707f8ca](https://github.com/cutver/cutver/commit/707f8ca5d9c0f6732a2b383249586b700305d8f6)) by @Row0902
+- **templates**: carry the maintenance criterion into the forms in [#337](https://github.com/cutver/cutver/pull/337) ([f34ada2](https://github.com/cutver/cutver/commit/f34ada2e45bf9a07c4c39af0ff2450dd7959165e)) by @Row0902
+- **contract**: make every declaration ship with its check in [#336](https://github.com/cutver/cutver/pull/336) ([00335a8](https://github.com/cutver/cutver/commit/00335a82b20c84e28c5a787ff4b44c88cbaac619)) by @Row0902
+- **tasks**: record the pending work that precedes 4B in [#335](https://github.com/cutver/cutver/pull/335) ([1695813](https://github.com/cutver/cutver/commit/1695813258d5808cec9967db86f1cd526c5d85da)) by @Row0902
+- lead with the two-phase release and add the contributor entry point in [#334](https://github.com/cutver/cutver/pull/334) ([1b5b7e9](https://github.com/cutver/cutver/commit/1b5b7e96cb67f57a8cf08f46f42fcab83dba835d)) by @Row0902
+- **actions**: deprecate cutver/release in favour of the commands in [#323](https://github.com/cutver/cutver/pull/323) ([9f8abaa](https://github.com/cutver/cutver/commit/9f8abaa15fa5b21a1e893538ef5ee8dd9b58bf93)) by @Row0902
+- **plugins**: document the reference plugin, and take the CLI page off its ceiling in [#319](https://github.com/cutver/cutver/pull/319) ([4eb2014](https://github.com/cutver/cutver/commit/4eb201498b953d986bb38a5187835006b3ff8662)) by @Row0902
+- **plugins**: put the concept before the configuration in [#315](https://github.com/cutver/cutver/pull/315) ([140b3d7](https://github.com/cutver/cutver/commit/140b3d7b1e448f7034552731f40237dd3661c901)) by @Row0902
+- **promo**: embed the 57-second film and the accessibility page in [#309](https://github.com/cutver/cutver/pull/309) ([4e07746](https://github.com/cutver/cutver/commit/4e07746a3d01a8bf8bd13304694710da94dfbffc)) by @Row0902
+
+### 🛠️ Maintenance
+- **plugin**: read the envelope before answering in the invalid-semver fixture in [#341](https://github.com/cutver/cutver/pull/341) ([53e0227](https://github.com/cutver/cutver/commit/53e02273db37128f1541ce1dffb93bc4d30b5daf)) by @Row0902
+- **ci**: add a local gate that mirrors CI and a ratchet for the line ceiling in [#333](https://github.com/cutver/cutver/pull/333) ([a1a3030](https://github.com/cutver/cutver/commit/a1a30309cc2cf6bb40d823ffacdba187656b70a1)) by @Row0902
+- **skills**: sync the installed catalog with the corrections in [#320](https://github.com/cutver/cutver/pull/320) ([f748416](https://github.com/cutver/cutver/commit/f748416da5269ba7c0ac594d6e4720ccf0be5d75)) by @Row0902
+
+### 👥 Contributors
+@Row0902
+
+[Compare v0.19.0...v0.20.0](https://github.com/cutver/cutver/compare/v0.19.0...v0.20.0)
 ## v0.19.0 — 2026-11-14
 
 ### 🐛 Fixes

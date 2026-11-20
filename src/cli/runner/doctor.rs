@@ -39,13 +39,18 @@ pub fn run_doctor(config: &config::Config, check_changelog: bool, machine: bool)
     let has_drift = !version_drift.is_empty() || changelog_drift.as_ref().is_some_and(|drift| !drift.is_empty());
 
     if machine {
-        let report = DoctorReport::new(
+        let mut report = DoctorReport::new(
             version_drift
                 .iter()
                 .map(|drift| VersionDriftJson::from_drift(drift, Some(&config.root_dir)))
                 .collect(),
             changelog_drift.as_ref().map(ChangelogDriftJson::from_drift),
         );
+        report.warnings = config
+            .deprecations
+            .iter()
+            .map(|deprecation| deprecation.message())
+            .collect();
         match render_report_json(&report) {
             Ok(text) => println!("{text}"),
             Err(e) => {

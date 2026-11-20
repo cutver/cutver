@@ -132,6 +132,10 @@ pub fn update_existing_config(
         source: e,
     })?;
 
+    // `CONTRACT.md` names `init --update` as a migration-warning surface, and the document is
+    // already parsed here, so the scan costs no extra read and cannot fail twice (#272).
+    crate::warnings::deprecations(&crate::config::deprecations_in_document(&doc));
+
     let mut existing_paths = HashSet::new();
     if let Some(manifests) = doc.get("manifest").and_then(|m| m.as_array_of_tables()) {
         for m in manifests.iter() {

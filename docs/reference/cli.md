@@ -22,7 +22,7 @@ Every JSON surface reports the same outcome and opens with `schemaVersion` ([mac
 channel on — `$GITHUB_OUTPUT`, `$GITHUB_STEP_SUMMARY` and a stderr failure annotation — without
 `GITHUB_ACTIONS` and without a named sink; `--no-ci` turns it off even on a detected CI. Without either
 the channel follows `GITHUB_ACTIONS` reading `true` (trimmed, case-insensitive) plus a named file. It
-never writes stdout, so `--json` is unaffected: [CI output channel](../internals/machine-contract.md#ci-output-channel).
+never writes stdout, so `--json` is unaffected: [CI output channel](../internals/machine-contract-surfaces.md#ci-output-channel).
 
 ## Release Commands
 
@@ -77,7 +77,7 @@ cutver bump minor --defer-publish
 {"released":true,"deferred":false,"version":"0.19.0","tag":"v0.19.0","commit":"abc1234","floating_tag":"v0","publish_push_command":null,"publish_commands":["cargo publish"]}
 ```
 
-`released` is `false` on a `--dry-run`; `floating_tag` is `null` when the run never reached it; `publish_commands` lists the rendered `[publish].commands` and is always an array. `publish_push_command` is the *planned* push line, so it is filled on a `--dry-run` report and `null` on a real run, whose pushes have already happened: read it before the run and confirm the refs afterwards with `git ls-remote origin`. On a detected CI it also fills the runner's sinks ([CI output channel](../internals/machine-contract.md#ci-output-channel)).
+`released` is `false` on a `--dry-run`; `floating_tag` is `null` when the run never reached it; `publish_commands` lists the rendered `[publish].commands` and is always an array. `publish_push_command` is the *planned* push line, so it is filled on a `--dry-run` report and `null` on a real run, whose pushes have already happened: read it before the run and confirm the refs afterwards with `git ls-remote origin`. On a detected CI it also fills the runner's sinks ([CI output channel](../internals/machine-contract-surfaces.md#ci-output-channel)).
 
 ---
 
@@ -96,7 +96,7 @@ cutver plan [LEVEL] [--json] [--skip-preflight <STEP>]... [--first-release]
 | `-fr`, `--fr` | `--first-release` | Plans the initial release: the tag carries the version the manifests already declare. |
 | `-c <PATH>` | `--config <PATH>` | Explicit path to `cutver.toml`. |
 
-`notes` is the rendered changelog entry, produced without writing the file, and `phases` is the release in order (`validate`, `mutate`, `publish`) with the steps each phase would run. The guards that abort a real `bump` — dirty tree, required branch, an existing release tag, an invalid tag name — arrive as one-line `blockers`, and the command still exits `0`; exit `1` means no plan could be computed. Every key, including `gates`, is documented in the [machine contract](../internals/machine-contract.md).
+`notes` is the rendered changelog entry, produced without writing the file, and `phases` is the release in order (`validate`, `mutate`, `publish`) with the steps each phase would run. The guards that abort a real `bump` — dirty tree, required branch, an existing release tag, an invalid tag name — arrive as one-line `blockers`, and the command still exits `0`; exit `1` means no plan could be computed. Every key, including `gates`, is documented in the [machine surfaces reference](../internals/machine-contract-surfaces.md).
 
 ---
 
@@ -126,7 +126,7 @@ cutver publish --tag v1.3.0 --commit "$(git rev-parse HEAD)" --notes-file RELEAS
 
 ### `cutver attest`
 
-Records a gate's verdict for a commit, so `publish` can require it: `cutver attest <GATE> --commit <SHA> --conclusion success|failure [--run <URL>]` writes one JSON object into `[gates] dir` (default `.cutver/attestations`). The verdict is recorded, never verified: `cutver` signs nothing and talks to no network, so an attestation is only as trustworthy as the machine that wrote it ([the trust boundary](configuration.md#gates)).
+Records a gate's verdict for a commit, so `publish` can require it: `cutver attest <GATE> --commit <SHA> --conclusion success|failure [--run <URL>]` writes one JSON object into `[gates] dir` (default `.cutver/attestations`). The verdict is recorded, never verified: `cutver` signs nothing and talks to no network, so an attestation is only as trustworthy as the machine that wrote it ([the trust boundary](configuration-tables.md#gates)).
 
 | Flag | Long Option | Description |
 | :--- | :--- | :--- |

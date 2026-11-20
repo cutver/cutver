@@ -7,7 +7,7 @@ use std::time::Duration;
 use sha2::{Digest, Sha256};
 
 use crate::plugin::cache::PluginCacheRoot;
-use crate::plugin::driver::{PluginDriver, resolve_env_grants};
+use crate::plugin::driver::{PluginDriver, env_grants_from_lookup};
 use crate::plugin::dto::PluginInvocation;
 use crate::plugin::error::PluginError;
 use crate::plugin::types::{Capability, PermissionsConfig, PluginName};
@@ -33,6 +33,9 @@ impl std::fmt::Debug for WasmDriver {
 
 impl WasmDriver {
     /// Creates a new sandboxed `WasmDriver`.
+    ///
+    /// Boundary constructor binding the grant resolution to the process environment; a caller that
+    /// already has a lookup (the plugin factory, and every test) uses [`Self::from_env_lookup`].
     pub fn new(
         name: PluginName,
         wasm_bytes: &[u8],
@@ -41,8 +44,33 @@ impl WasmDriver {
         capabilities: HashSet<Capability>,
         expected_hash: Option<&str>,
     ) -> Result<Self, PluginError> {
+        Self::from_env_lookup(
+            name,
+            wasm_bytes,
+            permissions,
+            timeout_secs,
+            capabilities,
+            expected_hash,
+            |key| std::env::var(key).ok(),
+        )
+    }
+
+    /// Creates a new sandboxed `WasmDriver` resolving its grants through `lookup`.
+    ///
+    /// An unset declared grant fails construction here rather than reaching the guest as an empty
+    /// config value, because the grant authority is shared with the process runtime.
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_env_lookup(
+        name: PluginName,
+        wasm_bytes: &[u8],
+        permissions: &PermissionsConfig,
+        timeout_secs: Option<u64>,
+        capabilities: HashSet<Capability>,
+        expected_hash: Option<&str>,
+        lookup: impl Fn(&str) -> Option<String>,
+    ) -> Result<Self, PluginError> {
         verify_sha256(&name, wasm_bytes, expected_hash)?;
-        let manifest = build_manifest(&name, wasm_bytes, permissions, timeout_secs)?;
+        let manifest = build_manifest(&name, wasm_bytes, permissions, timeout_secs, &lookup)?;
         let plugin = build_plugin(&name, manifest)?;
 
         Ok(Self {
@@ -118,6 +146,7 @@ fn build_manifest(
     wasm_bytes: &[u8],
     permissions: &PermissionsConfig,
     timeout_secs: Option<u64>,
+    lookup: &dyn Fn(&str) -> Option<String>,
 ) -> Result<extism::Manifest, PluginError> {
     let mut manifest = extism::Manifest::new([extism::Wasm::data(wasm_bytes.to_vec())]);
 
@@ -133,7 +162,7 @@ fn build_manifest(
 
     // The grant authority is shared with the process runtime, so an unset declared key fails
     // here instead of reaching the guest as an empty string.
-    for (key, value) in resolve_env_grants(name, &permissions.env)? {
+    for (key, value) in env_grants_from_lookup(name, &permissions.env, lookup)? {
         manifest = manifest.with_config_key(key, value);
     }
 

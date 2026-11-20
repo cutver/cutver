@@ -2,7 +2,7 @@
 
 use std::collections::HashSet;
 
-use crate::plugin::driver::{PluginDriver, ProcessDriver, resolve_env_grants};
+use crate::plugin::driver::{PluginDriver, ProcessDriver, env_grants_from_lookup};
 use crate::plugin::error::PluginError;
 use crate::plugin::types::{PluginConfig, PluginName, RuntimeKind};
 
@@ -10,25 +10,44 @@ use crate::plugin::types::{PluginConfig, PluginName, RuntimeKind};
 pub const DEFAULT_PLUGIN_TIMEOUT_SECS: u64 = 30;
 
 /// Creates a driver instance for a plugin based on its runtime configuration.
-pub(crate) fn create_driver(name: &PluginName, config: &PluginConfig) -> Result<Box<dyn PluginDriver>, PluginError> {
+///
+/// `lookup` is the environment seam every runtime resolves its declared grants through, so a test
+/// drives the whole factory with an injected map instead of mutating the process environment.
+pub(crate) fn create_driver(
+    name: &PluginName,
+    config: &PluginConfig,
+    lookup: &dyn Fn(&str) -> Option<String>,
+) -> Result<Box<dyn PluginDriver>, PluginError> {
     match config.runtime {
-        RuntimeKind::Wasm => create_wasm_runtime_driver(name, config),
-        RuntimeKind::Process => create_process_driver(name, config),
+        RuntimeKind::Wasm => create_wasm_runtime_driver(name, config, lookup),
+        RuntimeKind::Process => create_process_driver(name, config, lookup),
     }
 }
 
 #[cfg(not(feature = "plugins"))]
-fn create_wasm_runtime_driver(name: &PluginName, _config: &PluginConfig) -> Result<Box<dyn PluginDriver>, PluginError> {
+fn create_wasm_runtime_driver(
+    name: &PluginName,
+    _config: &PluginConfig,
+    _lookup: &dyn Fn(&str) -> Option<String>,
+) -> Result<Box<dyn PluginDriver>, PluginError> {
     Err(PluginError::WasmNotSupported { name: name.clone() })
 }
 
 #[cfg(feature = "plugins")]
-fn create_wasm_runtime_driver(name: &PluginName, config: &PluginConfig) -> Result<Box<dyn PluginDriver>, PluginError> {
-    create_wasm_driver(name, config)
+fn create_wasm_runtime_driver(
+    name: &PluginName,
+    config: &PluginConfig,
+    lookup: &dyn Fn(&str) -> Option<String>,
+) -> Result<Box<dyn PluginDriver>, PluginError> {
+    create_wasm_driver(name, config, lookup)
 }
 
 #[cfg(feature = "plugins")]
-fn create_wasm_driver(name: &PluginName, config: &PluginConfig) -> Result<Box<dyn PluginDriver>, PluginError> {
+fn create_wasm_driver(
+    name: &PluginName,
+    config: &PluginConfig,
+    lookup: &dyn Fn(&str) -> Option<String>,
+) -> Result<Box<dyn PluginDriver>, PluginError> {
     let source = config
         .source
         .as_deref()
@@ -41,20 +60,25 @@ fn create_wasm_driver(name: &PluginName, config: &PluginConfig) -> Result<Box<dy
     let bytes = crate::plugin::driver::wasm::load_wasm_bytes(name, source, config.hash.as_deref())?;
     let capabilities = config.capabilities.iter().copied().collect::<HashSet<_>>();
 
-    let driver = crate::plugin::driver::WasmDriver::new(
+    let driver = crate::plugin::driver::WasmDriver::from_env_lookup(
         name.clone(),
         &bytes,
         &config.permissions,
         config.timeout_seconds,
         capabilities,
         config.hash.as_deref(),
+        lookup,
     )?;
 
     Ok(Box::new(driver))
 }
 
 /// Creates a `ProcessDriver` from plugin configuration.
-fn create_process_driver(name: &PluginName, config: &PluginConfig) -> Result<Box<dyn PluginDriver>, PluginError> {
+fn create_process_driver(
+    name: &PluginName,
+    config: &PluginConfig,
+    lookup: &dyn Fn(&str) -> Option<String>,
+) -> Result<Box<dyn PluginDriver>, PluginError> {
     let command = config
         .command
         .as_deref()
@@ -68,7 +92,7 @@ fn create_process_driver(name: &PluginName, config: &PluginConfig) -> Result<Box
     let capabilities = config.capabilities.iter().copied().collect::<HashSet<_>>();
     // Resolved through the shared grant authority: the child is spawned with a cleared
     // environment, so this map is the complete set of keys the plugin can read.
-    let granted = resolve_env_grants(name, &config.permissions.env)?;
+    let granted = env_grants_from_lookup(name, &config.permissions.env, lookup)?;
 
     Ok(Box::new(ProcessDriver::new(
         name.clone(),

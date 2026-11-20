@@ -114,13 +114,11 @@ fn test_from_config_wasm_registers_driver() {
 
 /// The process runtime resolves `[plugins.<name>.permissions] env` through the shared grant
 /// authority, so an unset grant fails closed when the driver is built instead of the child
-/// inheriting the whole parent environment (issue #264).
+/// inheriting the whole parent environment (issue #264). The lookup is injected, so both cases are
+/// proven without mutating the process environment (#344).
 #[test]
 fn test_from_config_process_env_grant_is_resolved() {
     const KEY: &str = "CUTVER_TEST_UNSET_FACTORY_GRANT";
-    unsafe {
-        std::env::set_var(KEY, "granted-value");
-    }
 
     let name = PluginName::new("env-grant-plugin").unwrap();
     let config = PluginConfig {
@@ -141,15 +139,11 @@ fn test_from_config_process_env_grant_is_resolved() {
 
     let mut map = HashMap::new();
     map.insert(name.clone(), config);
-    assert!(
-        PluginManager::from_config(&map).is_ok(),
-        "a declared grant that is set must resolve"
-    );
+    let granted = PluginManager::from_config_with_lookup(&map, &|key| Some(format!("{key}-value")))
+        .expect("a declared grant that is set must resolve");
+    assert!(granted.driver(&name).is_some(), "the driver must be registered");
 
-    unsafe {
-        std::env::remove_var(KEY);
-    }
-    let err = PluginManager::from_config(&map).unwrap_err();
+    let err = PluginManager::from_config_with_lookup(&map, &|_| None).unwrap_err();
 
     match err {
         PluginError::UnsetEnvGrant {

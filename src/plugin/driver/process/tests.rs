@@ -1,11 +1,13 @@
 //! Behaviour tests for the process plugin driver.
 //!
-//! The isolation tests fail closed on an environment that is not the one the driver promises:
-//! the child runs with `env_clear()`, so a key set in the parent but not granted must never
-//! appear in what the plugin prints (issue #264).
+//! The isolation tests fail closed on an environment that is not the one the driver promises: the
+//! child runs with `env_clear()`, so a key the driver was not handed must never appear in what the
+//! plugin prints (issue #264). Since #344 nothing here mutates the process environment: the map is
+//! built in the test and passed to the driver, and `tests/process_driver_env_isolation.rs` proves
+//! the clearing itself against keys this process really carries.
 
 use super::*;
-use crate::plugin::driver::resolve_env_grants;
+use crate::plugin::driver::{env_grants_from_lookup, resolve_env_grants};
 use crate::plugin::types::PluginCall;
 
 #[test]
@@ -183,41 +185,36 @@ fn shell_env() -> BTreeMap<String, String> {
     resolve_env_grants(&plugin, &keys).expect("the platform shell needs these keys to start")
 }
 
-/// S1: the granted key reaches the plugin and an ungranted parent key does not.
+/// S4: the granted key reaches the plugin and a key that was never granted does not.
 #[test]
 fn test_only_granted_env_keys_reach_the_plugin() {
     const GRANTED: &str = "CUTVER_TEST_GRANTED_KEY";
     const WITHHELD: &str = "CUTVER_TEST_WITHHELD_SECRET";
-    unsafe {
-        std::env::set_var(GRANTED, "granted-value");
-        std::env::set_var(WITHHELD, "withheld-value");
-    }
 
     let name = PluginName::new("env-plugin").unwrap();
     let mut caps = HashSet::new();
     caps.insert(Capability::ManifestV1);
     let (cmd, args) = env_dump_command();
 
-    let granted = resolve_env_grants(&name, &[GRANTED.to_string()]).expect("the granted key is set");
+    // The map is built here and handed straight to the driver, so the test never mutates the
+    // process environment (#344). `WITHHELD` is a key of our own naming and is absent from the
+    // parent too, so this half states what the map contains — the clearing itself is proven by
+    // `tests/process_driver_env_isolation.rs`.
+    let granted = BTreeMap::from([(GRANTED.to_string(), "granted-value".to_string())]);
     let driver = ProcessDriver::new(name, cmd, args, granted, 5, caps);
     let invocation = PluginInvocation::new(PluginCall::ManifestRead, &serde_json::json!({})).unwrap();
     let output = driver.invoke(&invocation).expect("the environment dump must run");
-
-    unsafe {
-        std::env::remove_var(GRANTED);
-        std::env::remove_var(WITHHELD);
-    }
 
     let printed = String::from_utf8_lossy(&output);
     // Neither message formats `printed`: a regression here would dump the inherited environment,
     // and on CI that environment carries the release tokens (native review, R1-001).
     assert!(
-        printed.contains("CUTVER_TEST_GRANTED_KEY=granted-value"),
+        printed.contains(&format!("{GRANTED}=granted-value")),
         "the granted key must reach the plugin; the dump is withheld because it may contain credentials"
     );
     assert!(
-        !printed.contains("CUTVER_TEST_WITHHELD_SECRET"),
-        "a parent key that is not granted must never reach the plugin; the dump is withheld because it \
+        !printed.contains(WITHHELD),
+        "a key that is not granted must never reach the plugin; the dump is withheld because it \
          may contain credentials"
     );
 }
@@ -331,17 +328,15 @@ fn test_a_descendant_holding_stdin_cannot_outlive_the_timeout() {
 }
 
 /// S4: a declared but unset grant is an error naming the plugin and the key, never an empty
-/// string handed to the plugin. `resolve_env_grants` is the authority the process factory and the
-/// WASM manifest builder both resolve their grants through.
+/// string handed to the plugin. `env_grants_from_lookup` is the authority the process factory and
+/// the WASM manifest builder both resolve their grants through, and the injected lookup stands in
+/// for the process environment (#344).
 #[test]
 fn test_declared_but_unset_grant_names_plugin_and_key() {
     const KEY: &str = "CUTVER_TEST_UNSET_GRANT_KEY";
-    unsafe {
-        std::env::remove_var(KEY);
-    }
 
     let name = PluginName::new("grant-plugin").unwrap();
-    let err = resolve_env_grants(&name, &[KEY.to_string()]).expect_err("an unset grant must fail");
+    let err = env_grants_from_lookup(&name, &[KEY.to_string()], |_| None).expect_err("an unset grant must fail");
     let message = err.to_string();
 
     match err {
@@ -362,5 +357,27 @@ fn test_declared_but_unset_grant_names_plugin_and_key() {
     assert!(
         message.contains("[plugins.grant-plugin.permissions]"),
         "message must name the grant it failed to resolve: {message}"
+    );
+}
+
+/// S3: the pure resolver answers from the injected lookup alone. A present key keeps its value, and
+/// a key the lookup cannot produce is an error — which is also what a non-UTF-8 value looks like,
+/// because the boundary adapter is `|key| std::env::var(key).ok()` — never a silent empty string.
+#[test]
+fn test_injected_lookup_is_the_only_input_to_the_resolver() {
+    let name = PluginName::new("lookup-plugin").unwrap();
+    let declared = vec!["CUTVER_TEST_LOOKUP_PRESENT".to_string()];
+    let key = declared[0].clone();
+
+    let grants = env_grants_from_lookup(&name, &declared, |asked| {
+        (asked == key).then(|| "present-value".to_string())
+    })
+    .expect("a key the lookup produces resolves to its value");
+    assert_eq!(grants, BTreeMap::from([(key.clone(), "present-value".to_string())]));
+
+    let err = env_grants_from_lookup(&name, &declared, |_| None).expect_err("a key the lookup cannot produce fails");
+    assert!(
+        matches!(&err, PluginError::UnsetEnvGrant { key: err_key, .. } if err_key == &key),
+        "expected UnsetEnvGrant naming the key, got {err:?}"
     );
 }

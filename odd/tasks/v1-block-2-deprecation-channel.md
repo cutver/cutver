@@ -1,5 +1,7 @@
 # v1.0 block 2 — the deprecation channel (#272)
 
+**Closed.** Merged as `256a9e8` (PR #348, 2026-11-20); #272 closed by the merge.
+
 Block 2 of the v1.0 program (#346): a surface is deprecated **before** it is removed, and the warning reaches the human
 who has to act on it and the machine that has to report it. Branch: `feat/346-block-2-deprecation-channel`.
 
@@ -58,7 +60,7 @@ surfaces pinned by #347 keep their required key sets (`tests/schema_compat.rs`).
 | T4 | `init --update` migration warning, before its early return | S7 | inline | 7ceb361 |
 | T5 | Pins: deprecated loads, inline table and array forms, dedupe, unknown still fails, CI annotation, registry completeness | S1, S8, S9 | inline | 0583d33, 7ceb361 |
 | T6 | Docs: configuration reference aliases, machine contract, `CONTRACT.md` Pillar IV.2/VII.2, doctor surface | S2, S6 | inline | _this commit_ |
-| T7 | Independent verification (`gentle-ai-verify`: no blockers, S1-S9 reproduced) and the #346 comment | all | `gentle-ai-verify` | n/a |
+| T7 | Independent verification (`gentle-ai-verify`: no blockers, S1-S9 reproduced), the #346 comments, and the merge | all | `gentle-ai-verify` | 256a9e8 |
 
 ## Log
 
@@ -111,3 +113,8 @@ while a suite can fail a run in N.
 work-unit commits were replayed so the slice that introduced the file is the slice that compiles clean, and
 `scripts/check.sh` then passed 9/9 — the only step not run is the plugins cross-target clippy, which needs
 `x86_64-linux-gnu-gcc` that this host does not have.
+
+**L10 — merged.** PR #348 squash-merged as `256a9e8` on 2026-11-20, CI green on all seven required legs, macOS included;
+#272 closed by the merge. The only red the PR ever showed was `Exactly one type label`, which is the repository's own
+gate asking for a `type:*` label — the fix was a label, not code, and it belongs in the standing checklist for the next
+PR. The branch is deleted; `main` is the record.

@@ -19,18 +19,25 @@ record; this block says what has since changed, so nobody implements an already-
 | Finding | State |
 | --- | --- |
 | F-01 `main` unprotected | **Fixed** — #257, ruleset `main: required gates` (id 27202161) requiring `CI gate` + `Exactly one type label`, one bypass actor: the `cutver-release` app |
-| F-07 tag collision fails open | **Open** — #262 |
+| F-07 tag collision fails open | **Fixed** — #262, merged `f07e04e`: a failed `ls-remote` is the typed `RemoteUnreachable` (`src/git/tags.rs:31-48`) instead of `Ok(None)` read as "no tag on the remote", so an unreachable remote aborts before anything is written |
 | F-08 force tag ops / `push --tags` | **Fixed** — #263, one named ref per push, force only on the floating tag after success |
 | F-02 container image | **Fixed** — #258: the builder stage copies the template it compiles in, `.github/` left `.dockerignore`, and `container.yml` now builds the image on `pull_request`; the published image returns with the next release |
 | F-03 publish ordering | **Fixed** — #259, merged `157ea25`: `bump --defer-publish` stops after the branch push and `cutver publish` creates the tag, publishes the crate and opens the draft only after every smoke job is green; the container build pushes a rehearsal tag and the verified digest is promoted afterwards |
 | F-04 `release-assets.yml` | **Fixed** — #260: deleted. `release.yml` is the only path that builds, smokes and publishes release assets, and the only one that owns the release title and body |
 | F-05 dead `Dockerfile` | **Fixed** — #258: deleted, and `tests/container_build_inputs.rs` keeps it gone |
-| F-06 rollback writes `""` | **Open** — #261 |
+| F-06 rollback writes `""` | **Fixed** — #261, merged `1e99081` and `f07e04e`: an unreadable manifest is a refusal instead of an empty backup, and `MutationTransaction::abort` folds every `RollbackFailure` into the error it returns (`src/bump/exec/transaction.rs:14-95`) instead of discarding it |
 | F-09 point of no return | **Fixed** — #265, merged `7019e02`: the tag name is validated in Phase 1 before any write, and the five post-commit errors name the landed commit and assert no remote state at all |
-| F-10 / F-11 plugin authority | **Open** — #264 |
+| F-10 / F-11 plugin authority | **Fixed** — #264, merged `2c1c2b0`: the process runtime spawns with `.env_clear()` and then exactly the granted keys (`src/plugin/driver/process.rs:77`), an unset grant is the typed `UnsetEnvGrant`, and the whole invocation exchange is bounded by `timeout_seconds` |
 | F-12 error-swallow sweep, changelog half | **Fixed** — branch `feat/changelog-prefix-authority`: `cutver changelog latest --json` and `changelog show <version> --json` exit `1` with the git error on stderr instead of reporting an empty `"commits"` as success. The `manifest`, `doctor`, `process` and `wasm` reads stay open with the rest of F-12 |
 | F-13 tag/version-prefix authorities | **Fixed** — `c8f1349` closed the changelog read surface, merged `3e61c42` (#312): `git::types` holds both strip rules (the tag-ref form and the heading form), and the extractor plus `changelog show`/`latest` route through them, so a custom `[git] tag_prefix` matches its own headings. `changelog open` never read the changelog and already built its URL from `[git] tag_prefix`, so it was not broken. The doctor half closes with this record, in `fix/doctor-changelog-prefix` (its commit lands after the record): `doctor --check-changelog` now lists through `changelog::list_versions_with_prefix` under the configured `[git] tag_prefix` instead of the legacy hardcoded-`v` path (`bump/exec/doctor.rs`), so doctor and `changelog latest` no longer disagree about the same repository |
-| F-12…F-20, pre-registered 2 | **Open** — #266…#272, #268 |
+| F-12…F-20, pre-registered 2 | **Partly closed** — still open: #266, #267, #268. Closed since: #261, #262, #264 (rows above), #269 (`src/bump/exec/hooks.rs:91`: the hooks share `run_supervised`, so they have both the deadline and the tree kill), #270 (`7f6ff96`), #271 (`47f4afe`), #272 (`256a9e8`). Findings opened *after* this audit live in #288, #295, #300, #302, #316 and #317 |
+
+**Re-verified 2026-11-21 at v0.21.0 (`d829a2d`).** The four rows that read `Open` were the stale
+ones: F-06, F-07 and F-10/F-11 are fixed in the source and only their issues had stayed open, while
+#269, #270, #271 and #272 closed without this table following them. Every remaining `Fixed` row was
+read again and still holds. Treat this table as an index into the code, never as the answer — the
+purpose of the block is that nobody reimplements a closed finding, and it cannot serve that purpose
+while it disagrees with `src/`.
 
 Two facts from this audit were later corrected by measurement, and the corrections are worth keeping:
 the release push runs **before** `cargo publish` (`pipeline.rs:116` vs `:117`), so a rejected push does

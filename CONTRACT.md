@@ -232,3 +232,28 @@ Crossing this boundary is a **judgement** call for the maintainer, stated in the
 - **A break is a major bump with a deprecation cycle**, not a release: the old surface keeps working and warns, and the removal happens in a later release than the rename. The channel is live (#272): one table of deprecated spellings in `src/config/deprecations.rs`, a `warning: …` line on stderr always, the same sentence as a `::warning::` annotation under CI, and the sentence as data in `doctor --json`.
 - **A surface is never removed in the release that renames it.** Renames take two releases at minimum.
 - Configuration compatibility is a separate promise, stated for `cutver.toml` in **Pillar IV.2**.
+
+---
+
+## What the 1.0 Freeze Covers
+
+`1.0` is a compatibility milestone: the release that turns every documented surface into a promise. What it freezes is
+what a consumer parses and depends on — the machine surfaces, the configuration promise, the release transaction and
+the plugin ABI. The judgement obligations above are not that, so they are classified here instead of being argued at
+the release. A condition that a person can satisfy by declaring it satisfied is not a condition.
+
+| Judgement obligation | Where it lives | In the freeze | Why |
+| :--- | :--- | :--- | :--- |
+| Whether `foo.rs` becomes `foo.rs` + `foo/` | `350-line facade trigger`; `Module Budget & No Legacy mod.rs` | **Outside** | Internal code organization: the seam is a design choice no consumer can observe, and the machine-decidable half (the enforced $\le$ 400 ceiling) is already enforced. |
+| Whether a narrative page still tells the truth | `Documentation freshness` | **Outside** | No machine can read whether a sentence is still true. Presence and parseability are already enforced by `cli_reference_parity` and `documentation_examples`, which is as far as a test can honestly go. |
+| Which object a check reads | `One object per check` | **Outside** | Review owns it, and it stays a defect whatever the version number: a green check answering a question nobody asked is not a promise a consumer can hold this release to. |
+| The ambient state a subprocess inherits | `No inherited ambient state` | **Outside** | The `tests/e2e_*` suites catch a regression of this shape without proving the property, so nothing about it can be frozen as a surface a consumer parses. |
+| Crossing the Pillar VII scope boundary | `What cutver May Become` | **Outside** | A product decision, stated in the pull request and recorded in the changelog. Growth is welcome and scope is decided; a version number does not declare it. |
+
+Two rules keep this list honest, and `tests/freeze_scope_list.rs` enforces both:
+
+- **Every judgement obligation is classified.** The pin derives each one from this document — the `Judgement` row of the
+  limits table, and every judgement-worded clause inside a pillar — and fails when one is not named by a row above,
+  reporting the clause and its line.
+- **No invented classification.** A row naming an obligation this document does not carry fails too, so the list cannot
+  drift into decoration as the contract changes underneath it.

@@ -776,13 +776,10 @@ fn test_external_subcommand_dispatch_and_exit_code() {
     new_path.push(sep);
     new_path.push(&orig_path);
 
-    unsafe {
-        std::env::set_var("PATH", &new_path);
-    }
-    let code = run_external(&["mock".to_string(), "--foo".to_string()]);
-    unsafe {
-        std::env::set_var("PATH", orig_path);
-    }
+    // The search path is an argument, so this fixture states it instead of writing it to the
+    // process: `set_var` is undefined behaviour while other threads in this binary read the
+    // environment (#352), and `shell_env()` does exactly that.
+    let code = run_external_with_path(&["mock".to_string(), "--foo".to_string()], Some(new_path));
 
     assert_eq!(code, 42);
 }

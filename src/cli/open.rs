@@ -135,11 +135,23 @@ fn has_wslview() -> bool {
 
 /// Resolves the browser command and arguments honoring overrides and environment.
 pub fn resolve_browser_command(browser_override: Option<&str>) -> (String, Vec<String>) {
+    resolve_browser_command_with_env(browser_override, |key| std::env::var(key).ok())
+}
+
+/// Resolves the browser command with `BROWSER` taken from `lookup` instead of the process.
+///
+/// The process environment is read at exactly one place, [`resolve_browser_command`]; everything
+/// below the boundary takes the value as an argument, so a test can state what `BROWSER` says
+/// without writing to a variable every other thread in the test binary can read (#352).
+pub fn resolve_browser_command_with_env(
+    browser_override: Option<&str>,
+    lookup: impl Fn(&str) -> Option<String>,
+) -> (String, Vec<String>) {
     if let Some(custom) = browser_override {
         return (custom.to_string(), Vec::new());
     }
 
-    if let Ok(env_browser) = std::env::var("BROWSER") {
+    if let Some(env_browser) = lookup("BROWSER") {
         let trimmed = env_browser.trim();
         if !trimmed.is_empty() {
             return (trimmed.to_string(), Vec::new());
@@ -277,15 +289,20 @@ mod tests {
         let (cmd, args) = resolve_browser_command(Some("my-browser"));
         assert_eq!(cmd, "my-browser");
         assert!(args.is_empty());
+    }
 
-        unsafe {
-            std::env::set_var("BROWSER", "custom-env-browser");
-        }
-        let (cmd, args) = resolve_browser_command(None);
+    /// `BROWSER` comes from the injected lookup, never from the process: `tests/e2e_open.rs` runs
+    /// the real binary with `.env("BROWSER", "true")` and covers the thin adapter.
+    #[test]
+    fn test_resolve_browser_command_takes_browser_from_the_lookup() {
+        let lookup = |key: &str| (key == "BROWSER").then(|| "custom-env-browser".to_string());
+        let (cmd, args) = resolve_browser_command_with_env(None, lookup);
         assert_eq!(cmd, "custom-env-browser");
         assert!(args.is_empty());
-        unsafe {
-            std::env::remove_var("BROWSER");
-        }
+
+        // Control: with nothing injected the platform default answers, so the value above came
+        // from the lookup rather than from whatever the process happens to hold.
+        let (default, _) = resolve_browser_command_with_env(None, |_| None);
+        assert_ne!(default, "custom-env-browser");
     }
 }

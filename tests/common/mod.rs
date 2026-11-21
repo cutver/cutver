@@ -122,28 +122,14 @@ pub fn init_git_repo(fixture: &Fixture) {
 
 pub fn initial_commit(fixture: &Fixture) {
     run_git_ok(&fixture.dir, &["add", "-A"]);
-    // #307: a `minor` or `major` release must declare what it does about compatibility, and a fixture
-    // that tags its first release carries this commit inside the range it bumps over. The
-    // reviewed-none footer is that declaration: the scaffold adds the project's own files and
-    // changes no contract a caller can see.
-    //
-    // This is fixture scaffolding, not coverage of the gate. A test that wants to observe the guard
-    // must not rely on it: `tests/breaking_change_declaration.rs` is the only suite that exercises
-    // the rule, with ranges that declare nothing, declare `BREAKING CHANGE:`, or mention the footer
-    // in prose instead of a footer. Every other fixture releases over this declaration, so it is
-    // silent about #307 by construction.
-    run_git_ok(
-        &fixture.dir,
-        &[
-            "commit",
-            "-m",
-            "chore: scaffold the fixture",
-            "-m",
-            "NO-BREAKING-CHANGE: the scaffold adds the project's own files and changes no released \
-             contract",
-            "-q",
-        ],
-    );
+    // `init` is deliberately not a conventional commit. #307 asks a `minor` or `major` release to
+    // declare what it does about compatibility, but a range starts at the previous tag, so this
+    // commit is never inside a tagged range and a declaration here would buy nothing — while a
+    // conventional message would render a section ("chore" renders Maintenance) in every fixture
+    // whose range does include it, changing what those tests read. A fixture that tags and then
+    // bumps over feature commits declares in those commits; `tests/breaking_change_declaration.rs`
+    // is the only suite that exercises the guard itself.
+    run_git_ok(&fixture.dir, &["commit", "-m", "init", "-q"]);
 }
 
 pub fn commit_count(fixture: &Fixture) -> usize {

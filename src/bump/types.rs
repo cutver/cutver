@@ -122,6 +122,10 @@ pub enum Error {
         #[source]
         source: io::Error,
     },
+    #[error(
+        "the {level} release over '{range}' declares no compatibility decision\n  Where: the commit range '{range}', before any file, commit or tag is written\n  Fix: declare what this release does about compatibility in a commit inside that range: `BREAKING CHANGE: <migration>` (or `BREAKING-CHANGE:`, or a `!` after the type, as in `feat(api)!: rewrite the parser`) when it breaks, or `NO-BREAKING-CHANGE: <why this release stays compatible>` when it does not. A `patch` release needs neither declaration. Nothing was written, staged, committed or tagged."
+    )]
+    UndeclaredCompatibility { level: String, range: String },
     #[error("release tag {tag} already exists (points at {commit}) — resolve it before re-running")]
     TagExists { tag: String, commit: String },
     #[error(

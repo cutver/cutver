@@ -43,7 +43,7 @@ mod resolve;
 mod tests;
 
 use self::finish::{PlanArtifact, PlanGate};
-use self::guards::{branch_blocker, collision_blocker, dirty_tree_blocker, one_line};
+use self::guards::{branch_blocker, collision_blocker, dirty_tree_blocker, one_line, undeclared_compatibility};
 use self::resolve::resolve_next_version;
 /// How the release described by the plan will treat its changelog entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -254,7 +254,22 @@ impl ReleasePlan {
             request.first_release,
             plugin_manager.as_ref(),
         )?;
+        // The level the release cuts, resolved before the guard that reads it. `initial` is reported
+        // for `auto` on a first release and for nothing else: an explicitly named level is reported
+        // as named, and the guard exempts a first release on its missing previous tag instead.
+        let level = match (&rationale, request.level) {
+            (_, BumpLevel::Auto) if request.first_release => "initial".to_string(),
+            (Some(deduced), BumpLevel::Auto) => bump_level_name(deduced.level.into()).to_string(),
+            (_, level) => bump_level_name(level).to_string(),
+        };
         let tag = git::tag_name(&config.git.tag_prefix, &next.to_string());
+        // #307: a non-patch release declares what it does about compatibility before anything is
+        // written — a breaking change, or the reviewed-none footer.
+        match undeclared_compatibility(repo, &level, prev_tag.as_deref(), auto_commits.as_deref()) {
+            Ok(()) => {}
+            Err(err) if read_only => blockers.push(one_line(&err.to_string())),
+            Err(err) => return Err(err),
+        }
         // Phase 1: the tag name is validated before anything is written. `git::tag_name` only
         // concatenates, so an invalid `tag_prefix` used to surface when `git tag` ran — after the
         // release commit existed (#265, finding F-09). The check reuses the `TagName` invariants rather
@@ -294,11 +309,6 @@ impl ReleasePlan {
             .git
             .floating_major_tag
             .then(|| git::tag_name(&config.git.tag_prefix, &next.major.to_string()));
-        let level = match (&rationale, request.level) {
-            (_, BumpLevel::Auto) if request.first_release => "initial".to_string(),
-            (Some(deduced), BumpLevel::Auto) => bump_level_name(deduced.level.into()).to_string(),
-            (_, level) => bump_level_name(level).to_string(),
-        };
 
         Ok(Self {
             read_only: true,

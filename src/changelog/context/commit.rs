@@ -1,4 +1,5 @@
 use crate::conventional::ConventionalCommit;
+use crate::conventional::declares_breaking;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CommitContext {
@@ -175,7 +176,10 @@ pub(crate) fn extract_breaking_description(c: &ConventionalCommit) -> Option<Str
             }
         }
     }
-    if let Some(body) = &c.body {
+    // A body that only names the reviewed-none footer is not a migration: `BREAKING-CHANGE:` is a
+    // substring of `NO-BREAKING-CHANGE:`, so the scan asks whether the body declares a breaking
+    // change at all (#307 S5).
+    if let Some(body) = c.body.as_deref().filter(|body| declares_breaking(body)) {
         for prefix in [
             "BREAKING CHANGE:",
             "BREAKING-CHANGE:",

@@ -50,6 +50,16 @@ fn commit(fixture: &Fixture, message: &str) {
     run_git_ok(&fixture.dir, &["commit", "-m", message]);
 }
 
+/// The feature commit every tagged fixture releases: a `minor` release whose range declares what it
+/// does about compatibility, which #307 requires and a generated sink does not change.
+fn feature_commit(fixture: &Fixture) {
+    commit(
+        fixture,
+        "feat: add a sink\n\nNO-BREAKING-CHANGE: the sink is generated from the release context and \
+         changes no released contract",
+    );
+}
+
 /// Run the real binary with the project as its working directory.
 ///
 /// `kind = "template"` resolves a relative `template` path against the process CWD
@@ -83,7 +93,7 @@ fn bump_generates_a_template_sink_from_the_release_context() {
     init_git_repo(fixture);
     initial_commit(fixture);
     run_git_ok(&fixture.dir, &["tag", "v1.0.0"]);
-    commit(fixture, "feat: add a sink");
+    feature_commit(fixture);
 
     let output = run_cutver(fixture, &["bump", "minor"]);
     assert_succeeded(&output, "bump with a template sink");
@@ -184,7 +194,7 @@ fn doctor_reports_drift_when_the_sink_no_longer_matches_its_template() {
     init_git_repo(fixture);
     initial_commit(fixture);
     run_git_ok(&fixture.dir, &["tag", "v1.0.0"]);
-    commit(fixture, "feat: add a sink");
+    feature_commit(fixture);
 
     let output = run_cutver(fixture, &["bump", "minor"]);
     assert_succeeded(&output, "bump");
@@ -274,7 +284,7 @@ fn an_unreadable_sink_aborts_before_any_write() {
     init_git_repo(fixture);
     initial_commit(fixture);
     run_git_ok(&fixture.dir, &["tag", "v1.0.0"]);
-    commit(fixture, "feat: add a sink");
+    feature_commit(fixture);
     // Valid file, invalid UTF-8: the release cannot read it back. It used to be backed up as "" and
     // then restored as a zero-byte manifest, destroying the file.
     let original: &[u8] = &[0x2f, 0x2f, 0xff, 0xfe, 0x00, 0x41, 0x0a];
@@ -346,7 +356,7 @@ path = "CHANGELOG.md"
     init_git_repo(fixture);
     initial_commit(fixture);
     run_git_ok(&fixture.dir, &["tag", "v1.0.0"]);
-    commit(fixture, "feat: add a sink");
+    feature_commit(fixture);
     assert!(
         !fixture.dir.join("src/version.ts").exists(),
         "the fixture must start without the sink"

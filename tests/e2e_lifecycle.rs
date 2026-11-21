@@ -1080,7 +1080,16 @@ env = ["PATH"]
     run_git_ok(&fixture.dir, &["tag", "v1.2.0"]);
     fixture.write("src.txt", "change");
     run_git_ok(&fixture.dir, &["add", "."]);
-    run_git_ok(&fixture.dir, &["commit", "-m", "feat: a new capability"]);
+    run_git_ok(
+        &fixture.dir,
+        &[
+            "commit",
+            "-m",
+            "feat: a new capability",
+            "-m",
+            "NO-BREAKING-CHANGE: the feature is additive and no released contract changes",
+        ],
+    );
 
     let cfg = common::load_config(guard.fixture());
     bump_run(&cfg, Bump::Minor, false, &[]).expect("bump should succeed");

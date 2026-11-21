@@ -313,3 +313,50 @@ fn deduce_rationale_patch_empty_or_no_commits() {
     assert_eq!(rationale.other_count, 0);
     assert_eq!(rationale.summary(), "patch (default - no breaking changes or features)");
 }
+
+/// #307 S6: the reviewed-none declaration is a footer, and a footer is what the check reads.
+///
+/// The trailing paragraph is a footer block, so its token is the declaration; the footer's value is
+/// the reason the release is compatible, and none of it is body text.
+#[test]
+fn parse_the_reviewed_none_footer_as_a_footer() {
+    let commit =
+        ConventionalCommit::parse("docs(api): record the review\n\nNO-BREAKING-CHANGE: the endpoint is additive")
+            .expect("parses");
+
+    assert_eq!(
+        commit.footers,
+        vec![("NO-BREAKING-CHANGE".to_string(), "the endpoint is additive".to_string())]
+    );
+    assert_eq!(commit.body, None, "the footer block is not body text");
+    assert!(
+        !commit.is_breaking,
+        "the NO- prefix is the opposite of a breaking change: {commit:?}"
+    );
+}
+
+/// #307 S6: prose that happens to contain the sentinel is neither a footer nor a declaration.
+#[test]
+fn parse_prose_naming_the_reviewed_none_footer_is_not_a_footer() {
+    let commit = ConventionalCommit::parse(
+        "docs(api): record the review\n\nThe review asked whether\nNO-BREAKING-CHANGE: would be the honest\ndeclaration here, and left it for the next release to write.",
+    )
+    .expect("parses");
+
+    assert!(
+        commit.footers.is_empty(),
+        "prose is not a footer block: {:?}",
+        commit.footers
+    );
+    assert!(
+        !commit.is_breaking,
+        "a prose mention is not a breaking change either: {commit:?}"
+    );
+    assert!(
+        commit
+            .body
+            .as_ref()
+            .is_some_and(|body| body.contains("NO-BREAKING-CHANGE:")),
+        "the prose stays body text, where nobody reads it as a declaration: {commit:?}"
+    );
+}

@@ -141,7 +141,19 @@ require_clean_tree = true
     run_git_ok(&fixture.dir, &["tag", "v1.1.0"]);
     fixture.write("after-release.txt", "work done after the tagged release\n");
     run_git_ok(&fixture.dir, &["add", "-A"]);
-    run_git_ok(&fixture.dir, &["commit", "-m", "feat: work after the release", "-q"]);
+    // #307: the release this fixture rehearses is a `minor`, so its range declares what it does
+    // about compatibility — reviewed none, because a feature that is additive changes nothing.
+    run_git_ok(
+        &fixture.dir,
+        &[
+            "commit",
+            "-m",
+            "feat: work after the release",
+            "-m",
+            "NO-BREAKING-CHANGE: the feature is additive and no released contract changes",
+            "-q",
+        ],
+    );
     guard
 }
 

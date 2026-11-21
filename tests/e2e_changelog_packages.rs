@@ -92,7 +92,16 @@ edition = "2021"
     // `beta` commits after `alpha` on purpose: declaration order, not history order, must win.
     fixture.write("crates/alpha/src/lib.rs", "// alpha feature\n");
     run_git_ok(&fixture.dir, &["add", "."]);
-    run_git_ok(&fixture.dir, &["commit", "-m", "feat(alpha): alpha feature"]);
+    run_git_ok(
+        &fixture.dir,
+        &[
+            "commit",
+            "-m",
+            "feat(alpha): alpha feature",
+            "-m",
+            "NO-BREAKING-CHANGE: the feature is additive and no released contract changes",
+        ],
+    );
 
     fixture.write("crates/beta/index.js", "// beta fix\n");
     run_git_ok(&fixture.dir, &["add", "."]);

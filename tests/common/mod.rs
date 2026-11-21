@@ -122,6 +122,13 @@ pub fn init_git_repo(fixture: &Fixture) {
 
 pub fn initial_commit(fixture: &Fixture) {
     run_git_ok(&fixture.dir, &["add", "-A"]);
+    // `init` is deliberately not a conventional commit. #307 asks a `minor` or `major` release to
+    // declare what it does about compatibility, but a range starts at the previous tag, so this
+    // commit is never inside a tagged range and a declaration here would buy nothing — while a
+    // conventional message would render a section ("chore" renders Maintenance) in every fixture
+    // whose range does include it, changing what those tests read. A fixture that tags and then
+    // bumps over feature commits declares in those commits; `tests/breaking_change_declaration.rs`
+    // is the only suite that exercises the guard itself.
     run_git_ok(&fixture.dir, &["commit", "-m", "init", "-q"]);
 }
 

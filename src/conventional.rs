@@ -6,4 +6,5 @@ mod types;
 mod tests;
 
 pub use deduce::{deduce_bump, deduce_rationale, parse_and_deduce_bump, parse_and_deduce_with_rationale};
+pub(crate) use parse::declares_breaking;
 pub use types::{BumpRationale, ConventionalCommit};

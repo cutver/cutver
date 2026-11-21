@@ -492,7 +492,14 @@ edition = "2024"
     run_git_ok(&fixture.dir, &["tag", "v0.1.0"]);
     run_git_ok(
         &fixture.dir,
-        &["commit", "--allow-empty", "-m", "feat: exciting feature (#10)"],
+        &[
+            "commit",
+            "--allow-empty",
+            "-m",
+            "feat: exciting feature (#10)",
+            "-m",
+            "NO-BREAKING-CHANGE: the feature is additive and no released contract changes",
+        ],
     );
 
     let bump_out = cutver_command(&fixture.dir)
@@ -715,7 +722,16 @@ require_clean_tree = true
     // Make a commit to trigger minor bump
     fixture.write("feature.txt", "new feature");
     run_git_ok(&fixture.dir, &["add", "."]);
-    run_git_ok(&fixture.dir, &["commit", "-m", "feat: exciting new feature"]);
+    run_git_ok(
+        &fixture.dir,
+        &[
+            "commit",
+            "-m",
+            "feat: exciting new feature",
+            "-m",
+            "NO-BREAKING-CHANGE: the feature is additive and no released contract changes",
+        ],
+    );
 
     let cfg = common::load_config(guard.fixture());
     let summary = cutver::bump::run(&cfg, cutver::cli::BumpLevel::Auto, false, &[]).unwrap();

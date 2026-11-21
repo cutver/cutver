@@ -70,7 +70,7 @@ The attestation channel. `cutver attest` writes one JSON object per gate into `d
 
 | Key | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `path` | `string` | `None` | Changelog file to update. Without it, no changelog is rendered. |
+| `path` | `string` | `None` | Changelog file to update, or to create when it is absent: a declared path that does not exist yet is a normal state, and the absence is recorded so a rollback removes the file the run created. Without it, no changelog is rendered. |
 | `format` | `string` | `"keep-a-changelog"` | `"keep-a-changelog"` renders with the built-in renderer; `"plugin"` dispatches a `changelog.v1` plugin instead. |
 | `plugin` | `string` | `None` | With `format = "plugin"`, names the plugin to use. Omit it when exactly one declares `changelog.v1`. |
 | `mode` | `string` | `"conventional"` | `"conventional"` groups entries by commit type. A template is used whenever `template` or `template_file` is set, or when `mode = "template"`. |

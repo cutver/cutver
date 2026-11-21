@@ -474,13 +474,24 @@ fn a_blocker_free_plan_agrees_with_the_dry_run() {
 
 /// S3: a plan cannot claim notes it did not render, so rendering that cannot happen fails closed
 /// instead of printing `notes: null`.
+///
+/// The unrenderable state is a changelog that already carries the release the plan is computing:
+/// `compute_update` returns no entry to prepend, which the error itself names as a cause ("remove
+/// any existing '## [v1.3.0]' entry, which makes the prepend a no-op"). An *absent* changelog is no
+/// longer one of these states: #289 S1b makes a declared-but-absent changelog render against empty
+/// content, because that is what the bump it plans would do.
 #[test]
 fn a_plan_that_cannot_render_its_entry_fails_closed() {
-    let config = armed_config().replace("path = \"CHANGELOG.md\"", "path = \"MISSING.md\"");
-    let guard = fixture("plan-no-changelog", &config);
+    let guard = fixture("plan-no-entry", &armed_config());
     let fixture = guard.fixture();
+    fixture.write(
+        "CHANGELOG.md",
+        "# Changelog\n\n## [v1.3.0] - 2026-01-01\n\n- already released\n",
+    );
+    run_git_ok(&fixture.dir, &["add", "."]);
+    run_git_ok(&fixture.dir, &["commit", "-m", "chore: record the 1.3.0 entry"]);
 
-    let output = cutver_in(fixture, &["plan", "--json"]);
+    let output = cutver_in(fixture, &["plan", "--json", "minor"]);
 
     assert_eq!(output.status.code(), Some(1), "stdout: {}", stdout_of(&output));
     assert!(
@@ -495,13 +506,18 @@ fn a_plan_that_cannot_render_its_entry_fails_closed() {
     assert_eq!(envelope["error"]["code"], "plan");
     assert_eq!(envelope["error"]["exitCode"], 1);
     let message = envelope["error"]["message"].as_str().expect("a string");
-    assert!(message.contains("MISSING.md"), "the failure names the file: {message}");
     assert!(
-        !message.contains("notes: null"),
-        "the plan never reports notes it did not render: {message}"
+        message.contains("CHANGELOG.md") && message.contains("v1.3.0"),
+        "the failure names the file and the tag it could not render: {message}"
+    );
+    // The "never `notes: null`" half of the promise is the empty stdout asserted above, not a
+    // substring of the message: this error's own `Where:` line quotes the phrase it refuses to print.
+    assert!(
+        message.contains("renders no entry"),
+        "the plan says why it has no entry to report: {message}"
     );
 
-    let human = cutver_in(fixture, &["plan"]);
+    let human = cutver_in(fixture, &["plan", "minor"]);
     assert_eq!(human.status.code(), Some(1));
     assert!(
         stderr_of(&human).starts_with("Error:"),

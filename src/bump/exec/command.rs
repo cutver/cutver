@@ -1,4 +1,5 @@
 use std::fs;
+use std::io;
 use std::path::Path;
 use std::time::Duration;
 
@@ -11,6 +12,24 @@ pub fn read(path: impl AsRef<Path>) -> Result<String, Error> {
         path: path.display().to_string(),
         source: e,
     })
+}
+
+/// Reads a target that may legitimately not exist yet, and fails closed on anything else (#261).
+///
+/// An absent file is a normal state for a sink the run is about to generate and for a changelog a
+/// run is about to create: `None` says "there was nothing here", which is a state rollback can
+/// restore by removing the file. Any other read failure is *not* normal, because the bytes returned
+/// here are the only copy rollback will restore. Backing an unreadable file up as empty and writing
+/// that back would turn a real file into a zero-byte one.
+pub(crate) fn read_existing(path: &str) -> Result<Option<String>, Error> {
+    match fs::read_to_string(path) {
+        Ok(content) => Ok(Some(content)),
+        Err(source) if source.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(source) => Err(Error::ReadUnreadable {
+            path: path.to_string(),
+            source,
+        }),
+    }
 }
 
 pub const KNOWN_LOCKFILES: &[&str] = &[

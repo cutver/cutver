@@ -4,7 +4,7 @@ use std::path::Path;
 
 use crate::atomic;
 use crate::bump::Error;
-use crate::bump::exec::command::read;
+use crate::bump::exec::command::read_existing;
 use crate::bump::exec::transaction::MutationTransaction;
 use crate::changelog;
 use crate::config::Config;
@@ -240,13 +240,13 @@ pub(crate) fn prepare_changelog(params: ChangelogPlanParams<'_>) -> Result<Chang
             warnings,
         });
     }
-    let original = read(cl_path)?;
-    let (updated, scope_warnings) = render_entry(&mut params, &original)?;
+    let original = read_existing(cl_path)?;
+    let (updated, scope_warnings) = render_entry(&mut params, original.as_deref().unwrap_or_default())?;
     warnings.extend(scope_warnings);
     Ok(ChangelogPlan {
         update: Some(ChangelogUpdate {
             path: cl_path.clone(),
-            original: Some(original),
+            original,
             updated,
         }),
         warnings,
@@ -256,17 +256,20 @@ pub(crate) fn prepare_changelog(params: ChangelogPlanParams<'_>) -> Result<Chang
 /// The rendered entry the release would prepend, computed without writing the changelog (#326 S3).
 ///
 /// `cutver plan` cannot show notes a real run would not write, so this renders the same entry
-/// [`prepare_changelog`] prepends and returns its newest section. `Ok(None)` means no entry could be
-/// rendered — the configuration declares no changelog, the changelog already carries this version
-/// (`compute_update` returns `None`), or the rendered changelog holds no section to extract. The
-/// caller fails closed on it rather than printing a plan that claims notes it never rendered.
+/// [`prepare_changelog`] prepends and returns its newest section. It reads the changelog through the
+/// same [`read_existing`], so an absent file renders against empty content exactly as the run that
+/// would create it does: a plan must not refuse what the bump would do (#289 S1b). `Ok(None)` means
+/// no entry could be rendered — the configuration declares no changelog, the changelog already
+/// carries this version (`compute_update` returns `None`), or the rendered changelog holds no
+/// section to extract. The caller fails closed on it rather than printing a plan that claims notes
+/// it never rendered.
 pub(crate) fn preview_notes(params: ChangelogPlanParams<'_>) -> Result<Option<String>, Error> {
     let mut params = params;
     let Some(cl_path) = &params.config.changelog.path else {
         return Ok(None);
     };
-    let content = read(cl_path)?;
-    let (updated, _warnings) = render_entry(&mut params, &content)?;
+    let content = read_existing(cl_path)?;
+    let (updated, _warnings) = render_entry(&mut params, content.as_deref().unwrap_or_default())?;
     Ok(updated.as_deref().and_then(changelog::release_notes))
 }
 
@@ -316,9 +319,11 @@ pub(crate) fn apply_changelog(
         return Ok(());
     };
     if !dry_run && let Some(new_content) = update.updated {
-        if let Some(orig) = update.original {
-            transaction.record_backup(update.path.clone(), Some(orig));
-        }
+        // Unconditional: `None` is the state "this file did not exist when the run started", which
+        // rollback restores by removing it (#289). Recording only an existing file made a changelog
+        // the run created impossible to undo — the remaining half of the fail-closed transaction
+        // #261 fixed for a manifest sink.
+        transaction.record_backup(update.path.clone(), update.original.clone());
         if let Err(e) = atomic::write_atomic(&update.path, &new_content) {
             return Err(Error::Changelog(changelog::Error::Write {
                 path: update.path,

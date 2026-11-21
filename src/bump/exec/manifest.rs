@@ -4,7 +4,7 @@ use std::io;
 use std::sync::Arc;
 
 use crate::atomic;
-use crate::bump::exec::command::read;
+use crate::bump::exec::command::{read, read_existing};
 use crate::bump::exec::transaction::MutationTransaction;
 use crate::bump::{Change, Error, Touched};
 use crate::changelog;
@@ -98,23 +98,6 @@ pub(crate) fn compute(
             })
         })
         .collect()
-}
-
-/// Reads a target that may legitimately not exist yet, and fails closed on anything else (#261).
-///
-/// An absent file is a normal state: a template sink is often generated for the first time. Any
-/// other read failure is *not* normal, because the bytes returned here are the only copy rollback
-/// will restore. Backing an unreadable file up as empty and writing that back would turn a real
-/// manifest into a zero-byte file.
-fn read_existing(path: &str) -> Result<Option<String>, Error> {
-    match std::fs::read_to_string(path) {
-        Ok(content) => Ok(Some(content)),
-        Err(source) if source.kind() == io::ErrorKind::NotFound => Ok(None),
-        Err(source) => Err(Error::ReadUnreadable {
-            path: path.to_string(),
-            source,
-        }),
-    }
 }
 
 /// Renders one `kind = "template"` sink into a [`Change`] without reading a version from it.

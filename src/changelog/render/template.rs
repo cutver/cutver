@@ -143,9 +143,21 @@ fn group_by_section_filter(seq: Vec<Value>) -> Value {
 
 /// Create a configured MiniJinja environment with custom globals.
 pub fn create_environment() -> minijinja::Environment<'static> {
+    create_environment_with_env_lookup(env_global)
+}
+
+/// Create the same environment with the `env()` global resolved through `lookup`.
+///
+/// The process environment is read at exactly one place, [`create_environment`]; everything below
+/// the boundary takes the lookup as an argument, so a rendering test can state what the environment
+/// says without writing to a variable every other thread in the test binary can read (#352).
+pub fn create_environment_with_env_lookup<F>(lookup: F) -> minijinja::Environment<'static>
+where
+    F: Fn(&str) -> Option<String> + Send + Sync + 'static,
+{
     let mut env = minijinja::Environment::new();
     env.set_auto_escape_callback(|_| minijinja::AutoEscape::None);
-    env.add_function("env", env_global);
+    env.add_function("env", lookup);
     env.add_filter("group_by_scope", group_by_scope_filter);
     env.add_filter("group_by_type", group_by_type_filter);
     env.add_filter("group_by_section", group_by_section_filter);
@@ -230,4 +242,33 @@ pub fn render_source(template_str: &str, context: &ReleaseContext) -> Result<Str
     env.render_str(template_str, val).map_err(|e| Error::TemplateRender {
         detail: format!("{e:#}"),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The `env()` global reads through the injected lookup, never the process: `cargo test --lib`
+    /// runs every unit test as a thread of one binary, so a rendering fixture must not write a key
+    /// another test reads (#352).
+    #[test]
+    fn the_env_global_reads_from_the_injected_lookup() {
+        let render = |lookup: fn(&str) -> Option<String>| {
+            create_environment_with_env_lookup(lookup)
+                .render_str(r#"{{ env("CUTVER_TEST_ENV_VAR") }}"#, minijinja::Value::UNDEFINED)
+                .expect("the env global renders")
+        };
+
+        fn keeps(key: &str) -> Option<String> {
+            (key == "CUTVER_TEST_ENV_VAR").then(|| "cutver_awesome_val".to_string())
+        }
+
+        assert_eq!(render(keeps), "cutver_awesome_val");
+
+        // Control: the same template through a lookup that answers nothing. An absent key renders as
+        // minijinja's `None` because the global returns `Option`, which is the behaviour this seam
+        // leaves untouched; what the control proves is that the value above came from the lookup and
+        // not from whatever the process happens to hold.
+        assert_ne!(render(|_| None), "cutver_awesome_val");
+    }
 }

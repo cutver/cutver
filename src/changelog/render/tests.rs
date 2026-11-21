@@ -269,11 +269,7 @@ fn test_interpolate_string_with_legacy_and_minijinja() {
 }
 
 #[test]
-fn test_minijinja_filters_and_env_global() {
-    unsafe {
-        std::env::set_var("CUTVER_TEST_ENV_VAR", "cutver_awesome_val");
-    }
-
+fn test_minijinja_filters() {
     let commits = vec![
         ConventionalCommit::parse("feat(api): add endpoint\n\nBody details.").unwrap(),
         ConventionalCommit::parse("fix: patch bug").unwrap(),
@@ -295,7 +291,6 @@ fn test_minijinja_filters_and_env_global() {
     );
 
     let tpl = r#"
-Env: {{ env("CUTVER_TEST_ENV_VAR") }}
 Date: {{ year }}-{{ month }}-{{ day }}
 {% for scope, scoped_commits in commits | group_by_scope %}
 Scope: [{{ scope }}]
@@ -312,7 +307,6 @@ Type: [{{ type }}]
 "#;
 
     let res = render_template(tpl, &ctx).unwrap();
-    assert!(res.contains("Env: cutver_awesome_val"));
     assert!(res.contains("Date: 2026-4-1"));
 
     // Scopes should be ordered: "api", "core", then "" (other)

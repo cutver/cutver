@@ -27,7 +27,7 @@ pub use dispatch::{load_config, print_error, resolve_changelog_path, run};
 #[allow(unused_imports)]
 pub use doctor::run_doctor;
 #[allow(unused_imports)]
-pub use external::run_external;
+pub use external::{run_external, run_external_with_path};
 #[allow(unused_imports)]
 pub use open::run_open;
 #[allow(unused_imports)]

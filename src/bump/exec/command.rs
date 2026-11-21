@@ -64,7 +64,7 @@ pub fn format_command(template: &str, context: &crate::changelog::InterpolationC
 /// `timeout_secs` is killed with its whole process tree instead of holding the release open.
 pub fn run_publish_command(command: &str, current_dir: &Path, timeout_secs: Option<u64>) -> Result<(), Error> {
     let timeout = timeout_secs.map(Duration::from_secs);
-    match run_supervised(command, Some(current_dir), timeout) {
+    match run_supervised(command, current_dir, timeout) {
         Ok(Ended::Exited(status)) if status.success() => Ok(()),
         Ok(Ended::Exited(status)) => Err(Error::PublishCommandFailed {
             command: command.to_string(),

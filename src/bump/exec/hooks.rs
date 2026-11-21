@@ -88,7 +88,7 @@ enum HookFailure {
 /// Runs one hook in the workspace root under `[hooks] default_timeout`.
 fn run_hook(config: &Config, command: &str) -> Result<(), HookFailure> {
     let timeout = config.hooks.default_timeout.map(Duration::from_secs);
-    match run_supervised(command, Some(&config.root_dir), timeout) {
+    match run_supervised(command, &config.root_dir, timeout) {
         Ok(Ended::Exited(status)) if status.success() => Ok(()),
         Ok(Ended::Exited(status)) => Err(HookFailure::Status(status)),
         Ok(Ended::TimedOut { timeout, elapsed }) => Err(HookFailure::TimedOut {

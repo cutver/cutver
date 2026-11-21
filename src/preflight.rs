@@ -63,18 +63,20 @@ pub fn plan(steps: &[(String, PreflightCommand)], skip: &[String]) -> Vec<Step> 
         .collect()
 }
 
-pub fn run(steps: &[Step]) -> Result<(), Error> {
+pub fn run(root: &Path, steps: &[Step]) -> Result<(), Error> {
     for step in steps.iter().filter(|s| !s.skipped) {
-        run_step(step)?;
+        run_step(root, step)?;
     }
     Ok(())
 }
 
-fn run_step(step: &Step) -> Result<(), Error> {
+fn run_step(root: &Path, step: &Step) -> Result<(), Error> {
     let timeout = step.timeout.map(Duration::from_secs);
-    // A preflight step runs in the process working directory, which is what it always did: the
-    // bounded spawn only adds the deadline and the process-group kill.
-    match run_supervised(&step.command, None, timeout) {
+    // A preflight step runs in the repository root, like every other stage of the pipeline. The
+    // process working directory is ambient authority — it is whatever launched cutver — so a step
+    // that named a relative path used to write into the caller's directory instead of the
+    // repository's (#295).
+    match run_supervised(&step.command, root, timeout) {
         Ok(Ended::Exited(status)) => {
             if status.success() {
                 return Ok(());
@@ -136,11 +138,7 @@ impl SupervisionError {
 const POLL: Duration = Duration::from_millis(50);
 
 /// Runs `command` through the platform shell in `dir`, killing the tree at `timeout`.
-pub(crate) fn run_supervised(
-    command: &str,
-    dir: Option<&Path>,
-    timeout: Option<Duration>,
-) -> Result<Ended, SupervisionError> {
+pub(crate) fn run_supervised(command: &str, dir: &Path, timeout: Option<Duration>) -> Result<Ended, SupervisionError> {
     let start = Instant::now();
     let mut child = spawn(command, dir).map_err(SupervisionError::Spawn)?;
     loop {
@@ -169,13 +167,11 @@ pub(crate) fn run_supervised(
     }
 }
 
-fn spawn(command: &str, dir: Option<&Path>) -> Result<Child, io::Error> {
+fn spawn(command: &str, dir: &Path) -> Result<Child, io::Error> {
     let (shell, flag) = shell();
     let mut cmd = Command::new(shell);
     cmd.arg(flag).arg(command);
-    if let Some(dir) = dir {
-        cmd.current_dir(dir);
-    }
+    cmd.current_dir(dir);
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
@@ -299,14 +295,14 @@ mod tests {
             &[("fail".into(), cmd("exit 1")), ("ok".into(), cmd("true"))],
             &["fail".into()],
         );
-        assert!(run(&plan).is_ok());
+        assert!(run(Path::new("."), &plan).is_ok());
     }
 
     #[test]
     #[cfg_attr(windows, ignore)]
     fn run_executes_successful_and_failing_commands() {
-        assert!(run(&plan(&[("ok".into(), cmd("true"))], &[])).is_ok());
-        match run(&plan(&[("fail".into(), cmd("false"))], &[])) {
+        assert!(run(Path::new("."), &plan(&[("ok".into(), cmd("true"))], &[])).is_ok());
+        match run(Path::new("."), &plan(&[("fail".into(), cmd("false"))], &[])) {
             Err(Error::StepFailed { name, status, .. }) => {
                 assert_eq!(name, "fail");
                 assert!(!status.success());
@@ -333,7 +329,7 @@ mod tests {
             ],
             &[],
         );
-        assert!(matches!(run(&plan), Err(Error::StepFailed { name, .. }) if name == "first"));
+        assert!(matches!(run(Path::new("."), &plan), Err(Error::StepFailed { name, .. }) if name == "first"));
         assert!(!marker.exists(), "second step must not run after first failure");
     }
 
@@ -359,7 +355,7 @@ mod tests {
             )],
             &[],
         );
-        match run(&plan) {
+        match run(Path::new("."), &plan) {
             Err(Error::Timeout {
                 name,
                 timeout,

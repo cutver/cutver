@@ -114,7 +114,7 @@ Detailed template variables and examples are documented in [Release Notes & Chan
 File modifications and process execution follow fail-fast atomic guarantees:
 
 - Manifests are modified only after all preflight steps succeed.
-- Updates use same-directory temporary files and atomic filesystem replacement (`rename`).
+- Updates use same-directory temporary files and atomic filesystem replacement (`rename`), retried a bounded number of times for the transient collisions Windows reports when the destination is held open.
 - Timeouts enforce complete process tree termination (`SIGKILL` to `-pgid` on Unix, `taskkill` on Windows).
 - Failure before commit triggers best-effort RAII rollback and Git index unstaging.
 

@@ -26,6 +26,18 @@ The release engine partitions work into four discrete execution phases:
 3. **Compute Phase (In-Memory)**: Evaluates all version increments, manifest modifications, and changelog bodies entirely in memory. Zero file mutation occurs during this phase.
 4. **Apply Phase (Atomic Swap)**: Writes staged changes to unique temporary files in the same directory (`.{name}.cutver-tmp-{pid}-{seq}`), forces buffers to disk via `fsync` (`sync_all()`), and renames temporary files over targets using atomic filesystem replace operations.
 
+### Replace-Rename Promise
+
+The final swap is a replace-rename whose success depends on the platform, so it is bounded rather than unconditional:
+
+- **POSIX (Linux, macOS)**: `rename` replaces the destination even while other handles hold it, so a single attempt is enough and nothing is retried.
+- **Windows**: `MoveFileEx` with replace-existing fails with `ERROR_ACCESS_DENIED` or `ERROR_SHARING_VIOLATION` while another handle holds the destination without delete sharing — an editor, an indexer, an antivirus, or a concurrent writer of the same path. `cutver` retries up to three attempts, 20 ms apart, and only for those two codes.
+
+Any other error, and an exhausted retry, fail closed in the same way: the destination keeps its previous contents, the temporary file is removed by its drop guard, and the error names both paths.
+
+> [!NOTE]
+> The bound exists because `cutver` rewrites manifests and changelogs that a human may have open in an editor while the release runs. Declaring the concurrent replace best-effort on Windows instead would leave that real case undocumented and untested, with the primitive the whole release transaction writes through carrying a claim the platform does not keep unconditionally.
+
 ---
 
 ## Transaction Boundaries & Rollback Guarantees

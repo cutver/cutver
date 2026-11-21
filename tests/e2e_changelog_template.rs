@@ -353,7 +353,17 @@ require_clean_tree = true
     init_git_repo(fixture);
     initial_commit(fixture);
     run_git_ok(&fixture.dir, &["tag", "cutver-1.0.0"]);
-    run_git_ok(&fixture.dir, &["commit", "--allow-empty", "-m", "feat: new capability"]);
+    run_git_ok(
+        &fixture.dir,
+        &[
+            "commit",
+            "--allow-empty",
+            "-m",
+            "feat: new capability",
+            "-m",
+            "NO-BREAKING-CHANGE: the feature is additive and no released contract changes",
+        ],
+    );
 
     let output = cutver_command(&fixture.dir)
         .args(["bump", "minor"])

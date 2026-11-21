@@ -472,6 +472,28 @@ fn a_blocker_free_plan_agrees_with_the_dry_run() {
     );
 }
 
+/// #307: the level a first release reports does not change. An explicitly named level is reported as
+/// named, and only `auto` reports `initial`; the compatibility guard exempts a first release on its
+/// missing previous tag instead of on the level's name.
+#[test]
+fn a_first_release_reports_the_level_it_was_given() {
+    let guard = fixture("plan-first-release-level", &armed_config());
+    let fixture = guard.fixture();
+
+    let named = parse(&cutver_in(fixture, &["plan", "--json", "--first-release", "minor"]));
+    assert_eq!(named["level"], "minor", "a named level stays named: {named}");
+    assert_eq!(
+        named["tag"], "v1.2.3",
+        "a first release tags the version it has: {named}"
+    );
+
+    let deduced = parse(&cutver_in(fixture, &["plan", "--json", "--first-release", "auto"]));
+    assert_eq!(
+        deduced["level"], "initial",
+        "only `auto` reports the promotion: {deduced}"
+    );
+}
+
 /// S3: a plan cannot claim notes it did not render, so rendering that cannot happen fails closed
 /// instead of printing `notes: null`.
 ///

@@ -5,7 +5,8 @@ impl ConventionalCommit {
     ///
     /// The header must match `<type>[(<scope>)][!]: <description>`.
     /// `!` in the header prefix or `BREAKING CHANGE:` / `BREAKING-CHANGE:` anywhere in
-    /// the footers or body sets `is_breaking = true`.
+    /// the footers or body sets `is_breaking = true`. The reviewed-none footer
+    /// `NO-BREAKING-CHANGE:` is not one of those spellings (#307 S5).
     pub fn parse(message: &str) -> Option<Self> {
         let trimmed = message.trim();
         if trimmed.is_empty() {
@@ -51,19 +52,9 @@ impl ConventionalCommit {
         }
 
         let is_breaking = header_breaking
-            || body.as_ref().is_some_and(|b| {
-                b.contains("BREAKING CHANGE:")
-                    || b.contains("BREAKING-CHANGE:")
-                    || b.contains("BREAKING CHANGE :")
-                    || b.contains("BREAKING-CHANGE :")
-            })
+            || body.as_ref().is_some_and(|b| declares_breaking(b))
             || footers.iter().any(|(k, v)| {
-                k == "BREAKING CHANGE"
-                    || k == "BREAKING-CHANGE"
-                    || format!("{k}: {v}").contains("BREAKING CHANGE:")
-                    || format!("{k}: {v}").contains("BREAKING-CHANGE:")
-                    || format!("{k}: {v}").contains("BREAKING CHANGE :")
-                    || format!("{k}: {v}").contains("BREAKING-CHANGE :")
+                k == "BREAKING CHANGE" || k == "BREAKING-CHANGE" || declares_breaking(&format!("{k}: {v}"))
             });
 
         Some(ConventionalCommit {
@@ -75,6 +66,26 @@ impl ConventionalCommit {
             footers,
         })
     }
+}
+
+/// The spellings a breaking change is declared with: the `BREAKING CHANGE` / `BREAKING-CHANGE`
+/// token, with or without the space before its colon.
+const BREAKING_TOKENS: [&str; 4] = [
+    "BREAKING CHANGE:",
+    "BREAKING-CHANGE:",
+    "BREAKING CHANGE :",
+    "BREAKING-CHANGE :",
+];
+
+/// Whether `text` declares a breaking change.
+///
+/// A `NO-` prefixed match is the reviewed-none declaration, which says the opposite (#307 S5): it is
+/// skipped rather than read as `BREAKING-CHANGE:` by substring, so a range that says "nothing breaks"
+/// cannot render a breaking-changes block whose migration is the reason nothing broke.
+pub(crate) fn declares_breaking(text: &str) -> bool {
+    BREAKING_TOKENS
+        .iter()
+        .any(|token| text.match_indices(token).any(|(at, _)| !text[..at].ends_with("NO-")))
 }
 
 pub(crate) fn parse_header(header: &str) -> Option<(String, Option<String>, bool, String)> {

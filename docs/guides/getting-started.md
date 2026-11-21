@@ -77,6 +77,23 @@ Read-only means read-only: no file is touched, no preflight step runs and no plu
 
 The level is deduced from the Conventional Commits since your last tag; [Conventional Commit Bump Rules](../internals/references.md) lists every signal with an example commit. An explicit level overrides deduction — `cutver plan minor`, or `patch` and `major` — and the tree then says `(bump)` instead of naming the commits.
 
+## Declare What the Release Does About Compatibility
+
+A `minor` or `major` release has to say, inside the commits it ships, what it does about compatibility. `cutver` compares the level against `<previous-tag>..HEAD` and refuses the release when that range says nothing: `0.19.0` shipped a plugin-environment contract that broke every grant-less setup, no commit carried a `BREAKING CHANGE:` footer, and silence was read as "compatible".
+
+Two footers answer the question — write the one that is true:
+
+- `BREAKING CHANGE: <migration>` — the `BREAKING-CHANGE:` spelling works too, as does a `!` after the type (`feat(api)!: drop the v1 plugin ABI`) — when the release breaks something. The notes render it as the release's warning block plus a `> **Migration**:` line.
+- `NO-BREAKING-CHANGE: <why this release is compatible>` when it breaks nothing. This footer is review provenance: it satisfies the check and never reaches the notes.
+
+A `patch` release is exempt, and so is a workspace with no previous release tag (nothing has been shipped to compare against) and a range with no commits. `cutver plan` reports the missing declaration as a blocker and still exits `0`; `cutver bump` stops before anything is written, staged, committed or pushed:
+
+```text
+Error: the minor release over 'v0.19.0..HEAD' declares no compatibility decision
+  Where: the commit range 'v0.19.0..HEAD', before any file, commit or tag is written
+  Fix: declare what this release does about compatibility in a commit inside that range: …
+```
+
 ## 4. Prepare the Release
 
 `cutver bump --defer-publish` runs the pipeline up to and including the release commit and the branch push, then stops:

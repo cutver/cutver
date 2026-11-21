@@ -248,7 +248,8 @@ fn dry_run_auto_bump_deduces_from_commits() {
         .args(["tag", "v1.2.3"])
         .status()
         .unwrap();
-    // Add a feat commit after the tag
+    // Add a feat commit after the tag. #307 makes a `minor` release declare what it does about
+    // compatibility over `v1.2.3..HEAD`, and this one changes no released contract.
     write(&dir, "feature.txt", "feature content");
     std::process::Command::new("git")
         .current_dir(&dir)
@@ -257,7 +258,14 @@ fn dry_run_auto_bump_deduces_from_commits() {
         .unwrap();
     std::process::Command::new("git")
         .current_dir(&dir)
-        .args(["commit", "-m", "feat: add brilliant feature", "-q"])
+        .args([
+            "commit",
+            "-m",
+            "feat: add brilliant feature",
+            "-m",
+            "NO-BREAKING-CHANGE: the feature is additive and no released contract changes",
+            "-q",
+        ])
         .status()
         .unwrap();
 

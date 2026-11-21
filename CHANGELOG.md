@@ -3,6 +3,40 @@
 All notable changes to this project are documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com).
 
+## v0.21.0 — 2026-11-21
+
+> [!WARNING]
+> **Breaking changes**
+
+> - **release**: the v0.21.0 notes in [#362](https://github.com/cutver/cutver/pull/362) ([cdea7ec](https://github.com/cutver/cutver/commit/cdea7ec3d92acbf8ec5a9053b26cac978e0b5f3c)) by @Row0902
+>   > **Migration**: a `minor` or `major` release now refuses to run when the commits in `<previous_tag>..HEAD` declare nothing about compatibility. Add `BREAKING CHANGE: <migration>` (or `BREAKING-CHANGE:`, or `!` after the type) when the release breaks something, or `NO-BREAKING-CHANGE: <why it stays compatible>` when it does not. `patch` releases need neither.
+
+> - **bump**: a non-patch release declares what it does about compatibility in [#357](https://github.com/cutver/cutver/pull/357) ([486b4ae](https://github.com/cutver/cutver/commit/486b4aebb463e037762191e17eebf9ec1d45f00c)) by @Row0902
+>   > **Migration**: `
+
+### ✨ Features
+- **config**: the deprecation channel the contract requires in [#348](https://github.com/cutver/cutver/pull/348) ([256a9e8](https://github.com/cutver/cutver/commit/256a9e875206d6d0660f476b86e659959a45cc98)) by @Row0902
+- **release**: take the release body from notes in the tree in [#343](https://github.com/cutver/cutver/pull/343) ([1deadea](https://github.com/cutver/cutver/commit/1deadeae9571366c6c92832d4299aebd0222da36)) by @Row0902
+
+### 🐛 Fixes
+- **atomic**: bound the replace-rename retry on Windows in [#361](https://github.com/cutver/cutver/pull/361) ([4324adb](https://github.com/cutver/cutver/commit/4324adb97e970591d94b575cc1c9a538967667cf)) by @Row0902
+- **bump**: give the changelog sink the transaction the template sink already had in [#356](https://github.com/cutver/cutver/pull/356) ([7885428](https://github.com/cutver/cutver/commit/78854281a49b0b8fc2f901e3870d80eb4ef09c5e)) by @Row0902
+
+### 📚 Documentation
+- **contract**: classify every judgement obligation the 1.0 freeze does not cover in [#355](https://github.com/cutver/cutver/pull/355) ([3731bb8](https://github.com/cutver/cutver/commit/3731bb85c63d344318cfae4147025fea82b79e87)) by @Row0902
+- **reference**: enumerate the release context keys a consumer parses in [#350](https://github.com/cutver/cutver/pull/350) ([5481e4c](https://github.com/cutver/cutver/commit/5481e4cb85d8186b2b33881c80b8edd4f7373357)) by @Row0902
+- **tasks**: record block 2's merge (256a9e8) in [#349](https://github.com/cutver/cutver/pull/349) ([d4b9bc4](https://github.com/cutver/cutver/commit/d4b9bc44bf13635f758b48370e2b8c78a773b08f)) by @Row0902
+- **reference**: give the regex example a capture group and ship a worked cutver.toml in [#345](https://github.com/cutver/cutver/pull/345) ([73fea81](https://github.com/cutver/cutver/commit/73fea811abb2219269b1881e70072a5bb7484820)) by @Row0902
+
+### 🛠️ Maintenance
+- **env**: stop mutating the process environment anywhere in the crate in [#354](https://github.com/cutver/cutver/pull/354) ([5a570b7](https://github.com/cutver/cutver/commit/5a570b7bfbc7c5bafde2ec2e726fc7c3dab27228)) by @Row0902
+- **plugin**: make the environment a seam instead of a fixture in [#351](https://github.com/cutver/cutver/pull/351) ([3f6b40a](https://github.com/cutver/cutver/commit/3f6b40a4f6ece337c88414217f2b23a0d16a0423)) by @Row0902
+- **schema**: pin the required key set of every JSON surface in [#347](https://github.com/cutver/cutver/pull/347) ([84c9c33](https://github.com/cutver/cutver/commit/84c9c336f09bde2403df4c71e2a4b664fa6f7efb)) by @Row0902
+
+### 👥 Contributors
+@Row0902
+
+[Compare v0.20.0...v0.21.0](https://github.com/cutver/cutver/compare/v0.20.0...v0.21.0)
 ## v0.20.0 — 2026-11-20
 
 > [!WARNING]

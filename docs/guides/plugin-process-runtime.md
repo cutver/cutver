@@ -80,11 +80,12 @@ One invocation is one process, start to finish:
 1. `cutver` spawns `command` with piped stdin, stdout and stderr.
 2. It serializes the envelope to JSON and writes all of it to stdin, then closes it
    (`src/proc.rs`, `run_capture`). Read until EOF: there is no framing and no
-   trailing newline.
+   trailing newline. The first field is `protocol`, the shape the host speaks.
 3. The plugin writes exactly one JSON value to stdout and exits 0.
 4. `cutver` reads stdout to EOF and decodes it as the capability's response DTO
-   (`src/plugin/manager/core.rs:209-235`). Trailing text after the JSON value makes the answer
-   undecodable, so log to stderr, never to stdout.
+   (`src/plugin/dto.rs`, `decode_answer`). Trailing text after the JSON value makes the answer
+   undecodable, so log to stderr, never to stdout. Declaring a different `protocol` in the answer is a
+   `ProtocolMismatch` naming both versions, not a decode error.
 5. The slots whose answer is discarded (`on_post_bump`, `on_post_release`) still need one JSON value,
    `{}` being enough: the host decodes what arrives before dropping it
    (`src/plugin/manager/core.rs:179-188`).
@@ -119,7 +120,7 @@ Environment is the only grant this runtime applies, and it applies it in both di
 | The child starts with a **cleared** environment (`src/plugin/driver/process.rs`, `child_command`). | No ambient *authority*: CI tokens and every other variable of the `cutver` process are absent unless granted. |
 | A **named system baseline** is set after the clear (`src/plugin/driver/baseline.rs`). | `PATH`, `HOME`, `USERPROFILE`, `TMPDIR`, `TEMP`, `TMP`, `LANG`, `LC_ALL`, `SystemRoot`, `SYSTEMDRIVE`, `APPDATA`, `LOCALAPPDATA` — whichever of them the host actually sets. An unset key is omitted, never handed over empty, and the list carries no secret shape (no `*_TOKEN`, no `*_KEY`) (#369). |
 | Exactly the granted keys are set, on top of the baseline. | `env = ["GITHUB_TOKEN"]` adds `GITHUB_TOKEN` and nothing else — the baseline keys are still there — and a granted key replaces the baseline value for that key. |
-| A declared key that is **unset** is an error, not an empty string. | Invoking the plugin fails with `plugin '<name>' declares the environment grant '<key>', but cutver cannot read '<key>' from its own environment` (`src/plugin/error.rs:127`). The value must also be valid UTF-8. |
+| A declared key that is **unset** is an error, not an empty string. | Invoking the plugin fails with `plugin '<name>' declares the environment grant '<key>', but cutver cannot read '<key>' from its own environment` (`src/plugin/error.rs:138`). The value must also be valid UTF-8. |
 | Grants are resolved at each invocation, when the child environment is built. | Building the plugin manager and inspecting the configuration never needs them (#300), so `cutver doctor` and `cutver plugin restore` run on a host that exports none of the declared keys. The failure lands when the plugin is first invoked, before the child starts, through the resolver the WASM runtime shares (`src/plugin/driver.rs`, `DeclaredEnvGrants::resolve`). |
 
 A `#!/usr/bin/env python3` shebang resolves because `PATH` is in the baseline. Declaring a key that is

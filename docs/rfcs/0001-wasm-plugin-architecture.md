@@ -71,10 +71,12 @@ privileges.
 
 ## 6. Proposed shape (as proposed; implemented state shown)
 
-The wire contract is unchanged from the proposal: one envelope carrying a
+The wire contract keeps the shape it was proposed with: one envelope carrying a
 coupled `(capability, operation)` pair and a capability-specific payload
-(`crates/cutver-pdk/src/invocation.rs:7-13`), constructed so an impossible
-pairing cannot be expressed (`src/plugin/types.rs:91-124`). The domains are
+(`crates/cutver-pdk/src/invocation.rs:14-24`), constructed so an impossible
+pairing cannot be expressed (`src/plugin/types.rs:91-124`). One field was added
+later, ahead of the pair: `protocol`, the envelope generation the host speaks
+(#369), which a plugin may echo in its answer. The domains are
 closed (`src/plugin/manager.rs:62,81,108,131,169`):
 
 | `capability` | `operation` |

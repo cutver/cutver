@@ -14,8 +14,8 @@
 //!
 //! ## Object key order on the wire
 //!
-//! Only the three top-level envelope fields keep their declaration order
-//! (`capability`, `operation`, `payload`), because `PluginInvocation` is a struct.
+//! Only the four top-level envelope fields keep their declaration order
+//! (`protocol`, `capability`, `operation`, `payload`), because `PluginInvocation` is a struct.
 //! The nested `payload` is a `serde_json::Value`, and `serde_json` backs a
 //! `Value` map with a sorted map, so **payload keys are emitted alphabetically**,
 //! not in `ChangelogRenderRequest` declaration order.
@@ -26,9 +26,10 @@
 //! scripts, may rely on the top-level order only.
 
 use cutver::plugin::dto::{
-    ChangelogRenderRequest, ChangelogRenderResponse, PluginCommitEntry, PluginContributor, PluginInvocation,
+    ChangelogRenderRequest, ChangelogRenderResponse, PROTOCOL_VERSION, PluginCommitEntry, PluginContributor,
+    PluginInvocation, decode_answer,
 };
-use cutver::plugin::types::PluginCall;
+use cutver::plugin::types::{PluginCall, PluginName};
 
 /// Canonical envelope, exactly as the plugins repository commits it.
 const CANONICAL_ENVELOPE: &str = include_str!("fixtures/plugin_wire_contract/changelog_request.json");
@@ -117,6 +118,69 @@ fn canonical_envelope_decodes_back_to_the_same_request() {
         serde_json::from_value(invocation.payload).expect("canonical payload decodes");
 
     assert_eq!(request, canonical_request());
+}
+
+#[test]
+fn an_answer_that_declares_another_protocol_is_refused_not_misdecoded() {
+    // A plugin built against a future shape says so in its answer. Reporting that as
+    // `InvalidPayload` sends the author hunting a schema bug that does not exist, which is the
+    // whole point of the version travelling up (#369 S3).
+    let answer = br#"{"protocol":"2","body":"Notes"}"#;
+    let name = PluginName::new("future-shape").unwrap();
+
+    let error = decode_answer::<ChangelogRenderResponse>(&name, "changelog.v1", answer)
+        .expect_err("a plugin that speaks protocol 2 must not be read as if it spoke 1");
+
+    let rendered = error.to_string();
+    assert!(
+        rendered.contains("protocol '2'"),
+        "the error must name the version the plugin declared; it reads: {rendered}"
+    );
+    assert!(
+        rendered.contains(PROTOCOL_VERSION),
+        "the error must name the version the host speaks; it reads: {rendered}"
+    );
+    assert!(
+        rendered.contains("Where:") && rendered.contains("Fix:"),
+        "the house diagnosis convention is Where:/Fix:, and a version mismatch needs both: {rendered}"
+    );
+}
+
+#[test]
+fn a_protocol_this_host_cannot_read_is_refused_too() {
+    // `"protocol": 2` is the numeric style this program itself uses for `schemaVersion`, and a
+    // Python author is as likely to write it as the string. Reading it as "absent" would bless it.
+    for answer in [
+        &br#"{"protocol":2,"body":"Notes"}"#[..],
+        &br#"{"protocol":null,"body":"Notes"}"#[..],
+        &br#"{"protocol":true,"body":"Notes"}"#[..],
+        &br#"{"protocol":["1"],"body":"Notes"}"#[..],
+    ] {
+        let declared = String::from_utf8_lossy(answer);
+        let outcome = decode_answer::<ChangelogRenderResponse>(
+            &PluginName::new("unreadable-shape").unwrap(),
+            "changelog.v1",
+            answer,
+        );
+
+        assert!(
+            outcome.is_err(),
+            "a declaration the host cannot read must be refused, never ignored: {declared}"
+        );
+    }
+}
+
+#[test]
+fn an_answer_that_declares_nothing_is_read_as_the_host_protocol() {
+    // Every plugin that exists today answers with the DTO alone. Absent has to keep meaning "the
+    // shape it was built against", or the version field would break the whole installed base.
+    let answer = br#"{"body":"Notes"}"#;
+    let name = PluginName::new("built-against-1").unwrap();
+
+    let decoded: ChangelogRenderResponse =
+        decode_answer(&name, "changelog.v1", answer).expect("an answer without a protocol key is protocol 1");
+
+    assert_eq!(decoded.body, "Notes");
 }
 
 #[test]

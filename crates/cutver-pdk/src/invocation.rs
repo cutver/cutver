@@ -2,9 +2,19 @@ use serde::{Deserialize, Serialize};
 
 use crate::{Capability, PluginOperation};
 
+/// The envelope and answer shape this crate speaks.
+///
+/// It travels in the request and may come back in the answer, so a plugin built against a different
+/// generation of this contract can say so instead of failing as a decode error that sends its author
+/// hunting a schema bug that does not exist (#369 S3). The value is `"1"`, following the one
+/// versioning style this program already uses for a wire contract rather than inventing a second.
+pub const PROTOCOL_VERSION: &str = "1";
+
 /// Envelope wrapping every plugin invocation across all runtimes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PluginInvocation {
+    /// The envelope shape the host speaks; always written, never defaulted.
+    pub protocol: String,
     /// Capability being invoked, e.g. "changelog.v1".
     pub capability: Capability,
     /// Operation within the capability, e.g. "render".
@@ -25,6 +35,7 @@ impl PluginInvocation {
     ) -> Result<Self, serde_json::Error> {
         let (capability, operation) = call.into();
         Ok(Self {
+            protocol: PROTOCOL_VERSION.to_string(),
             capability,
             operation,
             payload: serde_json::to_value(payload)?,
@@ -39,6 +50,7 @@ mod tests {
     #[test]
     fn test_plugin_invocation_roundtrip() {
         let invocation = PluginInvocation {
+            protocol: PROTOCOL_VERSION.to_string(),
             capability: Capability::ChangelogV1,
             operation: PluginOperation::Render,
             payload: serde_json::json!({

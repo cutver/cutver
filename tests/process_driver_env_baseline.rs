@@ -20,12 +20,22 @@ use cutver::plugin::{Capability, PluginCall, PluginDriver, PluginError};
 /// caught by review, which is why `SYSTEM_ENV_BASELINE` stays a short, hand-written list.
 const SECRET_SHAPES: [&str; 6] = ["TOKEN", "SECRET", "PASSWORD", "CREDENTIAL", "KEY", "JWT"];
 
-/// The dump command: the child prints its whole environment, one `key=value` per line.
+/// The dump command: the child **drains its envelope** and then prints its whole environment, one
+/// `key=value` per line.
+///
+/// Draining first is not decoration. `/usr/bin/env` and `set` answer without ever reading stdin, so the
+/// host's envelope write races the child's exit and can land on a closed pipe — `StdinWriteFailed`,
+/// `BrokenPipe` — on any host where the child wins. That is the trap
+/// `docs/guides/plugin-process-runtime.md` documents for plugin authors, and this fixture walked into
+/// it: it passed on Windows and ubuntu and failed on the macOS leg of PR #370.
 fn env_dump_command() -> (String, Vec<String>) {
     if cfg!(windows) {
-        ("cmd".to_string(), vec!["/c".to_string(), "set".to_string()])
+        ("cmd".to_string(), vec!["/C".to_string(), "more >nul & set".to_string()])
     } else {
-        ("/usr/bin/env".to_string(), Vec::new())
+        (
+            "/bin/sh".to_string(),
+            vec!["-c".to_string(), "cat >/dev/null; exec /usr/bin/env".to_string()],
+        )
     }
 }
 

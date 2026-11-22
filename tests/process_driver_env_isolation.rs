@@ -21,12 +21,17 @@ use cutver::plugin::dto::PluginInvocation;
 use cutver::plugin::types::PluginName;
 use cutver::plugin::{Capability, PluginCall, PluginDriver, PluginError};
 
-/// The dump command: the child prints its whole environment, one `key=value` per line.
+/// The dump command: the child drains its envelope and then prints its whole environment, one
+/// `key=value` per line. Draining first is what keeps the host's stdin write from racing the child's
+/// exit onto a closed pipe — see the same note in `tests/process_driver_env_baseline.rs`.
 fn env_dump_command() -> (String, Vec<String>) {
     if cfg!(windows) {
-        ("cmd".to_string(), vec!["/c".to_string(), "set".to_string()])
+        ("cmd".to_string(), vec!["/C".to_string(), "more >nul & set".to_string()])
     } else {
-        ("/usr/bin/env".to_string(), Vec::new())
+        (
+            "/bin/sh".to_string(),
+            vec!["-c".to_string(), "cat >/dev/null; exec /usr/bin/env".to_string()],
+        )
     }
 }
 

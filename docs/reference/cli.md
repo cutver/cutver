@@ -16,6 +16,15 @@ Every command supports `--help`; each section below lists the same flags. `cutve
 
 Every JSON surface reports the same outcome and opens with `schemaVersion` ([machine contract](../internals/machine-contract.md)).
 
+`cutver doctor` reports more than drift, and none of it moves the exit code. Besides one row per
+`[plugins.<name>.permissions] filesystem` grant — the declared spelling, the resolved guest path and
+the canonical host directory behind it, with the plugin name and capability set — its `--json` object
+carries a `plugins` array (one entry per declared plugin: `name`, `capabilities`, `grants`) and a
+`plugin_load_error` field. A plugin whose driver cannot be built — `permissions.env` is resolved at
+construction, so an unset declared grant fails it — is reported in that field and as a dashboard row
+instead of failing the command, so `doctor` still diagnoses a host that cannot load its plugins. The
+exit code stays `0` for a clean run, `2` for drift, and `1` only when a check could not run.
+
 ## Global Options
 
 `--ci` and `--no-ci` are accepted by every subcommand, before or after its name. `--ci` turns the CI

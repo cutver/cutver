@@ -43,7 +43,17 @@ dashboard, no rendered drift block, no suggested-fix text.
   "checks": [{ "name": "versions", "status": "drift" }, { "name": "changelog", "status": "skipped" }],
   "version_drift": [{ "path": "b.json", "expected": "1.1.0", "actual": "1.0.0" }],
   "changelog_drift": null,
-  "warnings": ["[version].source is deprecated, use current_source; it will be removed in 1.0.0"]
+  "warnings": ["[version].source is deprecated, use current_source; it will be removed in 1.0.0"],
+  "plugins": [
+    {
+      "name": "probe",
+      "capabilities": ["changelog.v1"],
+      "grants": [
+        { "declared": "assets", "resolved": "/work/repo/assets", "canonical": "/work/repo/assets", "location": "inside" }
+      ]
+    }
+  ],
+  "plugin_load_error": null
 }
 ```
 
@@ -58,6 +68,17 @@ dashboard, no rendered drift block, no suggested-fix text.
 - `version_drift` is always an array, empty when every manifest agrees; `path` is relative to the
   workspace root, as in the human block. `changelog_drift` carries `missing_in_changelog` (a Git tag
   with no entry) and `orphan_sections` (an entry with no tag) when the changelog check ran.
+- `plugins` holds one entry per declared `[plugins.<name>]`, in name order: `name`, `capabilities`, and
+  one `grants` entry per `permissions.filesystem` entry. Each grant carries the three values resolution
+  keeps — `declared` (the spelling the document wrote), `resolved` (the guest path the plugin mounts)
+  and `canonical` (the host directory the sandbox really opens, `null` when the directory does not exist
+  yet) — plus `location`, which is `inside`, `outside` or `unresolved`. Reporting them is why resolution
+  stopped overwriting the declared spelling with the resolved one (#268).
+- `plugin_load_error` is `null` when the plugin manager could be built, and otherwise the typed error
+  that stopped it: `permissions.env` is resolved while the drivers are constructed, so an unset declared
+  grant fails it. It is a field of its own rather than a `warnings` entry (that array is the deprecation
+  channel), and it never moves `ok` or the exit code — a host that cannot load its plugins still gets a
+  diagnosis instead of a failed command.
 
 A check that cannot run — an unreadable manifest, an unusable Git — fails the command with exit `1`
 and the error on stderr, which is why no check reports a `failed` status.

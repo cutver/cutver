@@ -12,8 +12,19 @@ Validates configuration syntax, verifies declared manifest files, and detects **
 | Flag | Long Option | Description |
 | :--- | :--- | :--- |
 | | `--check-changelog` | Verifies that release entries in `CHANGELOG.md` match Git release tags. Headings are read through `[git] tag_prefix`, the same as `changelog latest` and `show`, so the commands agree: with `tag_prefix = "release-"`, `## release-1.2.0` is the entry for that tag. A tag whose entry is really absent is still drift, exit code `2`. |
-| | `--json` | Prints the diagnosis as one JSON object on stdout — `ok`, a `checks` entry per check (`ok`/`drift`/`skipped`) and the drift arrays — and renders no dashboard or drift text. The exit code still reports the outcome: `0` clean, `2` drift, `1` a check could not run. See the [machine contract](../internals/machine-contract.md). |
+| | `--json` | Prints the diagnosis as one JSON object on stdout — `ok`, a `checks` entry per check (`ok`/`drift`/`skipped`), the drift arrays, the `plugins` report and `plugin_load_error` — and renders no dashboard or drift text. The exit code still reports the outcome: `0` clean, `2` drift, `1` a check could not run. See the [machine contract](../internals/machine-contract.md). |
 | `-c <PATH>` | `--config <PATH>` | Explicit path to `cutver.toml`. |
+
+`doctor` also reports the plugin side of the document, because a grant that resolves somewhere
+unexpected is otherwise invisible until a guest hits `EPERM`. One `Grant` row per
+`[plugins.<name>.permissions] filesystem` entry carries the plugin name, its capability set and the
+three values resolution keeps — the declared spelling, the guest path the plugin mounts and the
+canonical host directory behind it — plus where the grant landed: `inside the workspace`, `OUTSIDE the
+workspace`, or `unresolved` when the directory does not exist yet. A `Plugins` row counts what is
+declared. A plugin whose driver cannot be built is reported in that row with its typed error instead
+of failing the command, because `permissions.env` is resolved at driver construction and a host with a
+declared grant unset must still get a diagnosis; `--json` carries the same data as `plugins` and
+`plugin_load_error`, and neither moves `ok` or the exit code.
 
 ---
 

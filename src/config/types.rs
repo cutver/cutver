@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 use super::artifact::Artifact;
@@ -79,6 +79,23 @@ pub enum ConfigError {
         "invalid `[gates] dir = \"{dir}\"` in cutver.toml: {reason}\n  Fix: declare a workspace-relative directory that stays inside the workspace, such as the default `.cutver/attestations`. A directory that names the workspace root or walks upwards would exempt the whole tree from the clean-tree guard."
     )]
     GatesDirInvalid { dir: String, reason: String },
+}
+
+impl ConfigError {
+    /// The error one declared grant produces when its real directory falls outside the workspace.
+    ///
+    /// Both host paths are spelled the way every other configured path is: forward-slashed, without
+    /// the Windows verbatim prefix. The resolved directory is carried here because it is the one
+    /// piece of evidence a reader needs to see which host directory the grant really reached (#268
+    /// S3, S4).
+    pub(crate) fn grant_outside_workspace(plugin: &str, grant: &str, real: &Path, root: &Path) -> Self {
+        Self::GrantOutsideWorkspace {
+            plugin: plugin.to_string(),
+            grant: grant.to_string(),
+            resolved: real.to_string_lossy().replace('\\', "/"),
+            root: root.to_string_lossy().replace('\\', "/"),
+        }
+    }
 }
 
 #[derive(Debug, Default, Deserialize)]

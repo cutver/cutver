@@ -154,10 +154,8 @@ fn build_manifest(
         manifest = manifest.with_allowed_host(host);
     }
 
-    for path_str in &permissions.filesystem {
-        let host = std::fs::canonicalize(path_str).unwrap_or_else(|_| PathBuf::from(path_str));
-        let host_name = host.to_string_lossy().into_owned();
-        manifest = manifest.with_allowed_path(host_name, guest_name(path_str));
+    for (host, guest) in filesystem_mounts(permissions) {
+        manifest = manifest.with_allowed_path(host, guest);
     }
 
     // The grant authority is shared with the process runtime, so an unset declared key fails
@@ -181,6 +179,35 @@ fn build_manifest(
 /// with forward slashes, which is the one the lifecycle payload advertises as `root_dir`.
 fn guest_name(host_path: &str) -> String {
     host_path.replace('\\', "/")
+}
+
+/// The `(host directory, guest name)` pair each granted directory mounts, in declaration order.
+///
+/// `config::discovery` canonicalized every grant already and records the result (#268 S3), so a
+/// configuration loaded from `cutver.toml` mounts exactly the host directory `cutver doctor` reports
+/// instead of canonicalizing it a second time and dropping the answer. Permissions built without
+/// discovery — a driver test, a plugin manager handed a raw `PluginConfig` — carry no record, and then
+/// the host path is canonicalized here. A directory that does not exist yet is mounted as resolved:
+/// the grant is confined to the workspace by `config::discovery`, which refuses one that escapes it.
+fn filesystem_mounts(permissions: &PermissionsConfig) -> Vec<(String, String)> {
+    if !permissions.filesystem_grants.is_empty() {
+        return permissions
+            .filesystem_grants
+            .iter()
+            .map(|grant| {
+                let host = grant.canonical.clone().unwrap_or_else(|| grant.resolved.clone());
+                (host, guest_name(&grant.resolved))
+            })
+            .collect();
+    }
+    permissions
+        .filesystem
+        .iter()
+        .map(|path| {
+            let host = std::fs::canonicalize(path).unwrap_or_else(|_| PathBuf::from(path));
+            (host.to_string_lossy().into_owned(), guest_name(path))
+        })
+        .collect()
 }
 
 /// Instantiates an Extism Plugin from a Manifest.
@@ -337,6 +364,7 @@ mod tests {
             network: vec!["api.example.com".to_string()],
             env: vec!["PATH".to_string()],
             filesystem: vec![".".to_string()],
+            ..Default::default()
         };
         let caps = HashSet::from([Capability::ManifestV1]);
 

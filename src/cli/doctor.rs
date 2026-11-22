@@ -10,6 +10,8 @@ use crate::cli::path::relativize_path;
 use crate::config::Config;
 use crate::manifest;
 use crate::plugin::PluginManager;
+use crate::plugin::PluginName;
+use crate::plugin::types::FilesystemGrant;
 
 /// The machine form of a diagnosis: what was checked, what it found, and nothing rendered.
 ///
@@ -29,6 +31,12 @@ pub struct DoctorReport {
     /// The deprecations this `cutver.toml` still carries, which the runner fills: `CONTRACT.md` names
     /// `doctor` as a migration-warning surface, so what the human reads is what a runner can read.
     pub warnings: Vec<String>,
+    /// One entry per declared plugin in name order, carrying its capabilities and every resolved
+    /// `permissions.filesystem` grant (#268 S5). Empty when none is declared, never absent.
+    pub plugins: Vec<PluginJson>,
+    /// Why the plugin manager could not be built, else `null` (D1): the failure is reported, never
+    /// discarded and never propagated, so `doctor` keeps reporting on a host that cannot build them.
+    pub plugin_load_error: Option<String>,
 }
 
 impl DoctorReport {
@@ -56,6 +64,8 @@ impl DoctorReport {
             version_drift,
             changelog_drift,
             warnings: Vec::new(),
+            plugins: Vec::new(),
+            plugin_load_error: None,
         }
     }
 }
@@ -108,6 +118,102 @@ impl ChangelogDriftJson {
     }
 }
 
+/// One declared plugin: its name, its capability set and the grants resolution recorded for it
+/// (#268 S5).
+#[derive(Debug, Serialize)]
+pub struct PluginJson {
+    pub name: String,
+    pub capabilities: Vec<String>,
+    pub grants: Vec<GrantJson>,
+}
+
+/// One `permissions.filesystem` grant of a declared plugin, carrying the three values resolution kept
+/// (#268 S3, S6) and where the grant landed.
+#[derive(Debug, Serialize)]
+pub struct GrantJson {
+    /// The spelling `cutver.toml` declared.
+    pub declared: String,
+    /// The guest path the plugin mounts.
+    pub resolved: String,
+    /// The canonical host directory behind `resolved`; `null` when it does not exist yet.
+    pub canonical: Option<String>,
+    /// `inside`, `outside` or `unresolved`, derived from `canonical` against the workspace root.
+    pub location: &'static str,
+}
+
+impl GrantJson {
+    /// Projects one resolved grant and derives where its host directory really sits.
+    ///
+    /// `outside` is unreachable from a loaded `cutver.toml` — `config::discovery` refuses a grant that
+    /// escapes the workspace with `ConfigError::GrantOutsideWorkspace` — but it is *derived* here
+    /// rather than assumed, so the report states the comparison it made. A directory that does not
+    /// exist yet has no canonical path, and that is a third answer, not "outside" (#268 S6).
+    pub fn from_grant(grant: &FilesystemGrant, root_dir: &Path) -> Self {
+        let location = match &grant.canonical {
+            Some(canonical) if Path::new(canonical).starts_with(root_dir) => "inside",
+            Some(_) => "outside",
+            None => "unresolved",
+        };
+        Self {
+            declared: grant.declared.clone(),
+            resolved: grant.resolved.clone(),
+            canonical: grant.canonical.clone(),
+            location,
+        }
+    }
+
+    /// The human sentence for [`Self::location`], so the row states the comparison instead of a word.
+    fn location_note(&self) -> &'static str {
+        match self.location {
+            "inside" => "inside the workspace",
+            "outside" => "OUTSIDE the workspace",
+            _ => "unresolved (the directory does not exist yet)",
+        }
+    }
+}
+
+/// The plugin half of the diagnosis as data: what `cutver.toml` declares and, when it could not be
+/// built, why (D1).
+pub fn plugin_section(config: &Config) -> (Vec<PluginJson>, Option<String>) {
+    (plugin_records(config), build_manager(config).err())
+}
+
+/// One record per declared plugin, in name order so two runs of the same document agree.
+fn plugin_records(config: &Config) -> Vec<PluginJson> {
+    let mut names: Vec<&PluginName> = config.plugins.keys().collect();
+    names.sort();
+    names
+        .into_iter()
+        .map(|name| {
+            let plugin = &config.plugins[name];
+            PluginJson {
+                name: name.to_string(),
+                capabilities: plugin.capabilities.iter().map(|c| c.as_str().to_string()).collect(),
+                grants: plugin
+                    .permissions
+                    .filesystem_grants
+                    .iter()
+                    .map(|grant| GrantJson::from_grant(grant, &config.root_dir))
+                    .collect(),
+            }
+        })
+        .collect()
+}
+
+/// The plugin manager `cutver.toml` describes, or the typed reason it could not be built.
+///
+/// D1 (`odd/tasks/cutver-doctor-grants-and-swallowed-reads.md`): `PluginManager::from_config` resolves
+/// `permissions.env` while it constructs the drivers, so on a host with a declared grant unset (the
+/// #300 scenario) it fails. Discarding that with `.ok()` hides a real condition; propagating it with
+/// `?` would make `doctor` start failing on exactly the host that needs a diagnosis. So the error is
+/// returned here as output — a dashboard row and the `plugin_load_error` field — and #300 stays out
+/// of scope.
+fn build_manager(config: &Config) -> Result<Arc<PluginManager>, String> {
+    PluginManager::from_config(&config.plugins)
+        .map(Arc::new)
+        .map_err(|error| error.to_string())
+}
+
 /// Renders the report as the versioned object `doctor --json` prints.
 pub fn render_report_json(report: &DoctorReport) -> Result<String, serde_json::Error> {
     serde_json::to_string_pretty(&crate::cli::json::Versioned::new(report))
@@ -120,12 +226,15 @@ pub fn render_dashboard(config: &Config, check_changelog: bool, theme: &crate::c
     let _ = writeln!(out, "{} {} is valid\n", theme.success_icon(), theme.bold(filename));
 
     let config_val = format!("valid ({filename})");
-    let manifest_val = format_manifest_summary(config, theme);
+    // D1: one construction, and its failure is a row below instead of a `.ok()` that hides it.
+    let manager = build_manager(config);
+    let manifest_val = format_manifest_summary(config, theme, manager.as_ref().ok());
     let preflight_val = format_preflight_summary(config);
 
     render_grid_row(&mut out, "Configuration", &config_val, theme);
     render_grid_row(&mut out, "Manifests", &manifest_val, theme);
     render_grid_row(&mut out, "Preflight", &preflight_val, theme);
+    render_plugin_rows(&mut out, config, manager.as_ref().err().map(String::as_str), theme);
 
     if check_changelog {
         render_grid_row(&mut out, "Changelog", "consistent with Git tags", theme);
@@ -141,15 +250,17 @@ pub fn render_grid_row(out: &mut String, label: &str, value: &str, theme: &crate
 }
 
 /// Formats the summary text for manifests row.
-fn format_manifest_summary(config: &Config, theme: &crate::cli::style::Theme) -> String {
+fn format_manifest_summary(
+    config: &Config,
+    theme: &crate::cli::style::Theme,
+    plugin_manager: Option<&Arc<PluginManager>>,
+) -> String {
     let total = config.manifest.len();
     let primary = config.primary_manifest();
-    let plugin_manager = PluginManager::from_config(&config.plugins).ok().map(Arc::new);
 
     let (path_str, ver_str) = match primary {
         Some(m) => {
-            let ver =
-                read_manifest_version(&config.root_dir, m, plugin_manager.as_ref()).unwrap_or_else(|| "unknown".into());
+            let ver = read_manifest_version(&config.root_dir, m, plugin_manager).unwrap_or_else(|| "unknown".into());
             let rel_path = relativize_path(m.path.as_str(), Some(&config.root_dir));
             (rel_path, ver)
         }
@@ -177,7 +288,53 @@ fn format_preflight_summary(config: &Config) -> String {
     }
 }
 
-/// Reads version from manifest file, ignoring read/parse errors for display.
+/// Renders the plugin rows: what was declared, one row per grant, and the load failure when the
+/// manager could not be built (#268 S5, D1).
+fn render_plugin_rows(out: &mut String, config: &Config, load_error: Option<&str>, theme: &crate::cli::style::Theme) {
+    let plugins = plugin_records(config);
+    let declared = plugins.len();
+    let summary = match load_error {
+        Some(error) => format!("{declared} declared, could not load: {error}"),
+        None => {
+            let sets: Vec<String> = plugins
+                .iter()
+                .map(|plugin| format!("{}: {}", plugin.name, plugin.capabilities.join(", ")))
+                .collect();
+            if sets.is_empty() {
+                "0 declared".to_string()
+            } else {
+                format!("{declared} declared ({})", sets.join(", "))
+            }
+        }
+    };
+    render_grid_row(out, "Plugins", &summary, theme);
+    for plugin in &plugins {
+        for grant in &plugin.grants {
+            render_grid_row(out, "Grant", &format_grant_row(plugin, grant), theme);
+        }
+    }
+}
+
+/// One grant as a dashboard row: `plugin [capabilities]: "declared" -> resolved -> canonical (where)`.
+fn format_grant_row(plugin: &PluginJson, grant: &GrantJson) -> String {
+    let host = match &grant.canonical {
+        Some(canonical) => format!("{canonical} ({})", grant.location_note()),
+        None => grant.location_note().to_string(),
+    };
+    format!(
+        "{} [{}]: \"{}\" -> {} -> {host}",
+        plugin.name,
+        plugin.capabilities.join(", "),
+        grant.declared,
+        grant.resolved
+    )
+}
+
+/// Reads the version to display, or `None` when it cannot be read.
+///
+/// This is the display path only: `bump::doctor` reads every manifest through the same editors and
+/// fails the command (exit `1`, with the error on stderr) when one cannot be read, so a `None` here
+/// can only mean the run already reported that failure — the condition is tracked, not swallowed.
 fn read_manifest_version(
     root_dir: &Path,
     manifest: &crate::config::Manifest,
@@ -190,167 +347,9 @@ fn read_manifest_version(
     Some(version.to_string())
 }
 
-/// Renders version drift diagnostic block answering: what, where, and how to fix.
-pub fn render_version_drift(drifts: &[Drift], root_dir: Option<&Path>, theme: &crate::cli::style::Theme) -> String {
-    let mut out = String::new();
-    let count = drifts.len();
-    let count_styled = theme.accent(count.to_string());
-    let _ = writeln!(
-        out,
-        "{} Version drift detected ({count_styled} manifest(s) out of sync):",
-        theme.error_icon()
-    );
-
-    for Drift { path, expected, actual } in drifts {
-        let norm_path = relativize_path(path, root_dir);
-        let exp = theme.accent(expected);
-        let act = theme.error(actual);
-        let _ = writeln!(out, "  {} {norm_path}: expected {exp}, found {act}", theme.bullet());
-    }
-
-    let _ = writeln!(out, "\nSuggested fix:");
-    let _ = writeln!(
-        out,
-        "  {} Align version numbers manually across all files.",
-        theme.bullet()
-    );
-    let bump_cmd = theme.accent("cutver bump patch");
-    let _ = writeln!(
-        out,
-        "  {} Or run '{bump_cmd}' to synchronize all manifests in one step.",
-        theme.bullet()
-    );
-    out
-}
-
-/// Renders changelog drift diagnostic block.
-pub fn render_changelog_drift(cl_drift: &ChangelogDrift, theme: &crate::cli::style::Theme) -> String {
-    let mut out = String::new();
-    let _ = writeln!(out, "{} Changelog drift detected:", theme.error_icon());
-
-    append_missing_changelog(&mut out, &cl_drift.missing_in_changelog, theme);
-    append_orphan_sections(&mut out, &cl_drift.orphan_sections, theme);
-
-    let _ = writeln!(out, "\nSuggested next steps:");
-    let cmd = theme.accent("cutver changelog show <version>");
-    let _ = writeln!(
-        out,
-        "  {} Add missing release sections to CHANGELOG.md or query with '{cmd}'.",
-        theme.bullet()
-    );
-    let _ = writeln!(
-        out,
-        "  {} Check if orphan versions were tagged with a different prefix or not yet pushed.",
-        theme.bullet()
-    );
-    out
-}
-
-fn append_missing_changelog(out: &mut String, tags: &[String], theme: &crate::cli::style::Theme) {
-    if tags.is_empty() {
-        return;
-    }
-    let _ = writeln!(out, "\n  Missing in changelog (Git tag exists):");
-    for tag in tags {
-        let _ = writeln!(out, "    {} {}", theme.bullet(), theme.accent(tag));
-    }
-}
-
-fn append_orphan_sections(out: &mut String, sections: &[String], theme: &crate::cli::style::Theme) {
-    if sections.is_empty() {
-        return;
-    }
-    let _ = writeln!(out, "\n  Orphan changelog sections (no Git tag exists):");
-    for sec in sections {
-        let _ = writeln!(out, "    {} {}", theme.bullet(), theme.error(sec));
-    }
-}
-
 fn pad_right(text: &str, width: usize) -> String {
     let count = width.saturating_sub(text.len());
     format!("{text}{}", " ".repeat(count))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::cli::style::Theme;
-    use crate::config::{Config, Manifest, ManifestKind, ManifestPath, PreflightCommand, VersionSection};
-    use std::path::PathBuf;
-
-    #[test]
-    fn test_render_grid_row_padding() {
-        let theme = Theme::new(false);
-        let mut out = String::new();
-        render_grid_row(&mut out, "Configuration", "valid (cutver.toml)", &theme);
-        assert_eq!(out, "  Configuration   valid (cutver.toml)\n");
-    }
-
-    #[test]
-    fn test_render_dashboard_layout() {
-        let theme = Theme::new(false);
-        let config = Config {
-            root_dir: PathBuf::from("."),
-            version: VersionSection {
-                current_source: "Cargo.toml".into(),
-                strategy: "manual".into(),
-                plugin: None,
-            },
-            manifest: vec![Manifest {
-                path: ManifestPath::parse("Cargo.toml").unwrap(),
-                package: None,
-                primary: true,
-                kind: ManifestKind::CargoPackage,
-            }],
-            preflight: vec![(
-                "test".into(),
-                PreflightCommand {
-                    command: "cargo test".into(),
-                    timeout: None,
-                },
-            )],
-            ..Default::default()
-        };
-
-        let rendered = render_dashboard(&config, true, &theme);
-        assert!(rendered.contains("✔ cutver.toml is valid\n\n"));
-        assert!(rendered.contains("  Configuration   valid (cutver.toml)\n"));
-        assert!(rendered.contains("  Manifests       1 tracked (Cargo.toml @ "));
-        assert!(rendered.contains("  Preflight       1 step defined (test: cargo test)\n"));
-        assert!(rendered.contains("  Changelog       consistent with Git tags\n"));
-    }
-
-    #[test]
-    fn test_render_version_drift() {
-        let theme = Theme::new(false);
-        let drifts = vec![Drift {
-            path: "/path/to/repo/Cargo.toml".into(),
-            expected: "1.2.0".into(),
-            actual: "1.1.0".into(),
-        }];
-        let root = Path::new("/path/to/repo");
-        let rendered = render_version_drift(&drifts, Some(root), &theme);
-        assert!(rendered.contains("Version drift detected (1 manifest(s) out of sync):"));
-        assert!(rendered.contains("Cargo.toml: expected 1.2.0, found 1.1.0"));
-        assert!(rendered.contains("Suggested fix:"));
-        assert!(rendered.contains("cutver bump patch"));
-    }
-
-    #[test]
-    fn test_render_changelog_drift() {
-        let theme = Theme::new(false);
-        let cl_drift = ChangelogDrift {
-            missing_in_changelog: vec!["v1.1.0".into()],
-            orphan_sections: vec!["1.2.0".into()],
-        };
-        let rendered = render_changelog_drift(&cl_drift, &theme);
-        assert!(rendered.contains("Changelog drift detected:"));
-        assert!(rendered.contains("Missing in changelog (Git tag exists):"));
-        assert!(rendered.contains("v1.1.0"));
-        assert!(rendered.contains("Orphan changelog sections (no Git tag exists):"));
-        assert!(rendered.contains("1.2.0"));
-        assert!(rendered.contains("Suggested next steps:"));
-    }
 }
 
 #[cfg(test)]

@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use super::preflight::parse_preflight;
 use super::types::{Config, ConfigError, ManifestKind, ManifestPath};
 use super::validation::{deduce_current_source, reject_unknown_keys, validate};
+use crate::plugin::types::FilesystemGrant;
 
 pub fn load(path: impl AsRef<Path>) -> Result<Config, ConfigError> {
     let raw = path.as_ref();
@@ -50,36 +51,31 @@ pub fn load(path: impl AsRef<Path>) -> Result<Config, ConfigError> {
     Ok(config)
 }
 
-/// Resolves declared plugin filesystem grants the way every other configured path is
-/// resolved: against the workspace root, forward-slashed, without the Windows verbatim
-/// prefix. A plugin then mounts the workspace at the one path the lifecycle payload
-/// advertises as `root_dir`, instead of at whatever directory the process was launched
-/// from. A grant whose real directory falls outside the workspace is rejected here, before
-/// anything is mounted.
+/// Resolves declared plugin filesystem grants the way every other configured path is resolved:
+/// against the workspace root, forward-slashed, without the Windows verbatim prefix, so a plugin
+/// mounts the workspace at the `root_dir` the lifecycle payload advertises. Each entry keeps declared,
+/// resolved and canonical (#268 S5), and a grant that escapes the workspace is rejected here.
 fn resolve_plugin_filesystem(config: &mut Config) -> Result<(), ConfigError> {
     let root_dir = config.root_dir.clone();
     for (name, plugin) in &mut config.plugins {
-        let mut resolved = Vec::with_capacity(plugin.permissions.filesystem.len());
-        for entry in &plugin.permissions.filesystem {
-            let guest = resolve_grant(&root_dir, entry).map_err(|real| ConfigError::GrantOutsideWorkspace {
-                plugin: name.to_string(),
-                grant: entry.clone(),
-                resolved: real.to_string_lossy().replace('\\', "/"),
-                root: root_dir.to_string_lossy().replace('\\', "/"),
-            })?;
-            resolved.push(guest);
+        let declared = std::mem::take(&mut plugin.permissions.filesystem);
+        let mut grants = Vec::with_capacity(declared.len());
+        for entry in &declared {
+            let grant = resolve_grant(&root_dir, entry)
+                .map_err(|real| ConfigError::grant_outside_workspace(name.as_str(), entry, &real, &root_dir))?;
+            grants.push(grant);
         }
-        plugin.permissions.filesystem = resolved;
+        plugin.permissions.filesystem = grants.iter().map(|grant| grant.resolved.clone()).collect();
+        plugin.permissions.filesystem_grants = grants;
     }
     Ok(())
 }
 
-/// Resolves one grant to the absolute path the configuration declares, with `.`/`..` removed
-/// lexically so the guest name matches the `root_dir` the payload advertises even when the
-/// directory is reached through a symlink. The host directory is canonicalized later, at the
-/// driver, where following symlinks is the correct behaviour — so the containment check here
-/// compares the real directory, and returns it when the grant escapes the workspace.
-fn resolve_grant(root_dir: &Path, entry: &str) -> Result<String, PathBuf> {
+/// Resolves one grant into the three values it carries: the spelling the document declared, the guest
+/// path it becomes and the canonical host directory behind it. `.`/`..` are removed lexically so the
+/// guest name matches the advertised `root_dir` even through a symlink; the containment check compares
+/// the canonical directory, which is also what the record carries.
+fn resolve_grant(root_dir: &Path, entry: &str) -> Result<FilesystemGrant, PathBuf> {
     let declared = Path::new(entry);
     let absolute = if declared.is_absolute() {
         strip_verbatim_prefix(declared.to_path_buf())
@@ -87,13 +83,17 @@ fn resolve_grant(root_dir: &Path, entry: &str) -> Result<String, PathBuf> {
         root_dir.join(declared)
     };
     let resolved = crate::plugin::cache::lexical_normalize(&absolute);
-    let Ok(real) = canonicalize(&resolved) else {
-        return Ok(resolved.to_string_lossy().replace('\\', "/"));
+    let guest = resolved.to_string_lossy().replace('\\', "/");
+    let canonical = match canonicalize(&resolved) {
+        Ok(real) if !real.starts_with(root_dir) => return Err(real),
+        Ok(real) => Some(real.to_string_lossy().replace('\\', "/")),
+        Err(_) => None,
     };
-    if real.starts_with(root_dir) {
-        return Ok(resolved.to_string_lossy().replace('\\', "/"));
-    }
-    Err(real)
+    Ok(FilesystemGrant {
+        declared: entry.to_string(),
+        resolved: guest,
+        canonical,
+    })
 }
 
 // In `src/config/discovery.rs`: Remove checking for `release.toml` in `discover()`. Only check for `cutver.toml`.

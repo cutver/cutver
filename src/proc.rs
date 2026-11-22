@@ -44,6 +44,9 @@ pub(crate) enum Ended {
 pub(crate) enum SupervisionError {
     Spawn(io::Error),
     Wait(io::Error),
+    /// The output could not be read to the end — a failed read, or a drain thread that panicked.
+    /// A partial buffer would look like a short-but-valid payload, so it is an error instead.
+    Drain(io::Error),
     /// The budget ran out before an exchange that was already under way finished — [`run_capture`]
     /// only, and never with the direct child still running: that case is [`Ended::TimedOut`].
     TimedOut {
@@ -54,7 +57,7 @@ pub(crate) enum SupervisionError {
 impl SupervisionError {
     pub(crate) fn into_io(self) -> io::Error {
         match self {
-            Self::Spawn(e) | Self::Wait(e) => e,
+            Self::Spawn(e) | Self::Wait(e) | Self::Drain(e) => e,
             Self::TimedOut { timeout } => io::Error::new(
                 io::ErrorKind::TimedOut,
                 format!("the exchange did not finish inside the {timeout:?} budget"),
@@ -191,17 +194,21 @@ fn left(start: Instant, timeout: Duration) -> Duration {
 }
 
 fn recv_drained(
-    drained: mpsc::Receiver<Vec<u8>>,
+    drained: mpsc::Receiver<io::Result<Vec<u8>>>,
     start: Instant,
     timeout: Duration,
 ) -> Result<Vec<u8>, SupervisionError> {
     match drained.recv_timeout(left(start, timeout)) {
-        Ok(bytes) => Ok(bytes),
+        // A read that failed is a read that failed. Returning the bytes collected so far would hand
+        // the caller a truncated payload it cannot tell from a complete one (#266).
+        Ok(result) => result.map_err(SupervisionError::Drain),
         // A descendant still holds this pipe: the output never reached EOF inside the budget.
         Err(RecvTimeoutError::Timeout) => Err(SupervisionError::TimedOut { timeout }),
-        // The drain thread cannot fail: it ignores read errors. Report no bytes rather than
-        // inventing some.
-        Err(RecvTimeoutError::Disconnected) => Ok(Vec::new()),
+        // The thread ended without reporting, which means it panicked. That is a bug, not an empty
+        // output, and naming it as one is the whole point of this arm.
+        Err(RecvTimeoutError::Disconnected) => Err(SupervisionError::Drain(io::Error::other(
+            "the output drain thread panicked",
+        ))),
     }
 }
 
@@ -246,14 +253,16 @@ fn spawn_writer_thread(stdin: Option<ChildStdin>, payload: Vec<u8>) -> mpsc::Rec
 /// A channel rather than a join handle for the same reason as the writer: the drain waits for an
 /// EOF that a descendant holding the pipe can postpone, so the caller must be able to stop waiting
 /// without stopping the read.
-fn spawn_drain_thread<R: Read + Send + 'static>(reader: Option<R>) -> mpsc::Receiver<Vec<u8>> {
+fn spawn_drain_thread<R: Read + Send + 'static>(reader: Option<R>) -> mpsc::Receiver<io::Result<Vec<u8>>> {
     let (sender, receiver) = mpsc::channel();
     thread::spawn(move || {
         let mut buffer = Vec::new();
-        if let Some(mut reader) = reader {
-            let _ = reader.read_to_end(&mut buffer);
-        }
-        let _ = sender.send(buffer);
+        let result = match reader {
+            Some(mut reader) => reader.read_to_end(&mut buffer).map(|_bytes_read| buffer),
+            None => Ok(buffer),
+        };
+        // A send error only means the caller already returned; the thread ends here either way.
+        let _ = sender.send(result);
     });
     receiver
 }
@@ -291,4 +300,32 @@ const SIGKILL: i32 = 9;
 unsafe extern "C" {
     fn setpgid(pid: i32, pgid: i32) -> i32;
     fn killpg(pgrp: i32, sig: i32) -> i32;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A reader that fails the way a pipe fails: the child exited zero, the read did not finish.
+    struct FailingReader;
+
+    impl Read for FailingReader {
+        fn read(&mut self, _buffer: &mut [u8]) -> io::Result<usize> {
+            Err(io::Error::other("the pipe broke mid-read"))
+        }
+    }
+
+    /// #266: "A drain-thread panic or a short read on a child that exited 0 returns `Ok` with
+    /// truncated stdout, and the caller reports an opaque payload error with no cause." An empty
+    /// buffer is exactly what makes that opaque, so the read failure has to reach the caller.
+    #[test]
+    fn a_failed_drain_is_reported_instead_of_truncating_the_output() {
+        let drained = spawn_drain_thread(Some(FailingReader));
+        let error = recv_drained(drained, Instant::now(), Duration::from_secs(1))
+            .expect_err("a read that failed must not look like an empty output");
+        assert!(
+            error.into_io().to_string().contains("the pipe broke mid-read"),
+            "the read failure must reach the caller with its cause attached"
+        );
+    }
 }

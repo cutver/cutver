@@ -118,6 +118,16 @@ impl PluginDriver for ProcessDriver {
                 capability: capability.as_str().to_string(),
                 timeout_secs: timeout.as_secs(),
             }),
+            // The exchange was under way, so this is not a spawn failure: the output could not be
+            // read to the end. `exit_code: -1` is this variant's existing "no code" value, used for
+            // a child killed by a signal; here there is no code because there was no clean exit to
+            // read. The cause is carried as text because the drain produced no stderr to quote.
+            Err(SupervisionError::Drain(source)) => Err(PluginError::ExecutionFailed {
+                name: self.name.clone(),
+                capability: capability.as_str().to_string(),
+                exit_code: -1,
+                stderr: format!("reading the plugin's output failed: {source}"),
+            }),
             Err(source) => Err(PluginError::SpawnFailed {
                 name: self.name.clone(),
                 command: self.command.clone(),

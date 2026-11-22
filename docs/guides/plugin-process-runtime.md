@@ -8,16 +8,22 @@ a release can delegate to a script in any language without a `wasm32-wasip1` bui
 
 ## No sandbox
 
-A process plugin is an ordinary child process. It runs as the same user, in the same working
-directory, with the same file permissions and the same network reach as `cutver` itself
-(`src/plugin/driver/process.rs` sets no directory and no isolation). Nothing in the plugin
-entry restricts where it reads, writes or connects:
+A process plugin is an ordinary child process. It runs as the same user, in the resolved workspace
+root, with the same file permissions and the same network reach as `cutver` itself
+(`src/plugin/driver/process.rs` sets no isolation: only the directory and the environment). Nothing
+in the plugin entry restricts where it reads, writes or connects:
 
 - `permissions.network` and `permissions.filesystem` have **no effect** here: the driver is built from
   `command`, `timeout_seconds`, `capabilities` and `permissions.env` only
   (`src/plugin/manager/factory.rs:57-84`).
 - `source` and `hash` are unused, so there is no digest gate either (same function).
 - `permissions.env` narrows the child's environment, and that is the only containment there is.
+
+A row is a report, not a promise. `cutver doctor` prints one row per `permissions.filesystem` entry
+because a row states what the document declares, so on this runtime the row ends
+`inert: runtime = "process" applies only permissions.env`, and `doctor --json` carries
+`"effect": "ignored"` in `plugins[].grants[]`. The
+[plugin reference](../reference/plugins.md#runtime-sandbox) is where the rule itself is stated.
 
 Containment is a WASM-only property of the engine
 ([ADR-0001](../adr/0001-dual-runtime-plugin-microkernel.md), *Consequences*). Use this runtime only
@@ -52,12 +58,18 @@ env = ["HELM_CACHE"]
 - **No shell.** Unlike `[preflight]` steps, `[hooks]` and `[publish] commands`, which go to `sh -c` or
   `cmd /C` (`src/preflight.rs`, `run_supervised`), a process plugin is spawned directly. Shell syntax,
   globs and `&&` are not interpreted; `command = "./script.sh && echo done"` fails to spawn.
-- **Resolution is the operating system's.** A bare name is looked up like any `exec` of that name; a
-  relative path is taken from `cutver`'s working directory. Prefer an absolute path.
-- **The working directory is `cutver`'s**, not the workspace root, and the child inherits it. Resolve
-  your own paths, or join `payload.root_dir`, which is the workspace root forward-slashed on every
-  platform (`crates/cutver-pdk/src/lifecycle.rs:6-19`). This is the one stage that still inherits it:
-  `[preflight]` steps, `[hooks]` and `[publish] commands` run in the workspace root instead (#295).
+- **Resolution is the operating system's, and a relative path does not mean the same thing on both
+  platforms.** A bare name is looked up like any `exec` of that name. A relative path resolves against
+  the workspace root on Unix, because the driver changes directory before `exec`, and against the
+  directory `cutver` was started in on Windows, because `CreateProcess` resolves it before the child's
+  working directory applies. Prefer an absolute path: it is the only spelling that behaves the same
+  everywhere (#367).
+- **The working directory is the workspace root.** The driver names it explicitly, so the child runs
+  where the release is being cut and never in the directory the user happened to run `cutver` from
+  (`src/plugin/driver/process.rs`, `child_command`; #367). `payload.root_dir` still carries the same
+  directory, forward-slashed, for a plugin that would rather be told
+  (`crates/cutver-pdk/src/lifecycle.rs:6-19`). `[preflight]` steps, `[hooks]` and `[publish] commands`
+  agree with it (#295).
 - **On Windows, name an executable.** Since no arguments cross the boundary, a `.cmd` wrapper cannot be
   handed to `cmd /C`; build an `.exe`.
 

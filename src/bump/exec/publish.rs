@@ -142,7 +142,7 @@ pub fn run_publish(config: &Config, request: &PublishRequest) -> Result<PublishS
     let mut declared_inputs = declared_inputs;
     declared_inputs.extend(gates::declared_input(config));
     git::status::require_clean_tree_except(&config.root_dir, config.git.require_clean_tree, &declared_inputs)?;
-    let plugin_manager = Arc::new(PluginManager::from_config(&config.plugins)?);
+    let plugin_manager = Arc::new(PluginManager::from_config(&config.plugins, &config.root_dir)?);
     let (version, head) = validate(config, request, &plugin_manager)?;
     verify_artifacts(config)?;
     guard::verify_gates(config, &request.require_gate, &head)?;

@@ -26,6 +26,7 @@ fn test_an_unset_grant_fails_the_invocation_not_the_construction() {
 
     let driver = ProcessDriver::new(
         name.clone(),
+        std::env::temp_dir(),
         "cutver-nonexistent-plugin-program",
         vec![],
         grants,

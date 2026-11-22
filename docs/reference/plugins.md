@@ -156,7 +156,9 @@ link here instead of restating it.
   and there is no flag that widens it (`src/plugin/manager/core.rs:249-262`).
 - There is no `--insecure` bypass for the digest gates either ([above](#trust-model-two-gates-one-digest)).
 - **The process runtime is not sandboxed.** `permissions.network` and `permissions.filesystem` have no
-  effect on it; only `permissions.env` is applied, by clearing the child's environment. See
+  effect on it; only `permissions.env` is applied, by clearing the child's environment. `cutver doctor`
+  still prints one row per `filesystem` entry, because a row reports the declaration, and marks that row
+  inert there (`"effect": "ignored"` under `doctor --json`). See
   [the process runtime](../guides/plugin-process-runtime.md) and, for the filesystem mount names a
   plugin author works with, the [authoring guide](../guides/plugin-authoring.md).
 

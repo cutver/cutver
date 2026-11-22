@@ -13,7 +13,7 @@ use crate::git;
 use crate::plugin::PluginManager;
 
 pub fn doctor(config: &Config) -> Result<Vec<Drift>, Error> {
-    let plugin_manager = Arc::new(PluginManager::from_config(&config.plugins)?);
+    let plugin_manager = Arc::new(PluginManager::from_config(&config.plugins, &config.root_dir)?);
     let (source_entry, _editor, expected) = current_source(config, Some(&plugin_manager))?;
     let template_context = once_cell_lazy_template_context(config, &expected);
     let drifts: Vec<Option<Drift>> = config

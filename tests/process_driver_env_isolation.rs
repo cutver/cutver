@@ -77,7 +77,7 @@ fn the_child_inherits_nothing_the_driver_was_not_given() {
     );
 
     let (cmd, args) = env_dump_command();
-    let driver = ProcessDriver::new(name(), cmd, args, granted(), 10, capabilities());
+    let driver = ProcessDriver::new(name(), std::env::temp_dir(), cmd, args, granted(), 10, capabilities());
     let printed = String::from_utf8_lossy(&invoke(&driver).expect("the environment dump must run")).to_string();
 
     assert!(

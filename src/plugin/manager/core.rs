@@ -1,6 +1,7 @@
 //! Core `PluginManager` orchestration and capability dispatch.
 
 use std::collections::HashMap;
+use std::path::Path;
 
 use super::factory::create_driver;
 use super::glob::glob_matches;
@@ -29,15 +30,23 @@ impl PluginManager {
         Self { drivers, configs }
     }
 
-    /// Instantiates a `PluginManager` from a map of plugin declarations.
+    /// Instantiates a `PluginManager` from a map of plugin declarations and the workspace root they
+    /// were resolved against.
     ///
     /// Boundary constructor binding [`Self::from_config_with_lookup`] to the process environment.
     ///
     /// Nothing is resolved here: each driver keeps its declared `[plugins.<name>.permissions] env`
     /// grants unresolved and hands them over at invocation (#300), so a configuration check runs on a
     /// host that does not export the secrets the plugins would receive.
-    pub fn from_config(plugins: &HashMap<PluginName, PluginConfig>) -> Result<Self, PluginError> {
-        Self::from_config_with_lookup(plugins, process_env_lookup())
+    ///
+    /// `root_dir` is `Config::root_dir`, and it is a parameter rather than a default because the one
+    /// runtime that reads it — `runtime = "process"`, whose child runs there (#367 S1) — must never
+    /// fall back to the directory of the process that built the manager.
+    pub fn from_config(
+        plugins: &HashMap<PluginName, PluginConfig>,
+        root_dir: impl AsRef<Path>,
+    ) -> Result<Self, PluginError> {
+        Self::from_config_with_lookup(plugins, root_dir, process_env_lookup())
     }
 
     /// Instantiates a `PluginManager` whose drivers resolve their declared grants through `lookup`.
@@ -47,13 +56,15 @@ impl PluginManager {
     /// IV.1, the same boundary as `crate::plugin::cache` and `crate::cli::ci`).
     pub fn from_config_with_lookup(
         plugins: &HashMap<PluginName, PluginConfig>,
+        root_dir: impl AsRef<Path>,
         lookup: EnvLookup,
     ) -> Result<Self, PluginError> {
+        let root_dir = root_dir.as_ref();
         let mut drivers: HashMap<PluginName, Box<dyn PluginDriver>> = HashMap::new();
         let mut configs = HashMap::new();
 
         for (name, config) in plugins {
-            let driver = create_driver(name, config, &lookup)?;
+            let driver = create_driver(name, config, &lookup, root_dir)?;
             drivers.insert(name.clone(), driver);
             configs.insert(name.clone(), config.clone());
         }

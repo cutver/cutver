@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 use std::io;
+use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus};
 use std::time::Duration;
 
@@ -18,16 +19,24 @@ pub struct ProcessDriver {
     grants: DeclaredEnvGrants,
     timeout_seconds: u64,
     capabilities: HashSet<Capability>,
+    root_dir: PathBuf,
 }
 
 impl ProcessDriver {
     /// Creates a new `ProcessDriver` instance.
+    ///
+    /// `root_dir` is the resolved workspace root, and it is the directory the child runs in (#367):
+    /// there is no root-less form, so no process driver can inherit the directory of the process that
+    /// built it (`CONTRACT.md:154-155`). Every caller is on the `Config` that resolution happened
+    /// for — the factory receives it from [`crate::plugin::PluginManager::from_config`] — and a
+    /// fixture names its own directory explicitly.
     ///
     /// `grants` carries the declared `permissions.env` keys, unresolved (#300): the child environment
     /// is built when the plugin is invoked, because a configuration that is only loaded hands out
     /// nothing. A caller with a map it already resolved passes it directly.
     pub fn new(
         name: PluginName,
+        root_dir: impl Into<PathBuf>,
         command: impl Into<String>,
         args: Vec<String>,
         grants: impl Into<DeclaredEnvGrants>,
@@ -41,7 +50,13 @@ impl ProcessDriver {
             grants: grants.into(),
             timeout_seconds,
             capabilities,
+            root_dir: root_dir.into(),
         }
+    }
+
+    /// Returns the resolved workspace root the child runs in.
+    pub fn root_dir(&self) -> &Path {
+        &self.root_dir
     }
 
     /// Returns the configured executable command.
@@ -69,7 +84,13 @@ impl ProcessDriver {
         &self.capabilities
     }
 
-    /// Builds the command for one invocation: the program, its argv, and only the granted keys.
+    /// Builds the command for one invocation: the program, its argv, its working directory, and only
+    /// the granted keys.
+    ///
+    /// The working directory is named, never inherited (#367 S1): the child runs in the resolved
+    /// workspace root, so a plugin that opens a relative template resolves it against the release the
+    /// user is cutting rather than against the directory they happened to run `cutver` from
+    /// (`CONTRACT.md:154-155`).
     ///
     /// The declared grants are resolved *here*, not when the driver was constructed (#300): a
     /// configuration that is loaded, a `cutver doctor` that inspects it, and a `plugin restore` that
@@ -84,7 +105,10 @@ impl ProcessDriver {
     fn child_command(&self) -> Result<Command, PluginError> {
         let granted = self.grants.resolve(&self.name)?;
         let mut cmd = Command::new(&self.command);
-        cmd.args(&self.args).env_clear().envs(&granted);
+        cmd.args(&self.args)
+            .env_clear()
+            .envs(&granted)
+            .current_dir(&self.root_dir);
         Ok(cmd)
     }
 }

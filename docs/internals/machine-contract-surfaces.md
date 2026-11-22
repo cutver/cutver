@@ -47,9 +47,10 @@ dashboard, no rendered drift block, no suggested-fix text.
   "plugins": [
     {
       "name": "probe",
+      "runtime": "wasm",
       "capabilities": ["changelog.v1"],
       "grants": [
-        { "declared": "assets", "resolved": "/work/repo/assets", "canonical": "/work/repo/assets", "location": "inside" }
+        { "declared": "assets", "resolved": "/work/repo/assets", "canonical": "/work/repo/assets", "location": "inside", "effect": "applied" }
       ]
     }
   ],
@@ -68,16 +69,18 @@ dashboard, no rendered drift block, no suggested-fix text.
 - `version_drift` is always an array, empty when every manifest agrees; `path` is relative to the
   workspace root, as in the human block. `changelog_drift` carries `missing_in_changelog` (a Git tag
   with no entry) and `orphan_sections` (an entry with no tag) when the changelog check ran.
-- `plugins` holds one entry per declared `[plugins.<name>]`, in name order: `name`, `capabilities`,
-  one `grants` entry per `permissions.filesystem` entry, and one `env_grants` entry per
-  `permissions.env` entry. Each filesystem grant carries the three values resolution keeps —
-  `declared` (the spelling the document wrote), `resolved` (the guest path the plugin mounts) and
-  `canonical` (the host directory the sandbox really opens, `null` when the directory does not exist
-  yet) — plus `location`, which is `inside`, `outside` or `unresolved`. Reporting them is why
-  resolution stopped overwriting the declared spelling with the resolved one (#268). Each
-  environment grant carries `key` and `set` — whether the environment this command runs in can
-  produce it — and never the value: a grant is the plugin's secret, and a diagnosis prints
-  declarations (#300).
+- `plugins` holds one entry per declared `[plugins.<name>]`, in name order: `name`, `runtime`
+  (`wasm` or `process`), `capabilities`, one `grants` entry per `permissions.filesystem` entry, and
+  one `env_grants` entry per `permissions.env` entry. Each filesystem grant carries the three values
+  resolution keeps — `declared` (the spelling the document wrote), `resolved` (the guest path the
+  plugin mounts) and `canonical` (the host directory the sandbox really opens, `null` when the
+  directory does not exist yet) — plus `location`, which is `inside`, `outside` or `unresolved`.
+  Reporting them is why resolution stopped overwriting the declared spelling with the resolved one
+  (#268). `effect` is what the declared runtime does with the entry: `applied` under `wasm`, where the
+  sandbox opens that directory, and `ignored` under `process`, which applies only `permissions.env`
+  and still loads the entry unchanged (#367). Each environment grant carries `key` and `set` — whether
+  the environment this command runs in can produce it — and never the value: a grant is the plugin's
+  secret, and a diagnosis prints declarations (#300).
 - `plugin_load_error` is `null` when the plugin manager could be built, and otherwise the typed error
   that stopped it: an unreadable artifact, a digest mismatch, or a missing `command`/`source`. It is a
   field of its own rather than a `warnings` entry (that array is the deprecation channel), and it

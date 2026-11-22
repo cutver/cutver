@@ -74,7 +74,7 @@ fn test_from_config_wasm_unsupported() {
     let mut map = HashMap::new();
     map.insert(name.clone(), config);
 
-    let err = PluginManager::from_config(&map).unwrap_err();
+    let err = PluginManager::from_config(&map, "/workspace").unwrap_err();
     match err {
         PluginError::WasmNotSupported { name: err_name } => {
             assert_eq!(err_name, name);
@@ -108,7 +108,7 @@ fn test_from_config_wasm_registers_driver() {
     let mut map = HashMap::new();
     map.insert(name.clone(), config);
 
-    let manager = PluginManager::from_config(&map).unwrap();
+    let manager = PluginManager::from_config(&map, "/workspace").unwrap();
     assert!(manager.driver(&name).is_some());
 }
 
@@ -141,11 +141,12 @@ fn test_from_config_keeps_declared_env_grants_unresolved() {
     let mut map = HashMap::new();
     map.insert(name.clone(), config);
 
-    let granted = PluginManager::from_config_with_lookup(&map, Arc::new(|key: &str| Some(format!("{key}-value"))))
-        .expect("a declared grant that is set must resolve");
+    let granted =
+        PluginManager::from_config_with_lookup(&map, "/workspace", Arc::new(|key: &str| Some(format!("{key}-value"))))
+            .expect("a declared grant that is set must resolve");
     assert!(granted.driver(&name).is_some(), "the driver must be registered");
 
-    let unresolved = PluginManager::from_config_with_lookup(&map, Arc::new(|_| None))
+    let unresolved = PluginManager::from_config_with_lookup(&map, "/workspace", Arc::new(|_| None))
         .expect("loading the configuration must not need the grant (#300)");
     assert!(
         unresolved.driver(&name).is_some(),
@@ -172,7 +173,7 @@ fn test_from_config_missing_command() {
     let mut map = HashMap::new();
     map.insert(name.clone(), config);
 
-    let err = PluginManager::from_config(&map).unwrap_err();
+    let err = PluginManager::from_config(&map, "/workspace").unwrap_err();
     match err {
         PluginError::MissingConfiguration { name: err_name, reason } => {
             assert_eq!(err_name, name);
@@ -217,7 +218,7 @@ fn test_from_config_multiple_plugins_success() {
     map.insert(p1.clone(), cfg1);
     map.insert(p2.clone(), cfg2);
 
-    let manager = PluginManager::from_config(&map).unwrap();
+    let manager = PluginManager::from_config(&map, "/workspace").unwrap();
     assert!(manager.driver(&p1).is_some());
     assert!(manager.driver(&p2).is_some());
     assert_eq!(manager.config(&p1).unwrap().timeout_seconds, Some(5));

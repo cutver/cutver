@@ -143,7 +143,7 @@ fn test_plugin_manager_wasm_round_trip() {
     let mut map = HashMap::new();
     map.insert(name.clone(), config);
 
-    let manager = PluginManager::from_config(&map).expect("manager should instantiate wasm plugin");
+    let manager = PluginManager::from_config(&map, dir.path()).expect("manager should instantiate wasm plugin");
 
     let req = ChangelogRenderRequest {
         root_dir: "/workspace".to_string(),

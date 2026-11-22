@@ -36,11 +36,17 @@ fn env_dump_command() -> (String, Vec<String>) {
 }
 
 /// Keys the parent process is expected to carry, which neither the baseline nor the driver supplies.
+///
+/// These three are **inherited**: a non-interactive `sh` passes them through and invents none of
+/// them, so seeing one in the child can only mean the driver failed to clear. That disqualifies a
+/// name like `PWD`, which is the obvious ambient key and the wrong one: the shell sets it at startup
+/// from the working directory, so it appears in every dump whatever the driver did — that assertion
+/// would be about `sh`, not about clearing, and it is what turned three CI legs red in PR #370.
 fn ambient_candidates() -> Vec<&'static str> {
     if cfg!(windows) {
         vec!["USERNAME", "COMPUTERNAME", "PROCESSOR_ARCHITECTURE"]
     } else {
-        vec!["PWD", "SHELL", "LOGNAME", "OLDPWD"]
+        vec!["SHELL", "LOGNAME", "USER"]
     }
 }
 

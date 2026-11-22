@@ -183,29 +183,31 @@ fn guest_name(host_path: &str) -> String {
 
 /// The `(host directory, guest name)` pair each granted directory mounts, in declaration order.
 ///
-/// `config::discovery` canonicalized every grant already and records the result (#268 S3), so a
-/// configuration loaded from `cutver.toml` mounts exactly the host directory `cutver doctor` reports
-/// instead of canonicalizing it a second time and dropping the answer. Permissions built without
-/// discovery — a driver test, a plugin manager handed a raw `PluginConfig` — carry no record, and then
-/// the host path is canonicalized here. A directory that does not exist yet is mounted as resolved:
-/// the grant is confined to the workspace by `config::discovery`, which refuses one that escapes it.
+/// `filesystem` is the authority: it names the grants the caller supplied and it carries the spelling
+/// the guest sees, so the guest name is always that entry, forward-slashed (#268 S2). The records
+/// `config::discovery` fills are a lookup table, never a substitute for it — a configuration loaded
+/// from `cutver.toml` mounts exactly the canonical host `cutver doctor` reports instead of
+/// canonicalizing a second time and dropping the answer, while a `PermissionsConfig` built by hand (a
+/// driver test, a plugin manager handed a raw `PluginConfig`) still mounts exactly the entries it
+/// asked for and has them canonicalized here. A directory that does not exist yet is mounted as
+/// resolved: the grant is confined to the workspace by `config::discovery`, which refuses one that
+/// escapes it.
 fn filesystem_mounts(permissions: &PermissionsConfig) -> Vec<(String, String)> {
-    if !permissions.filesystem_grants.is_empty() {
-        return permissions
-            .filesystem_grants
-            .iter()
-            .map(|grant| {
-                let host = grant.canonical.clone().unwrap_or_else(|| grant.resolved.clone());
-                (host, guest_name(&grant.resolved))
-            })
-            .collect();
-    }
     permissions
         .filesystem
         .iter()
-        .map(|path| {
-            let host = std::fs::canonicalize(path).unwrap_or_else(|_| PathBuf::from(path));
-            (host.to_string_lossy().into_owned(), guest_name(path))
+        .map(|resolved| {
+            let canonical = permissions
+                .filesystem_grants
+                .iter()
+                .find(|grant| &grant.resolved == resolved)
+                .and_then(|grant| grant.canonical.clone());
+            let host = canonical.unwrap_or_else(|| {
+                std::fs::canonicalize(resolved)
+                    .map(|path| path.to_string_lossy().into_owned())
+                    .unwrap_or_else(|_| resolved.clone())
+            });
+            (host, guest_name(resolved))
         })
         .collect()
 }
@@ -295,6 +297,9 @@ pub fn cache_wasm_artifact(
         reason: format!("WASM artifact '{source}' was not found locally or in cache"),
     })
 }
+
+#[cfg(test)]
+mod mount_tests;
 
 #[cfg(test)]
 mod tests {

@@ -1114,3 +1114,24 @@ fn the_install_smoke_pins_its_action_by_commit() {
          and this step installs the binary the rest of the job runs"
     );
 }
+
+/// #300 S4: the `Restore` and `Doctor` steps never invoke a plugin, so the `GITHUB_TOKEN` block on
+/// them is a redundant, removable line. The `run:` line is what makes that true — neither command
+/// interpolates a variable — while the bump step, which does invoke the plugin, keeps exporting the
+/// declared grants.
+#[test]
+fn the_diagnostic_steps_name_no_token() {
+    let workflow = repo_text(".github/workflows/release.yml");
+    let version = job(&workflow, "version");
+    for command in ["run: cutver plugin restore", "run: cutver doctor --check-changelog"] {
+        let at = version
+            .find(command)
+            .unwrap_or_else(|| panic!("the version job must run `{command}`"));
+        let end = version[at..].find('\n').map_or(version.len(), |offset| at + offset);
+        assert!(
+            !version[at..end].contains('$'),
+            "`{command}` must not interpolate the token it is handed: a removable line is one the \
+             command never reads"
+        );
+    }
+}

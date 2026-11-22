@@ -110,3 +110,23 @@ fn test_injected_lookup_is_the_only_input_to_the_resolver() {
         "expected UnsetEnvGrant naming the key, got {err:?}"
     );
 }
+
+/// #300: the driver's `Debug` reaches test output and error paths, so it prints the declared keys
+/// and never a resolved value — a grant is a secret until the plugin it was granted to reads it.
+#[test]
+fn test_the_declared_grants_debug_prints_keys_never_values() {
+    let grants = DeclaredEnvGrants::with_lookup(
+        vec!["CUTVER_TEST_SECRET_KEY".to_string()],
+        std::sync::Arc::new(|_| Some("secret-value".to_string())),
+    );
+
+    let printed = format!("{grants:?}");
+    assert!(
+        printed.contains("CUTVER_TEST_SECRET_KEY"),
+        "the declaration travels: {printed}"
+    );
+    assert!(
+        !printed.contains("secret-value"),
+        "a resolved value must never be printed: {printed}"
+    );
+}

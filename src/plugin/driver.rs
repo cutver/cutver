@@ -102,20 +102,21 @@ impl std::fmt::Debug for DeclaredEnvGrants {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("DeclaredEnvGrants")
             .field("declared", &self.declared)
-            .field("declared", &self.declared)
             .finish_non_exhaustive()
     }
 }
 
-/// Resolves the declared `[plugins.<name>.permissions] env` grants against the host environment.
+/// Resolves the declared `[plugins.<name>.permissions] env` grants against the host environment, now.
 ///
-/// Both runtimes resolve their grants here, so a grant means the same thing everywhere (Pillar
-/// VI.1): only the declared keys cross the boundary, and each declared key must really exist.
-/// A declared key that is unset is an error naming the plugin and the key, never a silent `""`,
-/// because an empty grant hides a broken pipeline instead of failing closed (Pillar VI.2).
+/// A grant means the same thing everywhere (Pillar VI.1): only the declared keys cross the boundary,
+/// and each declared key must really exist. A declared key that is unset is an error naming the
+/// plugin and the key, never a silent `""`, because an empty grant hides a broken pipeline instead
+/// of failing closed (Pillar VI.2).
 ///
-/// Boundary constructor binding the pure [`env_grants_from_lookup`] resolver to the process
-/// environment, the same seam `crate::plugin::cache` and `crate::cli::ci` use.
+/// The drivers do not call this: they keep a [`DeclaredEnvGrants`] and resolve it at invocation
+/// (#300), so nothing resolves while a configuration is only being loaded. This is the eager form,
+/// for a caller that needs the map immediately — `tests/process_driver_l3_budget.rs` and the driver
+/// fixtures that must hand a native shell the keys it cannot start without.
 pub fn resolve_env_grants(plugin: &PluginName, declared: &[String]) -> Result<BTreeMap<String, String>, PluginError> {
     env_grants_from_lookup(plugin, declared, |key| std::env::var(key).ok())
 }

@@ -58,12 +58,15 @@ And the remedy, which names the shape:
   literal `BTreeMap` still works, `ProcessDriver::env()` became `grants()`), and `WasmDriver` no
   longer instantiates at construction: a module that fails to compile now reports
   `WasmInitFailed` at the first invocation instead.
-- **L5** — **load-sensitive flakiness, not this change.** Three descendant/tree-kill timing tests
-  failed in three separate full-suite runs on a loaded machine — two here
-  (`plugin::driver::process::tests::test_a_descendant_of_a_timed_out_plugin_never_writes_its_marker`,
-  `tests/release_deferred_publish.rs::a_hook_timeout_kills_the_whole_process_tree`) and, on a clean
-  `22a409b` worktree, `tests/process_driver_l3_budget.rs`. Each passes alone and on rerun; the
-  baseline run is the evidence that this predates the branch.
+- **L5** — **load-sensitive flakiness, not this change.** The `plugin::driver::process` descendant/
+  timeout family is flaky under a full parallel suite. An A/B on this machine — four `cargo test
+  --lib` runs each, same conditions — gave **1 failure in 4 on the branch** and **2 in 4 on a clean
+  `22a409b` worktree**, with the same two test names
+  (`test_a_descendant_of_a_timed_out_plugin_never_writes_its_marker`,
+  `test_a_descendant_holding_stdin_cannot_outlive_the_timeout`); every one passes alone and on
+  rerun, and the baseline full suite also failed `tests/process_driver_l3_budget.rs` the same way.
+  The plugin-feature suite on this branch passed in full in the same period. Not introduced here, and
+  not masked here: it is a 1s deadline asserted under ~520 parallel tests.
 - **L6** — T7 exists because the change pushed three files over `tests/source_line_budget.rs`: the
   work moved into `src/cli/doctor/plugins.rs`, `src/plugin/driver/wasm/tests.rs` and
   `src/plugin/driver/process/tests/env_grants.rs` rather than raising a cap. `("src/cli/doctor.rs",

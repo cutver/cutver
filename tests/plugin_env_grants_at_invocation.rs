@@ -189,6 +189,113 @@ fn no_construction_path_resolves_the_declared_grants() {
     );
 }
 
+/// S3, through the command that invokes the plugin: an unset grant fails the invocation with the
+/// typed error naming plugin and key, and no child is spawned — `command` does not exist, so a
+/// spawn-first implementation would report `program not found` instead.
+#[test]
+fn an_unset_grant_fails_the_invocation_that_needs_it() {
+    let guard = FixtureGuard::new("grant-unset-invocation");
+    let fixture = guard.fixture();
+    fixture.write("package.json", "{\n  \"version\": \"1.2.0\"\n}\n");
+    fixture.write("Chart.yaml", "version: 1.2.0\n");
+    fixture.write(
+        "cutver.toml",
+        &format!(
+            r#"[version]
+current_source = "package.json"
+
+[[manifest]]
+path = "package.json"
+kind = "json"
+field = "version"
+
+[[manifest]]
+path = "Chart.yaml"
+kind = "plugin"
+plugin = "probe"
+
+[plugins.probe]
+runtime = "process"
+command = "cutver-nonexistent-plugin-program"
+capabilities = ["manifest.v1"]
+
+[plugins.probe.permissions]
+env = ["{UNSET_GRANT}"]
+"#
+        ),
+    );
+
+    let output = run(&guard, &["doctor"]);
+    let err = stderr(&output);
+    assert_eq!(output.status.code(), Some(1), "stdout={} stderr={err}", stdout(&output));
+    assert!(err.contains(UNSET_GRANT), "the invocation names the key: {err}");
+    assert!(
+        err.contains("[plugins.probe.permissions]"),
+        "and the grant it failed on: {err}"
+    );
+    assert!(
+        !err.contains("program not found"),
+        "resolution runs before the spawn, so no child is attempted: {err}"
+    );
+
+    let mut command = cutver_command(&fixture.dir);
+    command.args(["doctor"]).env(UNSET_GRANT, "probe-value");
+    let with_grant = command.output().expect("the cutver binary runs");
+    assert!(
+        stderr(&with_grant).contains("program not found"),
+        "with the grant resolved the spawn is attempted: {}",
+        stderr(&with_grant)
+    );
+}
+
+/// S3 on the WASM runtime: the driver is constructible with an unset grant (#300 moved
+/// instantiation to the first invocation), and the invocation — and only it — fails with the typed
+/// grant error.
+#[cfg(feature = "plugins")]
+#[test]
+fn a_wasm_plugin_resolves_its_grant_at_invocation_not_at_construction() {
+    let guard = FixtureGuard::new("grant-unset-wasm-invocation");
+    let fixture = guard.fixture();
+    fixture.write("package.json", "{\n  \"version\": \"1.2.0\"\n}\n");
+    fixture.write("Chart.yaml", "version: 1.2.0\n");
+    fixture.write("probe.wasm", "\u{0}asm\u{1}\u{0}\u{0}\u{0}");
+    let head = format!(
+        r#"[version]
+current_source = "package.json"
+
+[[manifest]]
+path = "package.json"
+kind = "json"
+field = "version"
+
+[plugins.probe]
+runtime = "wasm"
+source = "probe.wasm"
+capabilities = ["manifest.v1"]
+
+[plugins.probe.permissions]
+env = ["{UNSET_GRANT}"]
+"#
+    );
+    fixture.write("cutver.toml", &head);
+
+    let construction_only = run(&guard, &["doctor"]);
+    assert!(
+        construction_only.status.success(),
+        "loading the configuration hands the guest nothing: stdout={} stderr={}",
+        stdout(&construction_only),
+        stderr(&construction_only)
+    );
+
+    let invoked = format!("{head}\n[[manifest]]\npath = \"Chart.yaml\"\nkind = \"plugin\"\nplugin = \"probe\"\n");
+    fixture.write("cutver.toml", &invoked);
+    let output = run(&guard, &["doctor"]);
+    let err = stderr(&output);
+    assert_eq!(output.status.code(), Some(1), "stdout={} stderr={err}", stdout(&output));
+    assert!(err.contains(UNSET_GRANT), "the invocation names the key: {err}");
+    assert!(err.contains("[plugins.probe.permissions]"), "and the grant: {err}");
+}
+
 /// S2: `cutver plugin restore` restores artifacts. It never invokes a plugin, so an unset grant in
 /// the declaration it reads must not stop it — the release workflow's step has no token to give.
 #[cfg(feature = "plugins")]

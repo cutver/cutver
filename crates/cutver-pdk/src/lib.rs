@@ -17,7 +17,7 @@ mod types;
 mod versioning;
 
 pub use changelog::{ChangelogRenderRequest, ChangelogRenderResponse, PluginCommitEntry, PluginContributor};
-pub use invocation::PluginInvocation;
+pub use invocation::{PROTOCOL_VERSION, PluginInvocation};
 pub use lifecycle::{PostBumpPayload, PostReleasePayload, PreBumpPayload, PreBumpResponse};
 pub use manifest::{ManifestReadRequest, ManifestReadResponse, ManifestWriteRequest, ManifestWriteResponse};
 pub use types::{Capability, ParseCapabilityError, ParsePluginOperationError, PluginOperation};

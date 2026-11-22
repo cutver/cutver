@@ -21,7 +21,7 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-cutver-pdk = "0.1.0"
+cutver-pdk = "0.2.0"
 extism-pdk = { version = "1.4.1", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -70,11 +70,16 @@ natively; the `#[plugin_fn]` wrapper only adapts Extism.
 
 ## 3. Decode, dispatch, answer
 
-The envelope has three fields (`crates/cutver-pdk/src/invocation.rs:7-14`):
+The envelope has four fields (`crates/cutver-pdk/src/invocation.rs:14-24`):
 
 ```json
-{ "capability": "changelog.v1", "operation": "render", "payload": { } }
+{ "protocol": "1", "capability": "changelog.v1", "operation": "render", "payload": { } }
 ```
+
+`protocol` is the shape the host speaks. Decode the envelope and keep it: if you answer in a shape a
+future host does not expect, declare it as a top-level `protocol` beside your response fields and the
+host refuses the call with a `ProtocolMismatch` naming both versions instead of misreading your answer.
+Absent is read as the host's own, so you never have to send it unless you mean a different one.
 
 | Capability | Operations on the wire | Response DTO |
 | :--- | :--- | :--- |

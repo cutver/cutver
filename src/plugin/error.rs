@@ -95,6 +95,17 @@ pub enum PluginError {
     },
 
     #[error(
+        "plugin '{name}' answered speaking protocol '{plugin}', and this host speaks protocol '{host}'\n  \
+        Where: decoding the plugin's answer, after its invocation finished\n  \
+        Fix: install the plugin release built for protocol '{host}', or one that declares no protocol at all — an answer without the key is read as the host's own shape."
+    )]
+    ProtocolMismatch {
+        name: PluginName,
+        host: &'static str,
+        plugin: String,
+    },
+
+    #[error(
         "plugin '{name}' failed integrity check: expected hash '{expected}', got '{actual}'.\n  \
         Where: verifying downloaded plugin artifact\n  \
         Fix: ensure the plugin source has not been modified or update the hash in cutver.toml."

@@ -16,7 +16,7 @@ resolver = "2"
 members = ["crates/cutver-pdk"]
 
 [dependencies]
-cutver-pdk = { version = "0.1.0", path = "crates/cutver-pdk" }
+cutver-pdk = { version = "0.2.0", path = "crates/cutver-pdk" }
 clap = { version = "4", features = ["derive"] }
 semver = "1"
 thiserror = "2"

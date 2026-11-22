@@ -56,12 +56,13 @@ Three details decide what runs and when:
 
 ## The invocation envelope, with one worked example
 
-Both runtimes carry the same three-field JSON envelope (`crates/cutver-pdk/src/invocation.rs:5-13`). A
+Both runtimes carry the same four-field JSON envelope (`crates/cutver-pdk/src/invocation.rs:14-24`). A
 WASM plugin receives it through its one export, `invoke`; a process plugin on stdin. This is a
 `changelog.v1` request, `cutver` on the left, plugin on the right:
 
 ```json
 {
+  "protocol": "1",
   "capability": "changelog.v1",
   "operation": "render",
   "payload": {
@@ -79,7 +80,8 @@ WASM plugin receives it through its one export, `invoke`; a process plugin on st
 }
 ```
 
-The answer is the capability's response DTO, and nothing else:
+The answer is the capability's response DTO. One optional key may sit beside it, and it is how a
+plugin says which generation of this contract it was built against:
 
 ```json
 { "body": "### Features\n\n- add helm adapter\n" }
@@ -89,7 +91,10 @@ The answer is the capability's response DTO, and nothing else:
 (`crates/cutver-pdk/src/changelog.rs:4-75`, `crates/cutver-pdk/src/lifecycle.rs:4-57`). A `manifest.v1`
 answer returns the file content, `versioning.v1` the next SemVer string, and the two `on_post_*` slots
 answer with any JSON value, which `cutver` discards. Anything that does not decode as the expected DTO
-is an `InvalidPayload` error naming the plugin and the capability.
+is an `InvalidPayload` error naming the plugin and the capability. `protocol` is required in the request
+and optional in the answer: declared and different is a `ProtocolMismatch` naming both versions, while
+absent means the plugin speaks the host's shape — which is every plugin that exists today. The key is
+checked in every answer, the two discarded slots included.
 
 ## WASM versus the process runtime, in one table
 
@@ -105,7 +110,7 @@ is an `InvalidPayload` error naming the plugin and the capability.
 ## What a plugin cannot do
 
 - **Grant itself anything.** Permissions are read from `cutver.toml` and nowhere else; the envelope
-  has no permission channel (`crates/cutver-pdk/src/invocation.rs:5-13`).
+  has no permission channel (`crates/cutver-pdk/src/invocation.rs:14-24`).
 - **Be called outside a capability it declared.** Refused before dispatch, with no bypass flag
   (`src/plugin/manager/core.rs:249-262`).
 - **A WASM plugin, reach anything ungranted.** No directory, host or variable enters the sandbox
@@ -129,10 +134,10 @@ is an `InvalidPayload` error naming the plugin and the capability.
 | A call in `on_post_release` failed | `<error>`, naming the tag and commit (`src/bump/types.rs:173-181`) | Leaves the commit and tag in place; the message says what to inspect. |
 | The call outlived `timeout_seconds` | `Timeout`, naming plugin, capability and limit (`src/plugin/error.rs:55`) | Fails the slot it was dispatched from. |
 | The answer did not decode | `InvalidPayload` (`src/plugin/error.rs:90`) | Same as above. |
-| A declared `permissions.env` key was unset | `UnsetEnvGrant` (`src/plugin/error.rs:127`) | Fails when the slot invokes the plugin, before the guest or the child starts. A command that only loads the configuration (`cutver doctor`, `cutver plugin restore`) runs without it (#300). |
+| A declared `permissions.env` key was unset | `UnsetEnvGrant` (`src/plugin/error.rs:138`) | Fails when the slot invokes the plugin, before the guest or the child starts. A command that only loads the configuration (`cutver doctor`, `cutver plugin restore`) runs without it (#300). |
 
 The six runtime rows carry `Where:` and `Fix:` lines naming where the failure happened and what to do
-(`src/plugin/error.rs:39-127`); an install or download failure reports the underlying transport error.
+(`src/plugin/error.rs:39-138`); an install or download failure reports the underlying transport error.
 
 ## What this page does not cover yet
 

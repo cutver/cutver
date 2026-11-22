@@ -256,11 +256,7 @@ impl PluginManager {
         })?;
 
         let response_bytes = driver.invoke(&invocation)?;
-        serde_json::from_slice(&response_bytes).map_err(|source| PluginError::InvalidPayload {
-            name: name.clone(),
-            capability: capability.to_string(),
-            source,
-        })
+        crate::plugin::dto::decode_answer(name, &capability.to_string(), &response_bytes)
     }
 
     #[cfg(test)]

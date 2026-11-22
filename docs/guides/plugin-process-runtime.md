@@ -17,7 +17,7 @@ in the plugin entry restricts where it reads, writes or connects:
   `command`, `timeout_seconds`, `capabilities` and `permissions.env` only
   (`src/plugin/manager/factory.rs:57-84`).
 - `source` and `hash` are unused, so there is no digest gate either (same function).
-- `permissions.env` narrows the child's environment, and that is the only containment there is.
+- `permissions.env` adds to the child's environment, and that is the only containment there is.
 
 A row is a report, not a promise. `cutver doctor` prints one row per `permissions.filesystem` entry
 because a row states what the document declares, so on this runtime the row ends
@@ -116,13 +116,15 @@ Environment is the only grant this runtime applies, and it applies it in both di
 
 | Rule | Effect |
 | :--- | :--- |
-| The child starts with a **cleared** environment (`src/plugin/driver/process.rs`, `child_command`). | Nothing is inherited: `PATH`, `HOME`, `TMPDIR`, CI tokens and every other variable of the `cutver` process are absent unless granted. |
-| Exactly the granted keys are set. | `env = ["GITHUB_TOKEN"]` gives the child `GITHUB_TOKEN` and nothing else. |
+| The child starts with a **cleared** environment (`src/plugin/driver/process.rs`, `child_command`). | No ambient *authority*: CI tokens and every other variable of the `cutver` process are absent unless granted. |
+| A **named system baseline** is set after the clear (`src/plugin/driver/baseline.rs`). | `PATH`, `HOME`, `USERPROFILE`, `TMPDIR`, `TEMP`, `TMP`, `LANG`, `LC_ALL`, `SystemRoot`, `SYSTEMDRIVE`, `APPDATA`, `LOCALAPPDATA` — whichever of them the host actually sets. An unset key is omitted, never handed over empty, and the list carries no secret shape (no `*_TOKEN`, no `*_KEY`) (#369). |
+| Exactly the granted keys are set, on top of the baseline. | `env = ["GITHUB_TOKEN"]` adds `GITHUB_TOKEN` and nothing else — the baseline keys are still there — and a granted key replaces the baseline value for that key. |
 | A declared key that is **unset** is an error, not an empty string. | Invoking the plugin fails with `plugin '<name>' declares the environment grant '<key>', but cutver cannot read '<key>' from its own environment` (`src/plugin/error.rs:127`). The value must also be valid UTF-8. |
 | Grants are resolved at each invocation, when the child environment is built. | Building the plugin manager and inspecting the configuration never needs them (#300), so `cutver doctor` and `cutver plugin restore` run on a host that exports none of the declared keys. The failure lands when the plugin is first invoked, before the child starts, through the resolver the WASM runtime shares (`src/plugin/driver.rs`, `DeclaredEnvGrants::resolve`). |
 
-A script whose interpreter is resolved through `PATH` (`#!/usr/bin/env python3`) should declare `PATH`
-in `env`, or name the interpreter by absolute path in the shebang.
+A `#!/usr/bin/env python3` shebang resolves because `PATH` is in the baseline. Declaring a key that is
+also in the baseline is how you *pin* it: `env = ["PATH"]` fails the invocation on a host without
+`PATH` instead of quietly running with a baseline that omitted it.
 
 ## `timeout_seconds`
 

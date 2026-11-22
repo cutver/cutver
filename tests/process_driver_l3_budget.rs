@@ -20,8 +20,8 @@ use cutver::plugin::{PluginDriver, PluginError};
 
 #[test]
 fn a_zero_exit_child_with_a_descendant_holding_stdout_stays_inside_the_budget() {
-    // Only granted keys, never ambient ones: the driver spawns with `env_clear()`, and `PATH` (or
-    // `SystemRoot` on Windows) is what the fixture's own commands need to be found at all.
+    // The fixture's own commands still need `PATH` (or `SystemRoot` on Windows) to be found at all:
+    // both now come from the system baseline, and declaring them keeps the grant path exercised.
     let keys: Vec<String> = if cfg!(windows) {
         vec!["SystemRoot".into(), "PATH".into()]
     } else {

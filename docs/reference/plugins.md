@@ -155,12 +155,13 @@ link here instead of restating it.
 - A plugin is also denied every capability it did not declare: declaring is what makes a call possible,
   and there is no flag that widens it (`src/plugin/manager/core.rs:249-262`).
 - There is no `--insecure` bypass for the digest gates either ([above](#trust-model-two-gates-one-digest)).
-- **The process runtime is not sandboxed.** `permissions.network` and `permissions.filesystem` have no
-  effect on it; only `permissions.env` is applied, by clearing the child's environment. `cutver doctor`
-  still prints one row per `filesystem` entry, because a row reports the declaration, and marks that row
-  inert there (`"effect": "ignored"` under `doctor --json`). See
-  [the process runtime](../guides/plugin-process-runtime.md) and, for the filesystem mount names a
-  plugin author works with, the [authoring guide](../guides/plugin-authoring.md).
+- **The process runtime is not sandboxed.** Only `permissions.env` applies; `network` and `filesystem`
+  do nothing. The child's environment is cleared, then filled with a named system baseline —
+  `PATH`, `HOME`, `USERPROFILE`, `TMPDIR`, `TEMP`, `TMP`, `LANG`, `LC_ALL`, `SystemRoot`,
+  `SYSTEMDRIVE`, `APPDATA`, `LOCALAPPDATA` (`src/plugin/driver/baseline.rs`) plus the declared keys,
+  which replace it key by key. `cutver doctor` prints one row per `filesystem` entry and marks it inert
+  (`"effect": "ignored"` under `doctor --json`). See the
+  [process runtime](../guides/plugin-process-runtime.md) and the [authoring guide](../guides/plugin-authoring.md).
 
 ## Cache Location
 

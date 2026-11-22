@@ -1,5 +1,6 @@
-//! The child runs with `env_clear()` (#264, #344): a key the driver was not given never reaches it,
-//! and that assertion has to be able to fail.
+//! The child runs with `env_clear()` plus the named system baseline (#264, #344, #369 S1): a key
+//! outside that baseline, and not granted, never reaches it — and that assertion has to be able to
+//! fail.
 //!
 //! `src/plugin/driver/process/tests.rs` proves a granted key arrives and an invented one does not.
 //! An invented key is absent from the parent environment too, so that half would stay green if the
@@ -7,6 +8,10 @@
 //! is the other half — it names keys that really are in the parent environment and asserts they are
 //! not in the child, then runs the same command inheriting the environment to prove the name is
 //! visible there. Without that second half the first one cannot distinguish clearing from luck.
+//!
+//! The names deliberately exclude every key of `SYSTEM_ENV_BASELINE` (no `PATH`, `HOME`, `TEMP`,
+//! `LANG`): those reach the child on purpose, and
+//! `tests/process_driver_env_baseline.rs` is the suite that pins them.
 
 use std::collections::{BTreeMap, HashSet};
 use std::process::Command;
@@ -16,21 +21,32 @@ use cutver::plugin::dto::PluginInvocation;
 use cutver::plugin::types::PluginName;
 use cutver::plugin::{Capability, PluginCall, PluginDriver, PluginError};
 
-/// The dump command: the child prints its whole environment, one `key=value` per line.
+/// The dump command: the child drains its envelope and then prints its whole environment, one
+/// `key=value` per line. Draining first is what keeps the host's stdin write from racing the child's
+/// exit onto a closed pipe — see the same note in `tests/process_driver_env_baseline.rs`.
 fn env_dump_command() -> (String, Vec<String>) {
     if cfg!(windows) {
-        ("cmd".to_string(), vec!["/c".to_string(), "set".to_string()])
+        ("cmd".to_string(), vec!["/C".to_string(), "more >nul & set".to_string()])
     } else {
-        ("/usr/bin/env".to_string(), Vec::new())
+        (
+            "/bin/sh".to_string(),
+            vec!["-c".to_string(), "cat >/dev/null; exec /usr/bin/env".to_string()],
+        )
     }
 }
 
-/// Keys the parent process is expected to carry, which the driver is never given.
+/// Keys the parent process is expected to carry, which neither the baseline nor the driver supplies.
+///
+/// These three are **inherited**: a non-interactive `sh` passes them through and invents none of
+/// them, so seeing one in the child can only mean the driver failed to clear. That disqualifies a
+/// name like `PWD`, which is the obvious ambient key and the wrong one: the shell sets it at startup
+/// from the working directory, so it appears in every dump whatever the driver did — that assertion
+/// would be about `sh`, not about clearing, and it is what turned three CI legs red in PR #370.
 fn ambient_candidates() -> Vec<&'static str> {
     if cfg!(windows) {
-        vec!["USERPROFILE", "TEMP", "USERNAME"]
+        vec!["USERNAME", "COMPUTERNAME", "PROCESSOR_ARCHITECTURE"]
     } else {
-        vec!["PATH", "HOME", "LANG"]
+        vec!["SHELL", "LOGNAME", "USER"]
     }
 }
 
@@ -55,16 +71,9 @@ fn invoke(driver: &ProcessDriver) -> Result<Vec<u8>, PluginError> {
     driver.invoke(&invocation)
 }
 
-/// The driver the test drives: the granted map is the only environment, plus whatever the platform
-/// shell needs to start at all on Windows.
+/// The driver the test drives: the granted map is the only environment beyond the system baseline.
 fn granted() -> BTreeMap<String, String> {
-    let mut granted = BTreeMap::from([("CUTVER_ENV_ISOLATION".to_string(), "explicit".to_string())]);
-    if cfg!(windows)
-        && let Ok(system_root) = std::env::var("SystemRoot")
-    {
-        granted.insert("SystemRoot".to_string(), system_root);
-    }
-    granted
+    BTreeMap::from([("CUTVER_ENV_ISOLATION".to_string(), "explicit".to_string())])
 }
 
 #[test]
@@ -88,7 +97,7 @@ fn the_child_inherits_nothing_the_driver_was_not_given() {
         assert!(
             !printed.contains(&format!("{key}=")),
             "'{key}' was not granted and must not reach the child: the driver clears the environment \
-             before applying the map"
+             and then applies only the system baseline and the granted keys"
         );
     }
 }

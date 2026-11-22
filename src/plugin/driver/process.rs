@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus};
 use std::time::Duration;
 
+use crate::plugin::driver::baseline::system_env_baseline;
 use crate::plugin::driver::{DeclaredEnvGrants, PluginDriver};
 use crate::plugin::dto::PluginInvocation;
 use crate::plugin::error::PluginError;
@@ -84,8 +85,8 @@ impl ProcessDriver {
         &self.capabilities
     }
 
-    /// Builds the command for one invocation: the program, its argv, its working directory, and only
-    /// the granted keys.
+    /// Builds the command for one invocation: the program, its argv, its working directory, the
+    /// system baseline and the granted keys.
     ///
     /// The working directory is named, never inherited (#367 S1): the child runs in the resolved
     /// workspace root, so a plugin that opens a relative template resolves it against the release the
@@ -98,15 +99,24 @@ impl ProcessDriver {
     /// ground at this boundary — an unset declared key is [`PluginError::UnsetEnvGrant`] and no child
     /// is spawned at all (Pillar VI.2).
     ///
-    /// `env_clear` runs first: a native plugin inherits no ambient authority, so an undeclared key
-    /// in the parent environment (a token in CI, say) never reaches the child (Pillar VI.2). The
-    /// stdio pipes, the process group and the deadline are not set here: they belong to the shared
-    /// supervision in [`crate::proc`], which is the one copy of that machinery (S5).
+    /// `env_clear` runs first: a native plugin inherits no ambient *authority*, so an undeclared key
+    /// in the parent environment (a token in CI, say) never reaches the child (Pillar VI.2). What the
+    /// child does get is [`crate::plugin::driver::SYSTEM_ENV_BASELINE`], the named and documented set
+    /// of system keys a non-Rust plugin cannot start without (`PATH`, `HOME`, `TMPDIR`, Windows'
+    /// `SystemRoot`, and the rest of that list) — none of them secret, and none of them authority the
+    /// child did not already have (#369 S1). A key the host does not set is omitted, never emptied.
+    ///
+    /// The declared grants are applied last, so a `permissions.env` key is the author's answer for
+    /// that key and replaces the baseline value instead of colliding with it.
+    ///
+    /// The stdio pipes, the process group and the deadline are not set here: they belong to the
+    /// shared supervision in [`crate::proc`], which is the one copy of that machinery (S5).
     fn child_command(&self) -> Result<Command, PluginError> {
         let granted = self.grants.resolve(&self.name)?;
         let mut cmd = Command::new(&self.command);
         cmd.args(&self.args)
             .env_clear()
+            .envs(system_env_baseline())
             .envs(&granted)
             .current_dir(&self.root_dir);
         Ok(cmd)

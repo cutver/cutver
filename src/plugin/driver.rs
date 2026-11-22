@@ -1,7 +1,9 @@
+pub mod baseline;
 pub mod process;
 #[cfg(feature = "plugins")]
 pub mod wasm;
 
+pub use baseline::{SYSTEM_ENV_BASELINE, system_env_baseline};
 pub use process::ProcessDriver;
 #[cfg(feature = "plugins")]
 pub use wasm::WasmDriver;

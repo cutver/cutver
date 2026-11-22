@@ -1,10 +1,11 @@
 //! Behaviour tests for the process plugin driver.
 //!
 //! The isolation tests fail closed on an environment that is not the one the driver promises: the
-//! child runs with `env_clear()`, so a key the driver was not handed must never appear in what the
-//! plugin prints (issue #264). Since #344 nothing here mutates the process environment: the map is
-//! built in the test and passed to the driver, and `tests/process_driver_env_isolation.rs` proves
-//! the clearing itself against keys this process really carries.
+//! child runs with `env_clear()` plus the named system baseline, so a key outside that baseline that
+//! the driver was not handed must never appear in what the plugin prints (issue #264). Since #344
+//! nothing here mutates the process environment: the map is built in the test and passed to the
+//! driver, and `tests/process_driver_env_isolation.rs` proves the clearing itself against keys this
+//! process really carries.
 
 use super::*;
 use crate::plugin::driver::resolve_env_grants;

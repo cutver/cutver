@@ -82,7 +82,7 @@ command = "{script_path}"
 capabilities = ["manifest.v1"]
 manifest_match = ["Chart.yaml", "charts/**/Chart.yaml"]
 
-# The driver clears the environment, so the script's `cat` needs the PATH the test runner has.
+# PATH now arrives from the system baseline; the grant stays to pin that a declared key still wins.
 [plugins.helm-adapter.permissions]
 env = ["PATH"]
 "#
@@ -155,7 +155,7 @@ command = "{script_path}"
 capabilities = ["manifest.v1"]
 manifest_match = ["Chart.yaml"]
 
-# The driver clears the environment, so the script's `cat` needs the PATH the test runner has.
+# PATH now arrives from the system baseline; the grant stays to pin that a declared key still wins.
 [plugins.helm-adapter.permissions]
 env = ["PATH"]
 "#

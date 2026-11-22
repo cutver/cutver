@@ -839,7 +839,7 @@ command = "{script_path}"
 capabilities = ["lifecycle.v1"]
 events = ["on_pre_bump"]
 
-# The driver clears the environment, so the script's `cat` needs the PATH the test runner has.
+# PATH now arrives from the system baseline; the grant stays to pin that a declared key still wins.
 [plugins.verifier.permissions]
 env = ["PATH"]
 "#
@@ -916,7 +916,7 @@ command = "{script_path}"
 capabilities = ["lifecycle.v1"]
 events = ["on_post_bump"]
 
-# The driver clears the environment, so the script's `cat` needs the PATH the test runner has.
+# PATH now arrives from the system baseline; the grant stays to pin that a declared key still wins.
 [plugins.failing-hook.permissions]
 env = ["PATH"]
 "#
@@ -985,7 +985,7 @@ command = "{script_path}"
 capabilities = ["lifecycle.v1"]
 events = ["on_pre_bump", "on_post_bump", "on_post_release"]
 
-# The driver clears the environment, so the script's `cat`/`read` needs the PATH the runner has.
+# PATH now arrives from the system baseline; the grant stays to pin that a declared key still wins.
 [plugins.lifecycle-orchestrator.permissions]
 env = ["PATH"]
 "#
@@ -1067,7 +1067,7 @@ command = "{script_path}"
 capabilities = ["lifecycle.v1"]
 events = ["on_pre_bump", "on_post_release"]
 
-# The driver clears the environment, so the script's `cat` needs the PATH the test runner has.
+# PATH now arrives from the system baseline; the grant stays to pin that a declared key still wins.
 [plugins.capture.permissions]
 env = ["PATH"]
 "#

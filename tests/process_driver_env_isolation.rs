@@ -1,5 +1,6 @@
-//! The child runs with `env_clear()` (#264, #344): a key the driver was not given never reaches it,
-//! and that assertion has to be able to fail.
+//! The child runs with `env_clear()` plus the named system baseline (#264, #344, #369 S1): a key
+//! outside that baseline, and not granted, never reaches it — and that assertion has to be able to
+//! fail.
 //!
 //! `src/plugin/driver/process/tests.rs` proves a granted key arrives and an invented one does not.
 //! An invented key is absent from the parent environment too, so that half would stay green if the
@@ -7,6 +8,10 @@
 //! is the other half — it names keys that really are in the parent environment and asserts they are
 //! not in the child, then runs the same command inheriting the environment to prove the name is
 //! visible there. Without that second half the first one cannot distinguish clearing from luck.
+//!
+//! The names deliberately exclude every key of `SYSTEM_ENV_BASELINE` (no `PATH`, `HOME`, `TEMP`,
+//! `LANG`): those reach the child on purpose, and
+//! `tests/process_driver_env_baseline.rs` is the suite that pins them.
 
 use std::collections::{BTreeMap, HashSet};
 use std::process::Command;
@@ -25,12 +30,12 @@ fn env_dump_command() -> (String, Vec<String>) {
     }
 }
 
-/// Keys the parent process is expected to carry, which the driver is never given.
+/// Keys the parent process is expected to carry, which neither the baseline nor the driver supplies.
 fn ambient_candidates() -> Vec<&'static str> {
     if cfg!(windows) {
-        vec!["USERPROFILE", "TEMP", "USERNAME"]
+        vec!["USERNAME", "COMPUTERNAME", "PROCESSOR_ARCHITECTURE"]
     } else {
-        vec!["PATH", "HOME", "LANG"]
+        vec!["PWD", "SHELL", "LOGNAME", "OLDPWD"]
     }
 }
 
@@ -55,16 +60,9 @@ fn invoke(driver: &ProcessDriver) -> Result<Vec<u8>, PluginError> {
     driver.invoke(&invocation)
 }
 
-/// The driver the test drives: the granted map is the only environment, plus whatever the platform
-/// shell needs to start at all on Windows.
+/// The driver the test drives: the granted map is the only environment beyond the system baseline.
 fn granted() -> BTreeMap<String, String> {
-    let mut granted = BTreeMap::from([("CUTVER_ENV_ISOLATION".to_string(), "explicit".to_string())]);
-    if cfg!(windows)
-        && let Ok(system_root) = std::env::var("SystemRoot")
-    {
-        granted.insert("SystemRoot".to_string(), system_root);
-    }
-    granted
+    BTreeMap::from([("CUTVER_ENV_ISOLATION".to_string(), "explicit".to_string())])
 }
 
 #[test]
@@ -88,7 +86,7 @@ fn the_child_inherits_nothing_the_driver_was_not_given() {
         assert!(
             !printed.contains(&format!("{key}=")),
             "'{key}' was not granted and must not reach the child: the driver clears the environment \
-             before applying the map"
+             and then applies only the system baseline and the granted keys"
         );
     }
 }

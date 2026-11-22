@@ -69,7 +69,7 @@ runtime = "process"
 command = "{script_path}"
 capabilities = ["versioning.v1"]
 
-# The driver clears the environment, so the script's `cat` needs the PATH the test runner has.
+# PATH now arrives from the system baseline; the grant stays to pin that a declared key still wins.
 [plugins.my-versioning-plugin.permissions]
 env = ["PATH"]
 "#
@@ -125,7 +125,7 @@ runtime = "process"
 command = "{script_path}"
 capabilities = ["versioning.v1"]
 
-# The driver clears the environment, so the script's `cat` needs the PATH the test runner has.
+# PATH now arrives from the system baseline; the grant stays to pin that a declared key still wins.
 [plugins.auto-versioning-plugin.permissions]
 env = ["PATH"]
 "#
@@ -193,7 +193,7 @@ runtime = "process"
 command = "{script_path}"
 capabilities = ["versioning.v1"]
 
-# The driver clears the environment, so the script's `cat` needs the PATH the test runner has.
+# PATH now arrives from the system baseline; the grant stays to pin that a declared key still wins.
 [plugins.invalid-plugin.permissions]
 env = ["PATH"]
 "#
@@ -260,7 +260,7 @@ runtime = "process"
 command = "{script_path}"
 capabilities = ["versioning.v1"]
 
-# The driver clears the environment, so the script's `cat` needs the PATH the test runner has.
+# PATH now arrives from the system baseline; the grant stays to pin that a declared key still wins.
 [plugins.failing-plugin.permissions]
 env = ["PATH"]
 "#

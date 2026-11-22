@@ -67,7 +67,7 @@ runtime = "process"
 command = "{script_path}"
 capabilities = ["changelog.v1"]
 
-# The driver clears the environment, so the script's `cat` needs the PATH the test runner has.
+# PATH now arrives from the system baseline; the grant stays to pin that a declared key still wins.
 [plugins.my-changelog-plugin.permissions]
 env = ["PATH"]
 "#
@@ -129,7 +129,7 @@ runtime = "process"
 command = "{script_path}"
 capabilities = ["changelog.v1"]
 
-# The driver clears the environment, so the script's `cat` needs the PATH the test runner has.
+# PATH now arrives from the system baseline; the grant stays to pin that a declared key still wins.
 [plugins.auto-changelog-plugin.permissions]
 env = ["PATH"]
 "#
@@ -202,7 +202,7 @@ runtime = "process"
 command = "{script_path}"
 capabilities = ["changelog.v1"]
 
-# The driver clears the environment, so the script's `cat` needs the PATH the test runner has.
+# PATH now arrives from the system baseline; the grant stays to pin that a declared key still wins.
 [plugins.failing-plugin.permissions]
 env = ["PATH"]
 "#

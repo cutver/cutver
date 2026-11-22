@@ -194,3 +194,31 @@ lands before T4 because the goldens pin the version field.
   that produces that error without breaking the eight shell fixtures, `github-releases`, or any plugin built on PDK
   0.1.x. S3 rewritten above accordingly. The version string is `"1"`, following `SCHEMA_VERSION: u32 = 1`
   (`src/cli/json.rs:15`) instead of inventing a second versioning style in the same program.
+- **L9** — **T3 (S3) implemented** on `feat/369-protocol-version` as `236e47f`, plus `9fbc626` for the S3 rewrite.
+  254 authored lines, inside the target. Gate `9 passed / 0 failed / 1 not run here`; the not-run step is the
+  linux+plugins clippy, which this host cannot compile.
+  - **What landed**: `PROTOCOL_VERSION = "1"` and `protocol` as the envelope's first field, filled in
+    `PluginInvocation::new`, so no call site changed; `dto::decode_answer` as the one answer-decode seam
+    (`src/plugin/manager/core.rs` calls it), which is where the optional answer key is checked; and
+    `ProtocolMismatch { name, host: &'static str, plugin: String }`, which keeps `PluginError` at 96 bytes —
+    the budget in `src/plugin/error/tests.rs` did not move.
+  - **The independent verifier (`Risk: item 3`) found two blocking defects in the first attempt.**
+    **B1**: `decoded.get("protocol").and_then(Value::as_str)` ignored every non-string declaration, so
+    `"protocol": 2` — the numeric style this program uses for `schemaVersion` — was read as protocol 1 and
+    the call succeeded. **B2**: the new enum variant shifted `src/plugin/error.rs`, and six `path:line`
+    citations in three guides went false, plus one `invocation.rs:5-13` that now pointed at the constant's
+    doc block. Both closed, B1 with `a_protocol_this_host_cannot_read_is_refused_too`. **A doc citation is a
+    claim: inserting ten lines in one file falsified six sentences in another, and nothing in the suite
+    checks them.**
+  - **Advisories closed**: the wire-contract module doc said "three top-level envelope fields" (now four),
+    `docs/guides/plugin-authoring.md` still pinned `cutver-pdk = "0.1.0"` after the bump, and the
+    "`on_post_*` accepts any JSON value" promise gained the exception that `protocol` is checked there too.
+  - **Two follow-ups that are not in this repository** and block nothing here: the twin wire fixture lives in
+    `cutver/plugins` (`plugins/github-releases/tests/fixtures/changelog_request.json`) and must move in the
+    same breath — it is a *request*, so a PDK 0.2 plugin rejects the stale copy with `missing field protocol`,
+    while a 0.1.x plugin keeps working because unknown keys are ignored; and `publish-pdk.yml` is manual, so
+    that repository can only adopt 0.2.0 after a dispatch.
+  - **Accepted asymmetry, worth knowing**: nothing on the host reads the request-side `protocol`; it is there
+    so the *plugin* can refuse a host it cannot talk to. A PDK-0.2 plugin cannot talk to a pre-0.2 host
+    (`missing field protocol`), which is the cost of "never defaulted", and it is not documented yet.
+  - **Next**: T4, one golden per capability for the request bytes, now that the version field is pinned.

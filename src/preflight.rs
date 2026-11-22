@@ -3,10 +3,11 @@ use std::collections::HashSet;
 use std::fmt;
 use std::io;
 use std::path::Path;
-use std::process::{self, Child, Command, ExitStatus};
-use std::thread;
+use std::process::{self, Command};
 use std::time::{Duration, Instant};
 use thiserror::Error;
+
+pub(crate) use crate::proc::{Ended, SupervisionError};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Step {
@@ -63,18 +64,20 @@ pub fn plan(steps: &[(String, PreflightCommand)], skip: &[String]) -> Vec<Step> 
         .collect()
 }
 
-pub fn run(steps: &[Step]) -> Result<(), Error> {
+pub fn run(root: &Path, steps: &[Step]) -> Result<(), Error> {
     for step in steps.iter().filter(|s| !s.skipped) {
-        run_step(step)?;
+        run_step(root, step)?;
     }
     Ok(())
 }
 
-fn run_step(step: &Step) -> Result<(), Error> {
+fn run_step(root: &Path, step: &Step) -> Result<(), Error> {
     let timeout = step.timeout.map(Duration::from_secs);
-    // A preflight step runs in the process working directory, which is what it always did: the
-    // bounded spawn only adds the deadline and the process-group kill.
-    match run_supervised(&step.command, None, timeout) {
+    // A preflight step runs in the repository root, like every other stage of the pipeline. The
+    // process working directory is ambient authority — it is whatever launched cutver — so a step
+    // that named a relative path used to write into the caller's directory instead of the
+    // repository's (#295).
+    match run_supervised(&step.command, root, timeout) {
         Ok(Ended::Exited(status)) => {
             if status.success() {
                 return Ok(());
@@ -98,136 +101,33 @@ fn run_step(step: &Step) -> Result<(), Error> {
 }
 
 // --------------------------------------------------------------------------------------------
-// Supervised shell commands: the one copy (audit F-16)
+// Supervised shell commands: one caller of the shared supervision
 //
 // "Run this shell command, and if it outlives its timeout kill it together with its whole process
 // tree" lived twice, once here and once in `bump::exec::command`, and the `[hooks]` commands had
 // no copy at all, so a hook that never exits held the release open forever. The three call sites
-// now share this one implementation: `[preflight]` steps, `[publish].commands` and the `[hooks]`
-// commands.
+// now share one implementation: `[preflight]` steps, `[publish].commands` and the `[hooks]`
+// commands. Since #316 the machinery itself lives in `crate::proc`, which the process plugin driver
+// calls too, so the process group, the deadline poll and the tree kill exist once (S5).
 //
-// It lives in this crate-root module because `bump::exec` is private to `bump`, so a helper owned
+// It lives in a crate-root module because `bump::exec` is private to `bump`, so a helper owned
 // there is unreachable from here; keeping a second copy for that reason is exactly the defect.
 // --------------------------------------------------------------------------------------------
 
-/// How a supervised command ended.
-pub(crate) enum Ended {
-    /// The shell exited on its own, inside the deadline or with no deadline at all.
-    Exited(ExitStatus),
-    /// The deadline passed first. The whole process tree has been killed by then.
-    TimedOut { timeout: Duration, elapsed: Duration },
-}
-
-/// Why a supervised command could not be waited for. The tree is killed before this is returned, so
-/// a failed wait cannot leak a live child either.
-pub(crate) enum SupervisionError {
-    Spawn(io::Error),
-    Wait(io::Error),
-}
-
-impl SupervisionError {
-    pub(crate) fn into_io(self) -> io::Error {
-        match self {
-            Self::Spawn(e) | Self::Wait(e) => e,
-        }
-    }
-}
-
-const POLL: Duration = Duration::from_millis(50);
-
 /// Runs `command` through the platform shell in `dir`, killing the tree at `timeout`.
-pub(crate) fn run_supervised(
-    command: &str,
-    dir: Option<&Path>,
-    timeout: Option<Duration>,
-) -> Result<Ended, SupervisionError> {
-    let start = Instant::now();
-    let mut child = spawn(command, dir).map_err(SupervisionError::Spawn)?;
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) => return Ok(Ended::Exited(status)),
-            Ok(None) => {
-                let elapsed = start.elapsed();
-                if let Some(limit) = timeout {
-                    if elapsed >= limit {
-                        kill_tree(&mut child);
-                        return Ok(Ended::TimedOut {
-                            timeout: limit,
-                            elapsed,
-                        });
-                    }
-                    thread::sleep(POLL.min(limit - elapsed));
-                } else {
-                    thread::sleep(POLL);
-                }
-            }
-            Err(e) => {
-                kill_tree(&mut child);
-                return Err(SupervisionError::Wait(e));
-            }
-        }
-    }
-}
-
-fn spawn(command: &str, dir: Option<&Path>) -> Result<Child, io::Error> {
-    let (shell, flag) = shell();
+///
+/// The thin shell wrapper over the one supervision: a command line, the directory it runs in, and
+/// no output to capture. The process plugin driver calls `crate::proc::run_capture` instead, because
+/// it spawns a program rather than a line for the shell to interpret.
+pub(crate) fn run_supervised(command: &str, dir: &Path, timeout: Option<Duration>) -> Result<Ended, SupervisionError> {
+    let (shell, flag) = crate::proc::shell();
     let mut cmd = Command::new(shell);
-    cmd.arg(flag).arg(command);
-    if let Some(dir) = dir {
-        cmd.current_dir(dir);
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        unsafe {
-            cmd.pre_exec(|| {
-                let _ = setpgid(0, 0);
-                Ok(())
-            });
-        }
-    }
-    cmd.spawn()
-}
-
-fn kill_tree(child: &mut Child) {
-    #[cfg(unix)]
-    unsafe {
-        let _ = killpg(child.id() as i32, SIGKILL);
-    }
-    #[cfg(windows)]
-    {
-        let pid = child.id().to_string();
-        let _ = Command::new("taskkill")
-            .args(["/F", "/T", "/PID", pid.as_str()])
-            .output();
-        let _ = child.kill();
-    }
-    #[cfg(not(any(unix, windows)))]
-    {
-        let _ = child.kill();
-    }
-    let _ = child.wait();
-}
-
-#[cfg(unix)]
-const SIGKILL: i32 = 9;
-#[cfg(unix)]
-unsafe extern "C" {
-    fn setpgid(pid: i32, pgid: i32) -> i32;
-    fn killpg(pgrp: i32, sig: i32) -> i32;
-}
-
-#[cfg(unix)]
-fn shell() -> (&'static str, &'static str) {
-    ("sh", "-c")
-}
-#[cfg(windows)]
-fn shell() -> (&'static str, &'static str) {
-    ("cmd", "/C")
-}
-#[cfg(not(any(unix, windows)))]
-fn shell() -> (&'static str, &'static str) {
-    ("sh", "-c")
+    cmd.arg(flag).arg(command).current_dir(dir);
+    // The budget starts before the spawn, the same way `run_capture` takes it: spawn latency is part
+    // of the invocation, and reading the clock after the spawn would hand it to the command for free.
+    let start = Instant::now();
+    let mut child = crate::proc::spawn_group(&mut cmd).map_err(SupervisionError::Spawn)?;
+    crate::proc::supervise(&mut child, start, timeout).map_err(SupervisionError::Wait)
 }
 
 #[cfg(test)]
@@ -299,14 +199,14 @@ mod tests {
             &[("fail".into(), cmd("exit 1")), ("ok".into(), cmd("true"))],
             &["fail".into()],
         );
-        assert!(run(&plan).is_ok());
+        assert!(run(Path::new("."), &plan).is_ok());
     }
 
     #[test]
     #[cfg_attr(windows, ignore)]
     fn run_executes_successful_and_failing_commands() {
-        assert!(run(&plan(&[("ok".into(), cmd("true"))], &[])).is_ok());
-        match run(&plan(&[("fail".into(), cmd("false"))], &[])) {
+        assert!(run(Path::new("."), &plan(&[("ok".into(), cmd("true"))], &[])).is_ok());
+        match run(Path::new("."), &plan(&[("fail".into(), cmd("false"))], &[])) {
             Err(Error::StepFailed { name, status, .. }) => {
                 assert_eq!(name, "fail");
                 assert!(!status.success());
@@ -333,7 +233,7 @@ mod tests {
             ],
             &[],
         );
-        assert!(matches!(run(&plan), Err(Error::StepFailed { name, .. }) if name == "first"));
+        assert!(matches!(run(Path::new("."), &plan), Err(Error::StepFailed { name, .. }) if name == "first"));
         assert!(!marker.exists(), "second step must not run after first failure");
     }
 
@@ -359,7 +259,7 @@ mod tests {
             )],
             &[],
         );
-        match run(&plan) {
+        match run(Path::new("."), &plan) {
             Err(Error::Timeout {
                 name,
                 timeout,

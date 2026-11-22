@@ -74,7 +74,7 @@ fn run_staged(
         .expect("a release run loads its plugin manager before the guards run");
     let preflight_plan = prepared.preflight().to_vec();
     if !dry_run {
-        preflight::run(&preflight_plan)?;
+        preflight::run(repo, &preflight_plan)?;
     }
 
     run_plugin_pre_bump(

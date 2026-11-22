@@ -295,11 +295,11 @@ fn bump_rolls_back_manifests_when_stage_fails() {
     );
     let guard = FixtureGuard::new("stage-fail-rollback");
     let fixture = guard.fixture();
-    // The lock has to be named by absolute path. `src/preflight.rs::spawn` gives the preflight
-    // shell no `current_dir`, so the command inherits the process CWD, and no test switches that
-    // CWD into a fixture any more (#270). A relative `.git/index.lock` therefore landed in the
-    // directory `cargo test` was launched from and staging succeeded, which is how this test went
-    // red on the unix legs. The fixture's own index is the one that has to be locked.
+    // The lock has to be named by absolute path. A preflight step runs in the repository root since
+    // #295, so a relative `.git/index.lock` would now resolve into the fixture — but naming it
+    // absolutely keeps this test about the rollback instead of about the step's directory, which
+    // `tests/preflight_root.rs` owns. The directory comes from `src/proc.rs::spawn_group`, the one
+    // place where the preflight shell, the hooks and the publish commands all get theirs.
     let index_lock = fixture.dir.join(".git/index.lock");
     write_fixture(
         &guard,

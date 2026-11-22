@@ -233,8 +233,10 @@ env = ["{UNSET_GRANT}"]
         err.contains("[plugins.probe.permissions]"),
         "and the grant it failed on: {err}"
     );
+    // The `Where:` line of `SpawnFailed` is the only place the command appears, and unlike the
+    // platform `io::Error` text it reads the same on every host (see the pair below).
     assert!(
-        !err.contains("program not found"),
+        !err.contains("executing command"),
         "resolution runs before the spawn, so no child is attempted: {err}"
     );
 
@@ -242,7 +244,7 @@ env = ["{UNSET_GRANT}"]
     command.args(["doctor"]).env(UNSET_GRANT, "probe-value");
     let with_grant = command.output().expect("the cutver binary runs");
     assert!(
-        stderr(&with_grant).contains("program not found"),
+        stderr(&with_grant).contains("executing command 'cutver-nonexistent-plugin-program'"),
         "with the grant resolved the spawn is attempted: {}",
         stderr(&with_grant)
     );

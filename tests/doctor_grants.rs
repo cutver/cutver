@@ -42,9 +42,31 @@ capabilities = ["changelog.v1"]
 filesystem = ["assets", "generated"]
 "#;
 
+/// The same grant on the runtime that enforces it: a WASM plugin, whose artifact this fixture does
+/// not ship, because the row is what S2 governs and the build failure is reported separately.
+const WASM_GRANT: &str = r#"[version]
+current_source = "package.json"
+
+[[manifest]]
+path = "package.json"
+kind = "json"
+field = "version"
+
+[plugins.sandbox]
+runtime = "wasm"
+source = "sandbox.wasm"
+capabilities = ["changelog.v1"]
+
+[plugins.sandbox.permissions]
+filesystem = ["assets"]
+"#;
+
 /// The environment key no fixture sets: the driver resolves it at invocation, so a host that does
 /// not export it is the #300 scenario.
 const UNSET_GRANT: &str = "CUTVER_TEST_UNSET_DOCTOR_GRANT";
+
+/// The clause a `permissions.filesystem` row carries when the declared runtime never reads it.
+const INERT: &str = "inert: runtime = \"process\" applies only permissions.env";
 
 const UNSET_ENV_GRANT: &str = r#"[version]
 current_source = "package.json"
@@ -139,8 +161,10 @@ fn the_declared_spelling_survives_resolution_next_to_the_guest_path_and_the_cano
     );
 }
 
-/// S1, S5, S6: one row per grant, carrying the three values, the plugin name and the capability set,
-/// and stating whether the grant landed inside the workspace.
+/// S1, S5, S6, and #367 S2: one row per grant, carrying the three values, the plugin name and the
+/// capability set, whether the grant landed inside the workspace, and — because this fixture is a
+/// `runtime = "process"` plugin, whose driver reads neither `filesystem` nor `network` — that the
+/// runtime ignores the grant instead of applying it.
 #[test]
 fn the_dashboard_prints_one_row_per_grant_with_its_plugin_capabilities_and_three_values() {
     let guard = workspace("grants-dashboard", TWO_GRANTS);
@@ -162,22 +186,23 @@ fn the_dashboard_prints_one_row_per_grant_with_its_plugin_capabilities_and_three
     let root = host_path(&fixture.dir);
     assert!(
         rendered.contains(&format!(
-            "probe [changelog.v1]: \"assets\" -> {root}/assets -> {root}/assets (inside the workspace)"
+            "probe [changelog.v1]: \"assets\" -> {root}/assets -> {root}/assets (inside the workspace) -> {INERT}"
         )),
         "the row carries plugin name, capability set, declared, resolved, canonical and where it \
-         landed: {rendered}"
+         landed, and states that the process runtime ignores it: {rendered}"
     );
     assert!(
         rendered.contains(&format!(
-            "probe [changelog.v1]: \"generated\" -> {root}/generated -> unresolved (the directory does not exist yet)"
+            "probe [changelog.v1]: \"generated\" -> {root}/generated -> unresolved (the directory does not exist yet) -> {INERT}"
         )),
         "a grant that resolves inside the workspace to a directory that is not there says so \
-         instead of pretending to be outside it: {rendered}"
+         instead of pretending to be outside it, and stays inert: {rendered}"
     );
 }
 
-/// S6: the machine surface carries the same three values, so a consumer that never reads the
-/// dashboard can act on what was resolved.
+/// S6 and #367 S2: the machine surface carries the same three values, so a consumer that never
+/// reads the dashboard can act on what was resolved, and the same statement about what the runtime
+/// does with the grant — the plugin's runtime, and the effect it has on the entry.
 #[test]
 fn the_json_surface_carries_the_same_three_values_per_grant() {
     let guard = workspace("grants-json", TWO_GRANTS);
@@ -200,6 +225,10 @@ fn the_json_surface_carries_the_same_three_values_per_grant() {
         serde_json::json!(["changelog.v1"]),
         "{document}"
     );
+    assert_eq!(
+        plugin["runtime"], "process",
+        "the record names the runtime that decides what a grant means: {document}"
+    );
 
     let root = host_path(&fixture.dir);
     let assets = &plugin["grants"][0];
@@ -211,11 +240,17 @@ fn the_json_surface_carries_the_same_three_values_per_grant() {
         "the canonical host directory travels as the third value: {document}"
     );
     assert_eq!(assets["location"], "inside", "{document}");
+    assert_eq!(
+        assets["effect"], "ignored",
+        "a runtime = \"process\" plugin does not apply a filesystem grant, and the machine surface \
+         says so: {document}"
+    );
 
     let generated = &plugin["grants"][1];
     assert_eq!(generated["declared"], "generated", "{document}");
     assert_eq!(generated["canonical"], Value::Null, "{document}");
     assert_eq!(generated["location"], "unresolved", "{document}");
+    assert_eq!(generated["effect"], "ignored", "{document}");
 }
 
 /// #300: a declared environment grant the host cannot produce is a row, not a load failure.
@@ -283,6 +318,39 @@ fn the_plugin_section_reports_every_plugin_in_name_order() {
         "one entry per declared plugin"
     );
     assert_eq!(load_error, None, "this workspace builds its drivers");
+}
+
+/// #367 S2, PRESERVE: the WASM runtime really does open the directory a grant names, so its rows
+/// keep the text they had and `--json` says the grant is applied.
+///
+/// Read through the library, not the binary: this fixture declares a WASM plugin whose artifact it
+/// does not ship, and the row is what S2 governs — the artifact failure is reported as a load error
+/// of its own and does not reach the grant rendering.
+#[test]
+fn a_wasm_grant_is_reported_as_applied_and_its_row_stays_unchanged() {
+    let guard = workspace("grants-wasm", WASM_GRANT);
+    let fixture = guard.fixture();
+    let loaded = config::load(fixture.dir.join("cutver.toml")).expect("the fixture loads");
+
+    let root = host_path(&fixture.dir);
+    let rendered = render_dashboard(&loaded, false, &Theme::new(false));
+    assert!(
+        rendered.contains(&format!(
+            "sandbox [changelog.v1]: \"assets\" -> {root}/assets -> {root}/assets (inside the workspace)\n"
+        )),
+        "an applied grant's row ends at the location, exactly as before: {rendered}"
+    );
+    assert!(
+        !rendered.contains("inert"),
+        "nothing is inert for the WASM runtime: {rendered}"
+    );
+
+    let mut report = DoctorReport::new(Vec::new(), None);
+    (report.plugins, report.plugin_load_error) = plugin_section(&loaded);
+    let json = render_report_json(&report).expect("the report serializes");
+    let parsed: Value = serde_json::from_str(&json).expect("the report is valid JSON");
+    assert_eq!(parsed["plugins"][0]["runtime"], "wasm", "{json}");
+    assert_eq!(parsed["plugins"][0]["grants"][0]["effect"], "applied", "{json}");
 }
 
 /// The two rows the dashboard had before this change, and the fixed-width cell they are rendered

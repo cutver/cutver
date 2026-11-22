@@ -243,7 +243,7 @@ impl ReleasePlan {
         let plugin_manager = if read_only {
             None
         } else {
-            Some(Arc::new(PluginManager::from_config(&config.plugins)?))
+            Some(Arc::new(PluginManager::from_config(&config.plugins, &config.root_dir)?))
         };
         let (source_entry, _editor, current) = current_source(config, plugin_manager.as_ref())?;
         let (next, prev_tag, auto_commits, rationale) = resolve_next_version(

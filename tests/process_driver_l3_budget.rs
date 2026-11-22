@@ -48,7 +48,7 @@ fn a_zero_exit_child_with_a_descendant_holding_stdout_stays_inside_the_budget() 
 
     let mut capabilities = HashSet::new();
     capabilities.insert(Capability::LifecycleV1);
-    let driver = ProcessDriver::new(name, command, args, env, 1, capabilities);
+    let driver = ProcessDriver::new(name, std::env::temp_dir(), command, args, env, 1, capabilities);
 
     let invocation = PluginInvocation::new(PluginCall::PreBump, &serde_json::json!({})).unwrap();
     let start = Instant::now();

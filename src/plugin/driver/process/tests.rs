@@ -10,12 +10,13 @@ use super::*;
 use crate::plugin::driver::resolve_env_grants;
 use crate::plugin::types::PluginCall;
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 #[test]
 fn test_unsupported_capability() {
     let name = PluginName::new("echo-plugin").unwrap();
-    let driver = ProcessDriver::new(name.clone(), "echo", vec![], BTreeMap::new(), 5, HashSet::new());
+    let driver = ProcessDriver::new(name.clone(), root(), "echo", vec![], BTreeMap::new(), 5, HashSet::new());
     let invocation = PluginInvocation::new(PluginCall::ManifestRead, &serde_json::json!({})).unwrap();
     let err = driver.invoke(&invocation).unwrap_err();
     match err {
@@ -46,7 +47,7 @@ fn test_successful_invocation_echo() {
         ("cat".to_string(), vec![])
     };
 
-    let driver = ProcessDriver::new(name, cmd, args, shell_env(), 5, caps);
+    let driver = ProcessDriver::new(name, root(), cmd, args, shell_env(), 5, caps);
     let invocation = PluginInvocation::new(
         PluginCall::ManifestWrite,
         &serde_json::json!({"action": "bump", "version": "1.0.0"}),
@@ -74,7 +75,7 @@ fn test_execution_failed_non_zero_exit() {
         )
     };
 
-    let driver = ProcessDriver::new(name.clone(), cmd, args, shell_env(), 5, caps);
+    let driver = ProcessDriver::new(name.clone(), root(), cmd, args, shell_env(), 5, caps);
     let invocation = PluginInvocation::new(PluginCall::PreBump, &serde_json::json!({})).unwrap();
     let err = driver.invoke(&invocation).unwrap_err();
 
@@ -113,7 +114,7 @@ fn test_timeout_isolation() {
         ("sleep".to_string(), vec!["5".to_string()])
     };
 
-    let driver = ProcessDriver::new(name.clone(), cmd, args, shell_env(), 1, caps);
+    let driver = ProcessDriver::new(name.clone(), root(), cmd, args, shell_env(), 1, caps);
     let invocation = PluginInvocation::new(PluginCall::ChangelogRender, &serde_json::json!({})).unwrap();
     let start = Instant::now();
     let err = driver.invoke(&invocation).unwrap_err();
@@ -146,6 +147,7 @@ fn test_getters_and_debug() {
 
     let driver = ProcessDriver::new(
         name.clone(),
+        root(),
         "custom-cmd",
         vec!["--flag".to_string()],
         env.clone(),
@@ -158,6 +160,7 @@ fn test_getters_and_debug() {
     assert_eq!(driver.args(), &["--flag".to_string()]);
     assert_eq!(driver.grants().resolve(&name).unwrap(), env);
     assert_eq!(driver.timeout_seconds(), 10);
+    assert_eq!(driver.root_dir(), root());
     assert_eq!(driver.capabilities(), &caps);
     assert!(format!("{driver:?}").contains("custom-cmd"));
 }
@@ -169,6 +172,17 @@ fn env_dump_command() -> (String, Vec<String>) {
     } else {
         ("/usr/bin/env".to_string(), Vec::new())
     }
+}
+
+/// The workspace root every fixture driver runs its child in.
+///
+/// The OS temp directory: absolute, present on both platforms, and nothing here asserts what is in
+/// it. These fixtures drive one invocation and assert what the child receives, so the directory is
+/// theirs to name — and naming one is the point (#367 S1): there is no root-less constructor left
+/// for a fixture to reach for, and the behavioural half of the guarantee is
+/// `tests/plugin_process_cwd.rs`.
+fn root() -> PathBuf {
+    std::env::temp_dir()
 }
 
 /// The minimum environment the platform's shell genuinely needs once the driver clears the rest.
@@ -203,7 +217,7 @@ fn test_only_granted_env_keys_reach_the_plugin() {
     // parent too, so this half states what the map contains — the clearing itself is proven by
     // `tests/process_driver_env_isolation.rs`.
     let granted = BTreeMap::from([(GRANTED.to_string(), "granted-value".to_string())]);
-    let driver = ProcessDriver::new(name, cmd, args, granted, 5, caps);
+    let driver = ProcessDriver::new(name, root(), cmd, args, granted, 5, caps);
     let invocation = PluginInvocation::new(PluginCall::ManifestRead, &serde_json::json!({})).unwrap();
     let output = driver.invoke(&invocation).expect("the environment dump must run");
 
@@ -238,7 +252,7 @@ fn test_stdin_that_is_never_read_fails_closed_with_timeout() {
         ("sleep".to_string(), vec!["10".to_string()])
     };
 
-    let driver = ProcessDriver::new(name.clone(), cmd, args, shell_env(), 1, caps);
+    let driver = ProcessDriver::new(name.clone(), root(), cmd, args, shell_env(), 1, caps);
     // Larger than any OS pipe buffer, so an unbounded blocking write could never finish.
     let payload = serde_json::json!({ "blob": "x".repeat(2 * 1024 * 1024) });
     let invocation = PluginInvocation::new(PluginCall::PreBump, &payload).unwrap();
@@ -298,7 +312,15 @@ fn assert_deadline_reaches_the_descendant(plugin: &str, label: &str, payload: se
     let marker = std::env::temp_dir().join(format!("cutver-descendant-{label}-{}.marker", std::process::id()));
     let _ = std::fs::remove_file(&marker);
     let (cmd, args) = plugin_with_a_descendant_that_writes(&marker);
-    let driver = ProcessDriver::new(PluginName::new(plugin).unwrap(), cmd, args, descendant_env(), 1, caps);
+    let driver = ProcessDriver::new(
+        PluginName::new(plugin).unwrap(),
+        root(),
+        cmd,
+        args,
+        descendant_env(),
+        1,
+        caps,
+    );
     let invocation = PluginInvocation::new(PluginCall::PreBump, &payload).unwrap();
     let start = Instant::now();
     let err = driver.invoke(&invocation).unwrap_err();
@@ -342,6 +364,32 @@ fn test_a_descendant_holding_stdin_cannot_outlive_the_timeout() {
 #[test]
 fn test_a_descendant_of_a_timed_out_plugin_never_writes_its_marker() {
     assert_deadline_reaches_the_descendant("marker-plugin", "timeout", serde_json::json!({}));
+}
+
+/// S1 (#367): the command the driver builds carries the workspace root as its working directory, so
+/// the child never inherits the directory of the process that built the driver.
+///
+/// `CONTRACT.md:154-155` asks every subprocess to name its working directory. The behavioural half —
+/// that the operating system really starts the child there — is `tests/plugin_process_cwd.rs`, which
+/// spawns a plugin and reads the directory it printed. This half reads the command the driver would
+/// spawn, so the regression is an assertion rather than a platform surprise.
+#[test]
+fn test_child_command_names_the_workspace_root_as_its_working_directory() {
+    let name = PluginName::new("rooted-plugin").unwrap();
+    let workspace = root();
+    let mut caps = HashSet::new();
+    caps.insert(Capability::ManifestV1);
+    let driver = ProcessDriver::new(name, workspace.clone(), "echo", vec![], BTreeMap::new(), 5, caps);
+
+    let command = driver
+        .child_command()
+        .expect("a driver with no declared grant has nothing to reject");
+
+    assert_eq!(
+        command.get_current_dir(),
+        Some(workspace.as_path()),
+        "the workspace root is named explicitly, so the child cannot inherit the caller's directory"
+    );
 }
 
 #[cfg(test)]

@@ -1,6 +1,7 @@
 //! Factory functions for creating plugin drivers according to their runtime configuration.
 
 use std::collections::HashSet;
+use std::path::Path;
 use std::sync::Arc;
 
 use crate::plugin::driver::{DeclaredEnvGrants, EnvLookup, PluginDriver, ProcessDriver};
@@ -15,14 +16,20 @@ pub const DEFAULT_PLUGIN_TIMEOUT_SECS: u64 = 30;
 /// `lookup` is the environment seam every runtime resolves its declared grants through, so a test
 /// drives the whole factory with an injected map instead of mutating the process environment. The
 /// drivers keep it unresolved: the grants are handed over at invocation, never here (#300).
+///
+/// `root_dir` is the resolved workspace root. Only the process runtime reads it — the WASM driver
+/// mounts the canonical host paths resolution already recorded — but it is required of every caller
+/// rather than optional, so the one runtime that needs a working directory cannot be built without
+/// one (#367 S1).
 pub(crate) fn create_driver(
     name: &PluginName,
     config: &PluginConfig,
     lookup: &EnvLookup,
+    root_dir: &Path,
 ) -> Result<Box<dyn PluginDriver>, PluginError> {
     match config.runtime {
         RuntimeKind::Wasm => create_wasm_runtime_driver(name, config, lookup),
-        RuntimeKind::Process => create_process_driver(name, config, lookup),
+        RuntimeKind::Process => create_process_driver(name, config, lookup, root_dir),
     }
 }
 
@@ -75,11 +82,13 @@ fn create_wasm_driver(
     Ok(Box::new(driver))
 }
 
-/// Creates a `ProcessDriver` from plugin configuration.
+/// Creates a `ProcessDriver` from plugin configuration, rooted at the workspace root it will run the
+/// child in (#367 S1).
 fn create_process_driver(
     name: &PluginName,
     config: &PluginConfig,
     lookup: &EnvLookup,
+    root_dir: &Path,
 ) -> Result<Box<dyn PluginDriver>, PluginError> {
     let command = config
         .command
@@ -99,6 +108,7 @@ fn create_process_driver(
 
     Ok(Box::new(ProcessDriver::new(
         name.clone(),
+        root_dir,
         command,
         Vec::new(),
         grants,

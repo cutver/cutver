@@ -20,8 +20,10 @@ Every JSON surface reports the same outcome and opens with `schemaVersion` ([mac
 `[plugins.<name>.permissions] filesystem` grant — the declared spelling, the resolved guest path and
 the canonical host directory behind it, with the plugin name and capability set — it prints one row per
 `[plugins.<name>.permissions] env` grant stating whether the host can produce it, never its value. Its
-`--json` object carries a `plugins` array (one entry per declared plugin: `name`, `capabilities`,
-`grants`, `env_grants`) and a `plugin_load_error` field for a driver that could not be built at all.
+`--json` object carries a `plugins` array (one entry per declared plugin: `name`, `runtime`,
+`capabilities`, `grants`, `env_grants`) and a `plugin_load_error` field for a driver that could not be
+built at all. Each `grants` entry carries `effect`: `applied` under the WASM runtime, `ignored` under
+`runtime = "process"`, which applies only `permissions.env` (#367).
 An unset environment grant is a row of its own rather than a load failure: grants are resolved when the
 plugin is invoked (#300), so a host that exports none of them still gets a diagnosis. The exit code
 stays `0` for a clean run, `2` for drift, and `1` only when a check could not run.

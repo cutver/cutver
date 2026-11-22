@@ -1,5 +1,5 @@
 //! The plugin half of the diagnosis: what `cutver.toml` declares, why the manager could not be
-//! built, and the dashboard rows for both (#268 S5, #300 S1).
+//! built, and the dashboard rows for both (#268 S5, #300 S1, #367 S2).
 //!
 //! These live here rather than inside `doctor.rs` because that file sits under the 400-line ratchet in
 //! `tests/source_line_budget.rs`, whose table "can shrink but never grow". The parent re-exports every
@@ -15,13 +15,18 @@ use crate::config::Config;
 use crate::plugin::PluginManager;
 use crate::plugin::PluginName;
 use crate::plugin::driver::DeclaredEnvGrants;
-use crate::plugin::types::FilesystemGrant;
+use crate::plugin::types::{FilesystemGrant, RuntimeKind};
 
-/// One declared plugin: its name, its capability set, the filesystem grants resolution recorded for
-/// it (#268 S5) and its declared environment grants (#300 S1).
+/// One declared plugin: its name, the runtime it declares, its capability set, the filesystem grants
+/// resolution recorded for it (#268 S5) and its declared environment grants (#300 S1).
+///
+/// The runtime is carried because it is what decides whether a sandbox grant is applied at all
+/// (#367 S2): the same entry under `[plugins.<name>.permissions]` means "open this directory" to the
+/// WASM runtime and nothing to the process runtime.
 #[derive(Debug, Serialize)]
 pub struct PluginJson {
     pub name: String,
+    pub runtime: RuntimeKind,
     pub capabilities: Vec<String>,
     pub grants: Vec<GrantJson>,
     pub env_grants: Vec<EnvGrantJson>,
@@ -41,8 +46,42 @@ pub struct EnvGrantJson {
     pub set: bool,
 }
 
+/// What the plugin's runtime does with one `permissions.filesystem` entry (#367 S2).
+///
+/// A credential-free statement of the two truths a row can report: the WASM sandbox opens the
+/// directory a grant resolves to, and the process runtime never reads the entry at all — only
+/// `permissions.env` is applied there. Both surfaces carry it: the dashboard appends its
+/// [`Self::note`] and `--json` carries the variant under `plugins[].grants[].effect`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GrantEffect {
+    /// The runtime enforces the grant: the directory is what the plugin's sandbox can open.
+    Applied,
+    /// The runtime ignores the grant: it applies `permissions.env` and nothing else.
+    Ignored,
+}
+
+impl GrantEffect {
+    /// The effect a runtime has on every sandbox grant, exhaustively matched so a third runtime
+    /// cannot be added without stating what its grants mean.
+    pub const fn of(runtime: RuntimeKind) -> Self {
+        match runtime {
+            RuntimeKind::Wasm => Self::Applied,
+            RuntimeKind::Process => Self::Ignored,
+        }
+    }
+
+    /// The clause a human row carries, or `None` when the row already says the whole truth.
+    fn note(self) -> Option<&'static str> {
+        match self {
+            Self::Applied => None,
+            Self::Ignored => Some("inert: runtime = \"process\" applies only permissions.env"),
+        }
+    }
+}
+
 /// One `permissions.filesystem` grant of a declared plugin, carrying the three values resolution kept
-/// (#268 S3, S6) and where the grant landed.
+/// (#268 S3, S6), where the grant landed, and what the declared runtime does with it (#367 S2).
 #[derive(Debug, Serialize)]
 pub struct GrantJson {
     /// The spelling `cutver.toml` declared.
@@ -53,16 +92,19 @@ pub struct GrantJson {
     pub canonical: Option<String>,
     /// `inside`, `outside` or `unresolved`, derived from `canonical` against the workspace root.
     pub location: &'static str,
+    /// Whether the declared runtime applies this grant or ignores it.
+    pub effect: GrantEffect,
 }
 
 impl GrantJson {
-    /// Projects one resolved grant and derives where its host directory really sits.
+    /// Projects one resolved grant and derives where its host directory really sits, and what the
+    /// runtime of the plugin that declared it does with the entry (#367 S2).
     ///
     /// `outside` is unreachable from a loaded `cutver.toml` — `config::discovery` refuses a grant that
     /// escapes the workspace with `ConfigError::GrantOutsideWorkspace` — but it is *derived* here
     /// rather than assumed, so the report states the comparison it made. A directory that does not
     /// exist yet has no canonical path, and that is a third answer, not "outside" (#268 S6).
-    pub fn from_grant(grant: &FilesystemGrant, root_dir: &Path) -> Self {
+    pub fn from_grant(grant: &FilesystemGrant, root_dir: &Path, runtime: RuntimeKind) -> Self {
         let location = match &grant.canonical {
             Some(canonical) if Path::new(canonical).starts_with(root_dir) => "inside",
             Some(_) => "outside",
@@ -73,6 +115,7 @@ impl GrantJson {
             resolved: grant.resolved.clone(),
             canonical: grant.canonical.clone(),
             location,
+            effect: GrantEffect::of(runtime),
         }
     }
 
@@ -103,12 +146,13 @@ fn plugin_records(config: &Config) -> Vec<PluginJson> {
             let env_grants = DeclaredEnvGrants::from_env(plugin.permissions.env.clone());
             PluginJson {
                 name: name.to_string(),
+                runtime: plugin.runtime,
                 capabilities: plugin.capabilities.iter().map(|c| c.as_str().to_string()).collect(),
                 grants: plugin
                     .permissions
                     .filesystem_grants
                     .iter()
-                    .map(|grant| GrantJson::from_grant(grant, &config.root_dir))
+                    .map(|grant| GrantJson::from_grant(grant, &config.root_dir, plugin.runtime))
                     .collect(),
                 env_grants: plugin
                     .permissions
@@ -133,7 +177,7 @@ fn plugin_records(config: &Config) -> Vec<PluginJson> {
 /// failures that really are construction failures: an unreadable artifact, a digest mismatch, a
 /// missing `command` or `source`.
 pub(super) fn build_manager(config: &Config) -> Result<Arc<PluginManager>, String> {
-    PluginManager::from_config(&config.plugins)
+    PluginManager::from_config(&config.plugins, &config.root_dir)
         .map(Arc::new)
         .map_err(|error| error.to_string())
 }
@@ -190,17 +234,22 @@ fn format_env_grant_row(plugin: &PluginJson, grant: &EnvGrantJson) -> String {
     )
 }
 
-/// One grant as a dashboard row: `plugin [capabilities]: "declared" -> resolved -> canonical (where)`.
+/// One grant as a dashboard row: `plugin [capabilities]: "declared" -> resolved -> canonical (where)`,
+/// plus the runtime's verdict when that verdict is not simply "applied" (#367 S2).
 fn format_grant_row(plugin: &PluginJson, grant: &GrantJson) -> String {
     let host = match &grant.canonical {
         Some(canonical) => format!("{canonical} ({})", grant.location_note()),
         None => grant.location_note().to_string(),
     };
-    format!(
+    let row = format!(
         "{} [{}]: \"{}\" -> {} -> {host}",
         plugin.name,
         plugin.capabilities.join(", "),
         grant.declared,
         grant.resolved
-    )
+    );
+    match grant.effect.note() {
+        Some(note) => format!("{row} -> {note}"),
+        None => row,
+    }
 }

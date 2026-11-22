@@ -22,11 +22,25 @@ S1-S9 are the plan this document proposes; S10 quotes the maintainer's requireme
   that imports a sibling module or opens a relative template resolves it against wherever the user ran
   `cutver`. The child's working directory is the resolved `root_dir`, and a behavioural test spawns a
   process plugin from an unrelated directory and asserts the child's cwd.
-- **S3 — The envelope carries a protocol version.** `PluginInvocation` has three fields
-  (`crates/cutver-pdk/src/invocation.rs:9-13`) and none states the version it speaks. A plugin built
-  against an older shape fails today with `InvalidPayload`, indistinguishable from a malformed line.
-  The invocation carries `protocol` (a version string), and a mismatch fails with a typed error naming
-  the host's version and the plugin's, with `Where:` and `Fix:`.
+- **S3 — The envelope carries a protocol version, and a mismatch is detectable.** `PluginInvocation` has
+  three fields (`crates/cutver-pdk/src/invocation.rs:9-13`) and none states the version it speaks. A plugin
+  built against an older shape fails today with `InvalidPayload`, indistinguishable from a malformed line.
+  The shape was decided in L8, because the version cannot travel in the request alone: the only upward
+  channel is stdout, so a request-only field tells the plugin what it is talking to and tells the host
+  nothing.
+  - **`protocol` is the first field of the invocation**, always written by the host from one constant,
+    `PROTOCOL_VERSION = "1"`, exported by the PDK. Required, never defaulted: a default would recreate
+    the silence this task removes. Serde ignores unknown keys, so a plugin built on PDK 0.1.x decodes the
+    new request unchanged — compatibility does not depend on anyone upgrading.
+  - **A plugin may declare the version it speaks** with a top-level `protocol` key beside its DTO fields.
+    Present and different is a typed `ProtocolMismatch` naming the host's version and the plugin's, with
+    `Where:` and `Fix:`. Absent means `"1"`, which is true of every plugin that exists today — and is why
+    the key is optional in this direction: required would break the eight shell fixtures and
+    `github-releases` with nothing to diagnose.
+  - **The check lives where the answer is decoded** (`src/plugin/manager/core.rs`), not in a driver: a
+    driver only serializes the request and never sees the answer's shape.
+  - **`cutver-pdk` goes to `0.2.0`**: a published crate whose public struct gains a field is a breaking
+    change for anyone matching on it exhaustively.
 - **S4 — All four capabilities are specified outside Rust.** `changelog.v1` is documented end to end
   (`docs/guides/plugin-overview.md:61-91`); `manifest.v1`, `versioning.v1` and the three lifecycle
   payloads are not, and their request field lists exist only in `crates/cutver-pdk/src/*.rs`. Each
@@ -75,7 +89,8 @@ proof. Recorded here as closed so nobody redoes it | — |
 | T2 | S1 | **Done** — `6d5bd5c` on `feat/369-process-env-baseline`, plus `90202e6` and `f2d70fa` repairing the
 fixtures that CI caught. One named list, `SYSTEM_ENV_BASELINE`, applied between `env_clear()` and the
 declared grants in `child_command`, listed by name in the reference page. See L7 | 1 |
-| T3 | S3 | `protocol` in the envelope, typed mismatch error, PDK constant, wire golden updated | 2 |
+| T3 | S3 | `protocol` first in the envelope from the PDK constant; optional `protocol` in the answer checked where
+it is decoded; `ProtocolMismatch` with `Where:`/`Fix:`; wire golden and `cutver-pdk` 0.2.0 | 2 |
 | T4 | S5 | One golden per capability for the request bytes | 2 |
 | T5 | S4 | Docs: request/response pairs for `manifest.v1`, `versioning.v1`, lifecycle, optionality rules | 3 |
 | T6 | S9, S7 | Authoring guide: `sys.stdout.buffer`, stderr's fate, the PATH-of-the-parent oddity | 3 |
@@ -167,7 +182,15 @@ lands before T4 because the goldens pin the version field.
     out of two unrelated paragraphs; verification flagged that as reviewer-visible churn, the
     paragraphs were restored verbatim, and the page now sits at **200/200** — the next edit there must
     trim something. Editing a page that close to its ceiling is a scope decision, not a formatting one.
-  - **State at close**: `f2d70fa`, PR #370 open against `main` with all five test legs, `CI gate`,
-    `Exactly one type label` and `Publish dry-run` **green**; local `sh scripts/check.sh` = `9 passed, 0
-    failed, 1 not run here` (the linux+plugins clippy needs a cross C compiler this host lacks). Merge is
-    the maintainer's call. The next task is **T3**, the protocol version in the envelope.
+  - **State at close**: merged as **`bfeebe1`** (PR #370, squash) on 2026-11-22, all five test legs, `CI gate`,
+    `Exactly one type label` and `Publish dry-run` green before the merge; the branch and its five commits are
+    gone from the remote. Local `sh scripts/check.sh` was `9 passed, 0 failed, 1 not run here` (the linux+plugins
+    clippy needs a cross C compiler this host lacks). The next task is **T3**.
+- **L8** — the maintainer's decision on S3's shape, taken before any code: asked «¿por dónde viaja la versión de
+  protocolo, para que el host pueda detectar el desacuerdo?», answered «Cuál me recomendas», which selects the
+  recommended option — **request required, answer optional**. The question existed because S3 as first written was
+  unimplementable: it asked for an error naming *both* versions, and the only upward channel is stdout while the
+  answer is the DTO and nothing else (`docs/guides/plugin-overview.md:82-91`). Chosen because it is the only shape
+  that produces that error without breaking the eight shell fixtures, `github-releases`, or any plugin built on PDK
+  0.1.x. S3 rewritten above accordingly. The version string is `"1"`, following `SCHEMA_VERSION: u32 = 1`
+  (`src/cli/json.rs:15`) instead of inventing a second versioning style in the same program.

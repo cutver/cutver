@@ -7,8 +7,9 @@
 //! the clearing itself against keys this process really carries.
 
 use super::*;
-use crate::plugin::driver::{env_grants_from_lookup, resolve_env_grants};
+use crate::plugin::driver::resolve_env_grants;
 use crate::plugin::types::PluginCall;
+use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
 #[test]
@@ -155,7 +156,7 @@ fn test_getters_and_debug() {
     assert_eq!(driver.name(), &name);
     assert_eq!(driver.command(), "custom-cmd");
     assert_eq!(driver.args(), &["--flag".to_string()]);
-    assert_eq!(driver.env(), &env);
+    assert_eq!(driver.grants().resolve(&name).unwrap(), env);
     assert_eq!(driver.timeout_seconds(), 10);
     assert_eq!(driver.capabilities(), &caps);
     assert!(format!("{driver:?}").contains("custom-cmd"));
@@ -343,57 +344,5 @@ fn test_a_descendant_of_a_timed_out_plugin_never_writes_its_marker() {
     assert_deadline_reaches_the_descendant("marker-plugin", "timeout", serde_json::json!({}));
 }
 
-/// S4: a declared but unset grant is an error naming the plugin and the key, never an empty
-/// string handed to the plugin. `env_grants_from_lookup` is the authority the process factory and
-/// the WASM manifest builder both resolve their grants through, and the injected lookup stands in
-/// for the process environment (#344).
-#[test]
-fn test_declared_but_unset_grant_names_plugin_and_key() {
-    const KEY: &str = "CUTVER_TEST_UNSET_GRANT_KEY";
-
-    let name = PluginName::new("grant-plugin").unwrap();
-    let err = env_grants_from_lookup(&name, &[KEY.to_string()], |_| None).expect_err("an unset grant must fail");
-    let message = err.to_string();
-
-    match err {
-        PluginError::UnsetEnvGrant {
-            name: err_name,
-            key: err_key,
-        } => {
-            assert_eq!(err_name, name);
-            assert_eq!(err_key, KEY);
-        }
-        other => panic!("expected UnsetEnvGrant, got {other:?}"),
-    }
-    assert!(
-        message.contains("grant-plugin"),
-        "message must name the plugin: {message}"
-    );
-    assert!(message.contains(KEY), "message must name the key: {message}");
-    assert!(
-        message.contains("[plugins.grant-plugin.permissions]"),
-        "message must name the grant it failed to resolve: {message}"
-    );
-}
-
-/// S3: the pure resolver answers from the injected lookup alone. A present key keeps its value, and
-/// a key the lookup cannot produce is an error — which is also what a non-UTF-8 value looks like,
-/// because the boundary adapter is `|key| std::env::var(key).ok()` — never a silent empty string.
-#[test]
-fn test_injected_lookup_is_the_only_input_to_the_resolver() {
-    let name = PluginName::new("lookup-plugin").unwrap();
-    let declared = vec!["CUTVER_TEST_LOOKUP_PRESENT".to_string()];
-    let key = declared[0].clone();
-
-    let grants = env_grants_from_lookup(&name, &declared, |asked| {
-        (asked == key).then(|| "present-value".to_string())
-    })
-    .expect("a key the lookup produces resolves to its value");
-    assert_eq!(grants, BTreeMap::from([(key.clone(), "present-value".to_string())]));
-
-    let err = env_grants_from_lookup(&name, &declared, |_| None).expect_err("a key the lookup cannot produce fails");
-    assert!(
-        matches!(&err, PluginError::UnsetEnvGrant { key: err_key, .. } if err_key == &key),
-        "expected UnsetEnvGrant naming the key, got {err:?}"
-    );
-}
+#[cfg(test)]
+mod env_grants;

@@ -1,7 +1,7 @@
 //! Unit and regression tests for `PluginManager` orchestration.
 
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use super::core::PluginManager;
 use super::glob::glob_matches;
@@ -112,12 +112,13 @@ fn test_from_config_wasm_registers_driver() {
     assert!(manager.driver(&name).is_some());
 }
 
-/// The process runtime resolves `[plugins.<name>.permissions] env` through the shared grant
-/// authority, so an unset grant fails closed when the driver is built instead of the child
-/// inheriting the whole parent environment (issue #264). The lookup is injected, so both cases are
-/// proven without mutating the process environment (#344).
+/// The process runtime keeps `[plugins.<name>.permissions] env` unresolved until the plugin is
+/// invoked (#300), so building the manager succeeds on a host that cannot produce the key. The
+/// failure belongs to the invocation and is asserted on the driver, where the typed error is raised
+/// (`src/plugin/driver/process/tests.rs`). The lookup is injected, so nothing mutates the process
+/// environment (#344).
 #[test]
-fn test_from_config_process_env_grant_is_resolved() {
+fn test_from_config_keeps_declared_env_grants_unresolved() {
     const KEY: &str = "CUTVER_TEST_UNSET_FACTORY_GRANT";
 
     let name = PluginName::new("env-grant-plugin").unwrap();
@@ -139,22 +140,17 @@ fn test_from_config_process_env_grant_is_resolved() {
 
     let mut map = HashMap::new();
     map.insert(name.clone(), config);
-    let granted = PluginManager::from_config_with_lookup(&map, &|key| Some(format!("{key}-value")))
+
+    let granted = PluginManager::from_config_with_lookup(&map, Arc::new(|key: &str| Some(format!("{key}-value"))))
         .expect("a declared grant that is set must resolve");
     assert!(granted.driver(&name).is_some(), "the driver must be registered");
 
-    let err = PluginManager::from_config_with_lookup(&map, &|_| None).unwrap_err();
-
-    match err {
-        PluginError::UnsetEnvGrant {
-            name: err_name,
-            key: err_key,
-        } => {
-            assert_eq!(err_name, name);
-            assert_eq!(err_key, KEY);
-        }
-        other => panic!("expected UnsetEnvGrant, got {other:?}"),
-    }
+    let unresolved = PluginManager::from_config_with_lookup(&map, Arc::new(|_| None))
+        .expect("loading the configuration must not need the grant (#300)");
+    assert!(
+        unresolved.driver(&name).is_some(),
+        "the driver exists with its declared keys unresolved"
+    );
 }
 
 #[test]

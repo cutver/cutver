@@ -114,16 +114,17 @@ jobs:
       # file. Resolving the URL goes through the Cutver registry, so a plugin version must be
       # indexed there before a release that pins it.
       - name: Restore the declared plugin artifacts
-        # `cutver` resolves the declared `permissions.env` grants while it loads the plugin
-        # configuration, so the key has to exist even for a command that never invokes the plugin.
-        # That resolution happens too early; it is tracked in #300, and this block disappears with it.
+        # Redundant since #300: the declared `permissions.env` grants are resolved when the plugin is
+        # invoked, and this step never invokes it. The line is kept for one cycle as a removable one;
+        # the command runs with the key absent (tests/plugin_env_grants_at_invocation.rs).
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: cutver plugin restore
 
       - name: Doctor
-        # Not a privileged step: the token exists so the declared grant resolves, nothing reads it
-        # here. Once #300 moves resolution to invocation, this block goes away.
+        # Not a privileged step, and since #300 it does not need the grant either: resolution happens
+        # at invocation, so this step runs on a runner where the key is unset. The line is redundant
+        # and can be deleted without touching the step.
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: cutver doctor --check-changelog

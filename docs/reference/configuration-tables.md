@@ -125,7 +125,7 @@ Each plugin gets its own table, written by `cutver plugin add` rather than by ha
 
 ## `[plugins.<name>.config]`
 
-A free-form table that belongs to the plugin, not to `cutver`: no host behavior depends on a key inside it, an unknown key there is not rejected the way one in the enclosing table is, and the host does not deliver it either — `permissions.env` is the only channel an entry fills (`src/plugin/driver/wasm.rs:135-137`, `src/plugin/driver/process.rs::child_command`). The loader parses the table (`src/plugin/types.rs:186`) and `cutver plugin update` rewrites only `source` and `hash`, leaving this one untouched (`src/plugin/manage/update.rs:1-6`): it is the only table in `cutver.toml` whose contents `cutver` neither validates nor reads. The reference implementation is `github-publish`, in this repository's own `cutver.toml`, which records why each key is there (`cutver.toml:84-94`):
+A free-form table that belongs to the plugin, not to `cutver`: no host behavior depends on a key inside it, an unknown key there is not rejected the way one in the enclosing table is, and the host does not deliver it either — `permissions.env` is the only channel an entry fills (`src/plugin/driver/wasm.rs:198-199`, `src/plugin/driver/process.rs::child_command`). The loader parses the table (`src/plugin/types.rs:186`) and `cutver plugin update` rewrites only `source` and `hash`, leaving this one untouched (`src/plugin/manage/update.rs:1-6`): it is the only table in `cutver.toml` whose contents `cutver` neither validates nor reads. The reference implementation is `github-publish`, in this repository's own `cutver.toml`, which records why each key is there (`cutver.toml:84-94`):
 
 ```toml
 [plugins.github-publish.config]

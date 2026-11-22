@@ -28,13 +28,12 @@ const CEILING: usize = 400;
 /// Every file that was already over the ceiling when the ratchet landed, with the line count it had
 /// on that commit. Sorted by path, so a reviewer diffing this table sees one insertion or one deletion
 /// per file.
-const ALLOWLIST: [(&str, usize); 16] = [
+const ALLOWLIST: [(&str, usize); 15] = [
     ("src/bump/exec/publish.rs", 469),
     ("src/changelog/context/tests.rs", 1308),
     ("src/changelog/extract/tests.rs", 563),
     ("src/changelog/render/tests.rs", 755),
     ("src/cli/args/tests.rs", 738),
-    ("src/cli/doctor.rs", 438),
     ("src/cli/runner/changelog.rs", 696),
     ("src/cli/runner/tests.rs", 950),
     ("src/config/discovery.rs", 467),

@@ -1,9 +1,9 @@
-use std::collections::{BTreeMap, HashSet};
+use std::collections::HashSet;
 use std::io;
 use std::process::{Command, ExitStatus};
 use std::time::Duration;
 
-use crate::plugin::driver::PluginDriver;
+use crate::plugin::driver::{DeclaredEnvGrants, PluginDriver};
 use crate::plugin::dto::PluginInvocation;
 use crate::plugin::error::PluginError;
 use crate::plugin::types::{Capability, PluginName};
@@ -15,18 +15,22 @@ pub struct ProcessDriver {
     name: PluginName,
     command: String,
     args: Vec<String>,
-    env: BTreeMap<String, String>,
+    grants: DeclaredEnvGrants,
     timeout_seconds: u64,
     capabilities: HashSet<Capability>,
 }
 
 impl ProcessDriver {
     /// Creates a new `ProcessDriver` instance.
+    ///
+    /// `grants` carries the declared `permissions.env` keys, unresolved (#300): the child environment
+    /// is built when the plugin is invoked, because a configuration that is only loaded hands out
+    /// nothing. A caller with a map it already resolved passes it directly.
     pub fn new(
         name: PluginName,
         command: impl Into<String>,
         args: Vec<String>,
-        env: BTreeMap<String, String>,
+        grants: impl Into<DeclaredEnvGrants>,
         timeout_seconds: u64,
         capabilities: HashSet<Capability>,
     ) -> Self {
@@ -34,7 +38,7 @@ impl ProcessDriver {
             name,
             command: command.into(),
             args,
-            env,
+            grants: grants.into(),
             timeout_seconds,
             capabilities,
         }
@@ -50,9 +54,9 @@ impl ProcessDriver {
         &self.args
     }
 
-    /// Returns the environment variables configured for the sub-process.
-    pub fn env(&self) -> &BTreeMap<String, String> {
-        &self.env
+    /// Returns the declared environment grants, unresolved.
+    pub fn grants(&self) -> &DeclaredEnvGrants {
+        &self.grants
     }
 
     /// Returns the timeout in seconds.
@@ -67,14 +71,21 @@ impl ProcessDriver {
 
     /// Builds the command for one invocation: the program, its argv, and only the granted keys.
     ///
+    /// The declared grants are resolved *here*, not when the driver was constructed (#300): a
+    /// configuration that is loaded, a `cutver doctor` that inspects it, and a `plugin restore` that
+    /// never invokes the plugin must all run on a host without the secret. Fail-closed keeps its
+    /// ground at this boundary — an unset declared key is [`PluginError::UnsetEnvGrant`] and no child
+    /// is spawned at all (Pillar VI.2).
+    ///
     /// `env_clear` runs first: a native plugin inherits no ambient authority, so an undeclared key
     /// in the parent environment (a token in CI, say) never reaches the child (Pillar VI.2). The
     /// stdio pipes, the process group and the deadline are not set here: they belong to the shared
     /// supervision in [`crate::proc`], which is the one copy of that machinery (S5).
-    fn child_command(&self) -> Command {
+    fn child_command(&self) -> Result<Command, PluginError> {
+        let granted = self.grants.resolve(&self.name)?;
         let mut cmd = Command::new(&self.command);
-        cmd.args(&self.args).env_clear().envs(&self.env);
-        cmd
+        cmd.args(&self.args).env_clear().envs(&granted);
+        Ok(cmd)
     }
 }
 
@@ -103,7 +114,8 @@ impl PluginDriver for ProcessDriver {
         // `timeout_seconds` budget (S8). The process group, the deadline poll and the tree kill all
         // come from `crate::proc`, which is why a process the plugin starts cannot outlive it (S6).
         let timeout = Duration::from_secs(self.timeout_seconds);
-        match proc::run_capture(&mut self.child_command(), &envelope, timeout) {
+        let mut command = self.child_command()?;
+        match proc::run_capture(&mut command, &envelope, timeout) {
             Ok(Capture {
                 status,
                 stdout,

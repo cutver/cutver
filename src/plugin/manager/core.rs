@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use super::factory::create_driver;
 use super::glob::glob_matches;
-use crate::plugin::driver::PluginDriver;
+use crate::plugin::driver::{EnvLookup, PluginDriver, process_env_lookup};
 use crate::plugin::dto::{
     ChangelogRenderRequest, ChangelogRenderResponse, ManifestReadRequest, ManifestReadResponse, ManifestWriteRequest,
     ManifestWriteResponse, PluginInvocation, PostBumpPayload, PostReleasePayload, PreBumpPayload, PreBumpResponse,
@@ -31,26 +31,29 @@ impl PluginManager {
 
     /// Instantiates a `PluginManager` from a map of plugin declarations.
     ///
-    /// Boundary constructor binding [`Self::from_config_with_lookup`] to the process environment,
-    /// so every declared `[plugins.<name>.permissions] env` grant is resolved here and nowhere else.
+    /// Boundary constructor binding [`Self::from_config_with_lookup`] to the process environment.
+    ///
+    /// Nothing is resolved here: each driver keeps its declared `[plugins.<name>.permissions] env`
+    /// grants unresolved and hands them over at invocation (#300), so a configuration check runs on a
+    /// host that does not export the secrets the plugins would receive.
     pub fn from_config(plugins: &HashMap<PluginName, PluginConfig>) -> Result<Self, PluginError> {
-        Self::from_config_with_lookup(plugins, &|key| std::env::var(key).ok())
+        Self::from_config_with_lookup(plugins, process_env_lookup())
     }
 
-    /// Instantiates a `PluginManager` resolving every declared grant through `lookup`.
+    /// Instantiates a `PluginManager` whose drivers resolve their declared grants through `lookup`.
     ///
     /// The injected seam exists so a test drives both the `Ok` and the `UnsetEnvGrant` case without
     /// mutating the process environment, whose mutators are unsafe under parallel tests (Pillar
     /// IV.1, the same boundary as `crate::plugin::cache` and `crate::cli::ci`).
     pub fn from_config_with_lookup(
         plugins: &HashMap<PluginName, PluginConfig>,
-        lookup: &dyn Fn(&str) -> Option<String>,
+        lookup: EnvLookup,
     ) -> Result<Self, PluginError> {
         let mut drivers: HashMap<PluginName, Box<dyn PluginDriver>> = HashMap::new();
         let mut configs = HashMap::new();
 
         for (name, config) in plugins {
-            let driver = create_driver(name, config, lookup)?;
+            let driver = create_driver(name, config, &lookup)?;
             drivers.insert(name.clone(), driver);
             configs.insert(name.clone(), config.clone());
         }

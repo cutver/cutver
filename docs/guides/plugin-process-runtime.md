@@ -106,8 +106,8 @@ Environment is the only grant this runtime applies, and it applies it in both di
 | :--- | :--- |
 | The child starts with a **cleared** environment (`src/plugin/driver/process.rs`, `child_command`). | Nothing is inherited: `PATH`, `HOME`, `TMPDIR`, CI tokens and every other variable of the `cutver` process are absent unless granted. |
 | Exactly the granted keys are set. | `env = ["GITHUB_TOKEN"]` gives the child `GITHUB_TOKEN` and nothing else. |
-| A declared key that is **unset** is an error, not an empty string. | Loading fails with `plugin '<name>' declares the environment grant '<key>', but cutver cannot read '<key>' from its own environment` (`src/plugin/error.rs:127`). The value must also be valid UTF-8. |
-| Grants are resolved once, when the plugin manager is built. | The failure lands at the start of a run, before any plugin is called (`src/plugin/manager/factory.rs:71`), through the function the WASM runtime shares (`src/plugin/driver.rs:20-38`). |
+| A declared key that is **unset** is an error, not an empty string. | Invoking the plugin fails with `plugin '<name>' declares the environment grant '<key>', but cutver cannot read '<key>' from its own environment` (`src/plugin/error.rs:127`). The value must also be valid UTF-8. |
+| Grants are resolved at each invocation, when the child environment is built. | Building the plugin manager and inspecting the configuration never needs them (#300), so `cutver doctor` and `cutver plugin restore` run on a host that exports none of the declared keys. The failure lands when the plugin is first invoked, before the child starts, through the resolver the WASM runtime shares (`src/plugin/driver.rs`, `DeclaredEnvGrants::resolve`). |
 
 A script whose interpreter is resolved through `PATH` (`#!/usr/bin/env python3`) should declare `PATH`
 in `env`, or name the interpreter by absolute path in the shebang.
@@ -146,7 +146,7 @@ whole tree.
 | `returned invalid IPC JSON payload` | stdout was empty, not one JSON value, or not the DTO the capability expects (`src/plugin/error.rs:90`). |
 | `timed out after <n>s` | The exchange outlived `timeout_seconds`; the plugin's process tree was killed. |
 | `failed to write the invocation envelope ... to stdin` | The plugin, or something it started, stopped reading stdin before the envelope ended (`src/plugin/error.rs:78`). |
-| `declares the environment grant '<key>', but ...` | A granted key is unset in the environment running `cutver`. |
+| `declares the environment grant '<key>', but ...` | A granted key is unset in the environment running `cutver`, and the plugin was invoked. Resolving it is the invocation's job, so a configuration check never reports this (#300). |
 
 ## What this page does not cover yet
 

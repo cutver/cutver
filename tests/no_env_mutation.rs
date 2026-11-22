@@ -12,7 +12,7 @@
 //! lived in `src/cli` and `src/changelog`, and a pin that only watches the module a bug was found
 //! in watches the bug, not the class. Every reader is still a boundary and keeps reading the real
 //! environment; what moved is the value a test controls: `env_grants_from_lookup`,
-//! `PluginManager::from_config_with_lookup`, `ProcessDriver::new`'s `env` map,
+//! `PluginManager::from_config_with_lookup`, `ProcessDriver::new`'s grants,
 //! `resolve_browser_command_with_env`, `run_external_with_path` and
 //! `create_environment_with_env_lookup` each take it as an argument.
 //!
@@ -119,7 +119,7 @@ fn no_source_mutates_the_process_environment() {
         "no source under src/ may mutate the process environment (#352): `set_var` and `remove_var` \
          are undefined behaviour while another thread reads the environment, and this crate's test \
          binary does. Inject the value instead of setting the key — `env_grants_from_lookup`, \
-         `PluginManager::from_config_with_lookup`, a literal map for `ProcessDriver::new`, \
+         `PluginManager::from_config_with_lookup`, a literal map for `ProcessDriver::new`'s grants, \
          `resolve_browser_command_with_env`, `run_external_with_path`, or \
          `create_environment_with_env_lookup`. Scanned {scanned} files; found: {found:?}"
     );

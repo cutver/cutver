@@ -129,7 +129,7 @@ is an `InvalidPayload` error naming the plugin and the capability.
 | A call in `on_post_release` failed | `<error>`, naming the tag and commit (`src/bump/types.rs:173-181`) | Leaves the commit and tag in place; the message says what to inspect. |
 | The call outlived `timeout_seconds` | `Timeout`, naming plugin, capability and limit (`src/plugin/error.rs:55`) | Fails the slot it was dispatched from. |
 | The answer did not decode | `InvalidPayload` (`src/plugin/error.rs:90`) | Same as above. |
-| A declared `permissions.env` key was unset | `UnsetEnvGrant` (`src/plugin/error.rs:127`) | Fails at load, before any plugin is called. |
+| A declared `permissions.env` key was unset | `UnsetEnvGrant` (`src/plugin/error.rs:127`) | Fails when the slot invokes the plugin, before the guest or the child starts. A command that only loads the configuration (`cutver doctor`, `cutver plugin restore`) runs without it (#300). |
 
 The six runtime rows carry `Where:` and `Fix:` lines naming where the failure happened and what to do
 (`src/plugin/error.rs:39-127`); an install or download failure reports the underlying transport error.

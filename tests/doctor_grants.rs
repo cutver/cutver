@@ -1,5 +1,5 @@
-//! `cutver doctor` reports what it resolved (#268 S1, S5, S6) and the plugin-manager load failure it
-//! used to discard (D1 of `odd/tasks/cutver-doctor-grants-and-swallowed-reads.md`).
+//! `cutver doctor` reports what it resolved (#268 S1, S5, S6), including the environment grants a
+//! host cannot produce (#300).
 //!
 //! A `[plugins.<name>.permissions] filesystem` entry used to be overwritten with the resolved guest
 //! path while the document was loading, so the declared spelling was destroyed before anything
@@ -42,7 +42,8 @@ capabilities = ["changelog.v1"]
 filesystem = ["assets", "generated"]
 "#;
 
-/// The environment key no fixture sets: the driver constructor fails on it, which is D1's scenario.
+/// The environment key no fixture sets: the driver resolves it at invocation, so a host that does
+/// not export it is the #300 scenario.
 const UNSET_GRANT: &str = "CUTVER_TEST_UNSET_DOCTOR_GRANT";
 
 const UNSET_ENV_GRANT: &str = r#"[version]
@@ -217,50 +218,51 @@ fn the_json_surface_carries_the_same_three_values_per_grant() {
     assert_eq!(generated["location"], "unresolved", "{document}");
 }
 
-/// D1: `PluginManager::from_config` resolves `permissions.env` while it builds the drivers, so a host
-/// with a declared grant unset (the #300 scenario) cannot construct the manager. `doctor` used to
-/// discard that with `.ok()`; it reports the typed error as its own output instead — a dashboard row
-/// and the `plugin_load_error` field — and neither `ok` nor an exit code is derived from it.
+/// #300: a declared environment grant the host cannot produce is a row, not a load failure.
 ///
-/// This is asserted on the library surface, because on that host `bump::doctor` already fails the
-/// command before the dashboard is reached (`src/bump/exec/doctor.rs:17` propagates the same
-/// construction); that failure is #300's own bug and out of scope here.
+/// The previous decision (D1 of `odd/tasks/cutver-doctor-grants-and-swallowed-reads.md`) existed
+/// because construction resolved `permissions.env`, so an unset grant could only be reported as "the
+/// manager could not be built". Construction resolves nothing now, so there is no load failure left
+/// to report, and the state travels per key — the one the driver will find when it is invoked.
 #[test]
-fn a_plugin_the_manager_could_not_build_is_reported_as_output_instead_of_being_discarded() {
+fn an_unset_grant_is_reported_as_its_own_row_not_as_a_load_failure() {
     let guard = workspace("grants-load-failure", UNSET_ENV_GRANT);
     let fixture = guard.fixture();
     let loaded = config::load(fixture.dir.join("cutver.toml")).expect("the fixture loads");
 
     let (plugins, load_error) = plugin_section(&loaded);
-    let reported = load_error
-        .as_deref()
-        .unwrap_or_else(|| panic!("a manager that cannot be built is reported, not dropped"));
     assert!(
-        reported.contains(&format!("declares the environment grant '{UNSET_GRANT}'")),
-        "the report carries the typed error: {reported}"
+        load_error.is_none(),
+        "an unset grant is not a construction failure: {load_error:?}"
     );
     assert_eq!(
         plugins.iter().map(|plugin| plugin.name.as_str()).collect::<Vec<_>>(),
         vec!["probe"],
-        "what could be resolved is still reported next to the failure"
+        "what was resolved is still reported next to the failure"
     );
+    let grant = &plugins[0].env_grants[0];
+    assert_eq!(grant.key, UNSET_GRANT, "the declared key travels as declared");
+    assert!(!grant.set, "the host cannot produce it, and the report says so");
 
     let rendered = render_dashboard(&loaded, false, &Theme::new(false));
     assert!(
-        rendered.contains("could not load:") && rendered.contains(UNSET_GRANT),
-        "the dashboard states the failure in its own row instead of leaving a gap: {rendered}"
+        rendered.contains(&format!("\"{UNSET_GRANT}\" -> unset")),
+        "the dashboard states the resolution in its own row: {rendered}"
     );
 
     let mut report = DoctorReport::new(Vec::new(), None);
     (report.plugins, report.plugin_load_error) = plugin_section(&loaded);
-    assert!(report.ok, "a load failure is reported, never turned into drift");
+    assert!(report.ok, "a declared grant is not drift");
     let json = render_report_json(&report).expect("the report serializes");
     let parsed: Value = serde_json::from_str(&json).expect("the report is valid JSON");
-    assert!(
-        parsed["plugin_load_error"]
-            .as_str()
-            .is_some_and(|message| message.contains(UNSET_GRANT)),
-        "the failure travels as a field a runner can read: {json}"
+    assert_eq!(
+        parsed["plugin_load_error"],
+        Value::Null,
+        "a grant the host cannot produce is not a failed load: {json}"
+    );
+    assert_eq!(
+        parsed["plugins"][0]["env_grants"][0]["set"], false,
+        "the JSON carries the same answer the dashboard renders: {json}"
     );
     assert_eq!(parsed["ok"], true, "reporting is not drift: {json}");
 }

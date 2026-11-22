@@ -7,7 +7,7 @@ use std::time::Duration;
 use sha2::{Digest, Sha256};
 
 use crate::plugin::cache::PluginCacheRoot;
-use crate::plugin::driver::{PluginDriver, env_grants_from_lookup};
+use crate::plugin::driver::{DeclaredEnvGrants, EnvLookup, PluginDriver, process_env_lookup};
 use crate::plugin::dto::PluginInvocation;
 use crate::plugin::error::PluginError;
 use crate::plugin::types::{Capability, PermissionsConfig, PluginName};
@@ -16,10 +16,31 @@ use crate::plugin::types::{Capability, PermissionsConfig, PluginName};
 pub const INVOKE_EXPORT: &str = "invoke";
 
 /// WebAssembly plugin driver executing guest plugins inside an Extism sandbox.
+///
+/// The sandbox is built on the first invocation, not when the driver is constructed (#300): loading a
+/// configuration hands the guest nothing, so a command that only inspects the configuration stays
+/// runnable on a host that does not export the declared `permissions.env` grants.
 pub struct WasmDriver {
     name: PluginName,
-    plugin: Mutex<extism::Plugin>,
     capabilities: HashSet<Capability>,
+    source: WasmSource,
+    plugin: Mutex<Option<extism::Plugin>>,
+}
+
+/// Everything instantiation needs, unresolved: the granted environment is resolved at instantiation.
+struct WasmSource {
+    bytes: Vec<u8>,
+    permissions: PermissionsConfig,
+    timeout_secs: Option<u64>,
+    grants: DeclaredEnvGrants,
+}
+
+impl WasmSource {
+    /// Builds the manifest and the sandbox, resolving the declared grants at this boundary.
+    fn instantiate(&self, name: &PluginName) -> Result<extism::Plugin, PluginError> {
+        let manifest = build_manifest(name, &self.bytes, &self.permissions, self.timeout_secs, &self.grants)?;
+        build_plugin(name, manifest)
+    }
 }
 
 impl std::fmt::Debug for WasmDriver {
@@ -51,14 +72,16 @@ impl WasmDriver {
             timeout_secs,
             capabilities,
             expected_hash,
-            |key| std::env::var(key).ok(),
+            process_env_lookup(),
         )
     }
 
     /// Creates a new sandboxed `WasmDriver` resolving its grants through `lookup`.
     ///
-    /// An unset declared grant fails construction here rather than reaching the guest as an empty
-    /// config value, because the grant authority is shared with the process runtime.
+    /// Construction verifies the artifact's digest and keeps the bytes; the module is compiled and
+    /// instantiated on the first invocation, which is also where the declared grants are resolved
+    /// (#300). An unset declared grant therefore fails the invocation — naming the plugin and the
+    /// key — instead of failing the command that only loaded the configuration.
     #[allow(clippy::too_many_arguments)]
     pub fn from_env_lookup(
         name: PluginName,
@@ -67,16 +90,21 @@ impl WasmDriver {
         timeout_secs: Option<u64>,
         capabilities: HashSet<Capability>,
         expected_hash: Option<&str>,
-        lookup: impl Fn(&str) -> Option<String>,
+        lookup: EnvLookup,
     ) -> Result<Self, PluginError> {
         verify_sha256(&name, wasm_bytes, expected_hash)?;
-        let manifest = build_manifest(&name, wasm_bytes, permissions, timeout_secs, &lookup)?;
-        let plugin = build_plugin(&name, manifest)?;
+        let grants = DeclaredEnvGrants::with_lookup(permissions.env.clone(), lookup);
 
         Ok(Self {
             name,
-            plugin: Mutex::new(plugin),
             capabilities,
+            source: WasmSource {
+                bytes: wasm_bytes.to_vec(),
+                permissions: permissions.clone(),
+                timeout_secs,
+                grants,
+            },
+            plugin: Mutex::new(None),
         })
     }
 
@@ -100,10 +128,15 @@ impl PluginDriver for WasmDriver {
             });
         }
 
-        let mut plugin = self.plugin.lock().map_err(|_| PluginError::WasmInitFailed {
+        let mut slot = self.plugin.lock().map_err(|_| PluginError::WasmInitFailed {
             name: self.name.clone(),
             reason: "failed to acquire plugin lock (mutex poisoned)".to_string(),
         })?;
+
+        if slot.is_none() {
+            *slot = Some(self.source.instantiate(&self.name)?);
+        }
+        let plugin = slot.as_mut().expect("instantiated just above");
 
         let payload = serde_json::to_vec(invocation).map_err(|source| PluginError::InvalidPayload {
             name: self.name.clone(),
@@ -146,7 +179,7 @@ fn build_manifest(
     wasm_bytes: &[u8],
     permissions: &PermissionsConfig,
     timeout_secs: Option<u64>,
-    lookup: &dyn Fn(&str) -> Option<String>,
+    grants: &DeclaredEnvGrants,
 ) -> Result<extism::Manifest, PluginError> {
     let mut manifest = extism::Manifest::new([extism::Wasm::data(wasm_bytes.to_vec())]);
 
@@ -158,9 +191,11 @@ fn build_manifest(
         manifest = manifest.with_allowed_path(host, guest);
     }
 
-    // The grant authority is shared with the process runtime, so an unset declared key fails
-    // here instead of reaching the guest as an empty string.
-    for (key, value) in env_grants_from_lookup(name, &permissions.env, lookup)? {
+    // The grant authority is shared with the process runtime, so an unset declared key fails here
+    // instead of reaching the guest as an empty string. This is the boundary (#300): the map exists
+    // only while the guest is handed it, and the command that merely loaded the configuration never
+    // gets this far.
+    for (key, value) in grants.resolve(name)? {
         manifest = manifest.with_config_key(key, value);
     }
 
@@ -302,92 +337,4 @@ pub fn cache_wasm_artifact(
 mod mount_tests;
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::plugin::types::PluginCall;
-
-    const MINIMAL_WASM: &[u8] = &[0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00];
-
-    #[test]
-    fn test_integrity_verification_success_plain_and_prefix() {
-        let name = PluginName::new("test-plugin").unwrap();
-        let mut hasher = Sha256::new();
-        hasher.update(MINIMAL_WASM);
-        let hex = format!("{:x}", hasher.finalize());
-
-        assert!(verify_sha256(&name, MINIMAL_WASM, Some(&hex)).is_ok());
-        let prefixed = format!("sha256:{hex}");
-        assert!(verify_sha256(&name, MINIMAL_WASM, Some(&prefixed)).is_ok());
-    }
-
-    #[test]
-    fn test_integrity_mismatch_returns_error() {
-        let name = PluginName::new("test-plugin").unwrap();
-        let wrong_hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
-        let err = verify_sha256(&name, MINIMAL_WASM, Some(wrong_hash)).unwrap_err();
-
-        match err {
-            PluginError::IntegrityMismatch {
-                name: err_name,
-                expected,
-                actual,
-            } => {
-                assert_eq!(err_name, name);
-                assert_eq!(expected, wrong_hash);
-                assert!(actual.starts_with("sha256:"));
-            }
-            other => panic!("expected IntegrityMismatch, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn test_capability_check_fails_when_undeclared() {
-        let name = PluginName::new("test-wasm").unwrap();
-        let perms = PermissionsConfig::default();
-        let caps = HashSet::from([Capability::ManifestV1]);
-
-        let driver = WasmDriver::new(name.clone(), MINIMAL_WASM, &perms, None, caps, None).unwrap();
-
-        let invocation = PluginInvocation::new(PluginCall::PreBump, &serde_json::json!({})).unwrap();
-        let err = driver.invoke(&invocation).unwrap_err();
-        match err {
-            PluginError::UnsupportedCapability {
-                name: err_name,
-                capability,
-            } => {
-                assert_eq!(err_name, name);
-                assert_eq!(capability, "lifecycle.v1");
-            }
-            other => panic!("expected UnsupportedCapability, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn test_wasm_driver_creation_with_valid_minimal_wasm() {
-        let name = PluginName::new("valid-driver").unwrap();
-        let perms = PermissionsConfig {
-            network: vec!["api.example.com".to_string()],
-            env: vec!["PATH".to_string()],
-            filesystem: vec![".".to_string()],
-            ..Default::default()
-        };
-        let caps = HashSet::from([Capability::ManifestV1]);
-
-        let driver = WasmDriver::new(name.clone(), MINIMAL_WASM, &perms, Some(5), caps, None);
-        assert!(driver.is_ok());
-        let driver = driver.unwrap();
-        assert_eq!(driver.name(), &name);
-        assert!(driver.capabilities().contains(&Capability::ManifestV1));
-    }
-
-    #[test]
-    fn test_load_wasm_bytes_local_file() {
-        let dir = tempfile::tempdir().unwrap();
-        let file_path = dir.path().join("cutver_test_minimal.wasm");
-        fs::write(&file_path, MINIMAL_WASM).unwrap();
-
-        let name = PluginName::new("test-load").unwrap();
-        let loaded = load_wasm_bytes(&name, file_path.to_str().unwrap(), None).unwrap();
-        assert_eq!(loaded, MINIMAL_WASM);
-    }
-}
+mod tests;

@@ -20,11 +20,13 @@ unexpected is otherwise invisible until a guest hits `EPERM`. One `Grant` row pe
 `[plugins.<name>.permissions] filesystem` entry carries the plugin name, its capability set and the
 three values resolution keeps — the declared spelling, the guest path the plugin mounts and the
 canonical host directory behind it — plus where the grant landed: `inside the workspace`, `OUTSIDE the
-workspace`, or `unresolved` when the directory does not exist yet. A `Plugins` row counts what is
+workspace`, or `unresolved` when the directory does not exist yet. One `Grant` row per
+`[plugins.<name>.permissions] env` entry states `set` or `unset` and never prints the value, so a
+runner can tell which key it forgot without reading a secret. A `Plugins` row counts what is
 declared. A plugin whose driver cannot be built is reported in that row with its typed error instead
-of failing the command, because `permissions.env` is resolved at driver construction and a host with a
-declared grant unset must still get a diagnosis; `--json` carries the same data as `plugins` and
-`plugin_load_error`, and neither moves `ok` or the exit code.
+of failing the command; `--json` carries the same data as `plugins` and `plugin_load_error`, and
+neither moves `ok` or the exit code. An unset environment grant is a row, not a load failure: grants
+are resolved when the plugin is invoked (#300).
 
 ---
 

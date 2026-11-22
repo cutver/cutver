@@ -1,8 +1,9 @@
 //! Factory functions for creating plugin drivers according to their runtime configuration.
 
 use std::collections::HashSet;
+use std::sync::Arc;
 
-use crate::plugin::driver::{PluginDriver, ProcessDriver, env_grants_from_lookup};
+use crate::plugin::driver::{DeclaredEnvGrants, EnvLookup, PluginDriver, ProcessDriver};
 use crate::plugin::error::PluginError;
 use crate::plugin::types::{PluginConfig, PluginName, RuntimeKind};
 
@@ -12,11 +13,12 @@ pub const DEFAULT_PLUGIN_TIMEOUT_SECS: u64 = 30;
 /// Creates a driver instance for a plugin based on its runtime configuration.
 ///
 /// `lookup` is the environment seam every runtime resolves its declared grants through, so a test
-/// drives the whole factory with an injected map instead of mutating the process environment.
+/// drives the whole factory with an injected map instead of mutating the process environment. The
+/// drivers keep it unresolved: the grants are handed over at invocation, never here (#300).
 pub(crate) fn create_driver(
     name: &PluginName,
     config: &PluginConfig,
-    lookup: &dyn Fn(&str) -> Option<String>,
+    lookup: &EnvLookup,
 ) -> Result<Box<dyn PluginDriver>, PluginError> {
     match config.runtime {
         RuntimeKind::Wasm => create_wasm_runtime_driver(name, config, lookup),
@@ -28,7 +30,7 @@ pub(crate) fn create_driver(
 fn create_wasm_runtime_driver(
     name: &PluginName,
     _config: &PluginConfig,
-    _lookup: &dyn Fn(&str) -> Option<String>,
+    _lookup: &EnvLookup,
 ) -> Result<Box<dyn PluginDriver>, PluginError> {
     Err(PluginError::WasmNotSupported { name: name.clone() })
 }
@@ -37,7 +39,7 @@ fn create_wasm_runtime_driver(
 fn create_wasm_runtime_driver(
     name: &PluginName,
     config: &PluginConfig,
-    lookup: &dyn Fn(&str) -> Option<String>,
+    lookup: &EnvLookup,
 ) -> Result<Box<dyn PluginDriver>, PluginError> {
     create_wasm_driver(name, config, lookup)
 }
@@ -46,7 +48,7 @@ fn create_wasm_runtime_driver(
 fn create_wasm_driver(
     name: &PluginName,
     config: &PluginConfig,
-    lookup: &dyn Fn(&str) -> Option<String>,
+    lookup: &EnvLookup,
 ) -> Result<Box<dyn PluginDriver>, PluginError> {
     let source = config
         .source
@@ -67,7 +69,7 @@ fn create_wasm_driver(
         config.timeout_seconds,
         capabilities,
         config.hash.as_deref(),
-        lookup,
+        Arc::clone(lookup),
     )?;
 
     Ok(Box::new(driver))
@@ -77,7 +79,7 @@ fn create_wasm_driver(
 fn create_process_driver(
     name: &PluginName,
     config: &PluginConfig,
-    lookup: &dyn Fn(&str) -> Option<String>,
+    lookup: &EnvLookup,
 ) -> Result<Box<dyn PluginDriver>, PluginError> {
     let command = config
         .command
@@ -90,15 +92,16 @@ fn create_process_driver(
 
     let timeout_secs = config.timeout_seconds.unwrap_or(DEFAULT_PLUGIN_TIMEOUT_SECS);
     let capabilities = config.capabilities.iter().copied().collect::<HashSet<_>>();
-    // Resolved through the shared grant authority: the child is spawned with a cleared
-    // environment, so this map is the complete set of keys the plugin can read.
-    let granted = env_grants_from_lookup(name, &config.permissions.env, lookup)?;
+    // The declared keys travel unresolved (#300). Resolution runs through the shared grant authority
+    // when the child is spawned, and the child is spawned with a cleared environment, so the map
+    // resolved there is still the complete set of keys the plugin can read.
+    let grants = DeclaredEnvGrants::with_lookup(config.permissions.env.clone(), Arc::clone(lookup));
 
     Ok(Box::new(ProcessDriver::new(
         name.clone(),
         command,
         Vec::new(),
-        granted,
+        grants,
         timeout_secs,
         capabilities,
     )))

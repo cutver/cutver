@@ -10,8 +10,12 @@ use crate::cli::path::relativize_path;
 use crate::config::Config;
 use crate::manifest;
 use crate::plugin::PluginManager;
-use crate::plugin::PluginName;
-use crate::plugin::types::FilesystemGrant;
+
+mod plugins;
+
+pub use plugins::{EnvGrantJson, GrantJson, PluginJson, plugin_section};
+
+use plugins::{build_manager, render_plugin_rows};
 
 /// The machine form of a diagnosis: what was checked, what it found, and nothing rendered.
 ///
@@ -118,102 +122,6 @@ impl ChangelogDriftJson {
     }
 }
 
-/// One declared plugin: its name, its capability set and the grants resolution recorded for it
-/// (#268 S5).
-#[derive(Debug, Serialize)]
-pub struct PluginJson {
-    pub name: String,
-    pub capabilities: Vec<String>,
-    pub grants: Vec<GrantJson>,
-}
-
-/// One `permissions.filesystem` grant of a declared plugin, carrying the three values resolution kept
-/// (#268 S3, S6) and where the grant landed.
-#[derive(Debug, Serialize)]
-pub struct GrantJson {
-    /// The spelling `cutver.toml` declared.
-    pub declared: String,
-    /// The guest path the plugin mounts.
-    pub resolved: String,
-    /// The canonical host directory behind `resolved`; `null` when it does not exist yet.
-    pub canonical: Option<String>,
-    /// `inside`, `outside` or `unresolved`, derived from `canonical` against the workspace root.
-    pub location: &'static str,
-}
-
-impl GrantJson {
-    /// Projects one resolved grant and derives where its host directory really sits.
-    ///
-    /// `outside` is unreachable from a loaded `cutver.toml` — `config::discovery` refuses a grant that
-    /// escapes the workspace with `ConfigError::GrantOutsideWorkspace` — but it is *derived* here
-    /// rather than assumed, so the report states the comparison it made. A directory that does not
-    /// exist yet has no canonical path, and that is a third answer, not "outside" (#268 S6).
-    pub fn from_grant(grant: &FilesystemGrant, root_dir: &Path) -> Self {
-        let location = match &grant.canonical {
-            Some(canonical) if Path::new(canonical).starts_with(root_dir) => "inside",
-            Some(_) => "outside",
-            None => "unresolved",
-        };
-        Self {
-            declared: grant.declared.clone(),
-            resolved: grant.resolved.clone(),
-            canonical: grant.canonical.clone(),
-            location,
-        }
-    }
-
-    /// The human sentence for [`Self::location`], so the row states the comparison instead of a word.
-    fn location_note(&self) -> &'static str {
-        match self.location {
-            "inside" => "inside the workspace",
-            "outside" => "OUTSIDE the workspace",
-            _ => "unresolved (the directory does not exist yet)",
-        }
-    }
-}
-
-/// The plugin half of the diagnosis as data: what `cutver.toml` declares and, when it could not be
-/// built, why (D1).
-pub fn plugin_section(config: &Config) -> (Vec<PluginJson>, Option<String>) {
-    (plugin_records(config), build_manager(config).err())
-}
-
-/// One record per declared plugin, in name order so two runs of the same document agree.
-fn plugin_records(config: &Config) -> Vec<PluginJson> {
-    let mut names: Vec<&PluginName> = config.plugins.keys().collect();
-    names.sort();
-    names
-        .into_iter()
-        .map(|name| {
-            let plugin = &config.plugins[name];
-            PluginJson {
-                name: name.to_string(),
-                capabilities: plugin.capabilities.iter().map(|c| c.as_str().to_string()).collect(),
-                grants: plugin
-                    .permissions
-                    .filesystem_grants
-                    .iter()
-                    .map(|grant| GrantJson::from_grant(grant, &config.root_dir))
-                    .collect(),
-            }
-        })
-        .collect()
-}
-
-/// The plugin manager `cutver.toml` describes, or the typed reason it could not be built.
-///
-/// D1 (`odd/tasks/cutver-doctor-grants-and-swallowed-reads.md`): `PluginManager::from_config` resolves
-/// `permissions.env` while it constructs the drivers, so on a host with a declared grant unset (the
-/// #300 scenario) it fails. Discarding that with `.ok()` hides a real condition; propagating it with
-/// `?` would make `doctor` start failing on exactly the host that needs a diagnosis. So the error is
-/// returned here as output — a dashboard row and the `plugin_load_error` field — and #300 stays out
-/// of scope.
-fn build_manager(config: &Config) -> Result<Arc<PluginManager>, String> {
-    PluginManager::from_config(&config.plugins)
-        .map(Arc::new)
-        .map_err(|error| error.to_string())
-}
-
 /// Renders the report as the versioned object `doctor --json` prints.
 pub fn render_report_json(report: &DoctorReport) -> Result<String, serde_json::Error> {
     serde_json::to_string_pretty(&crate::cli::json::Versioned::new(report))
@@ -286,48 +194,6 @@ fn format_preflight_summary(config: &Config) -> String {
         [(name, step)] => format!("1 step defined ({name}: {})", step.command),
         _ => format!("{} steps defined", config.preflight.len()),
     }
-}
-
-/// Renders the plugin rows: what was declared, one row per grant, and the load failure when the
-/// manager could not be built (#268 S5, D1).
-fn render_plugin_rows(out: &mut String, config: &Config, load_error: Option<&str>, theme: &crate::cli::style::Theme) {
-    let plugins = plugin_records(config);
-    let declared = plugins.len();
-    let summary = match load_error {
-        Some(error) => format!("{declared} declared, could not load: {error}"),
-        None => {
-            let sets: Vec<String> = plugins
-                .iter()
-                .map(|plugin| format!("{}: {}", plugin.name, plugin.capabilities.join(", ")))
-                .collect();
-            if sets.is_empty() {
-                "0 declared".to_string()
-            } else {
-                format!("{declared} declared ({})", sets.join(", "))
-            }
-        }
-    };
-    render_grid_row(out, "Plugins", &summary, theme);
-    for plugin in &plugins {
-        for grant in &plugin.grants {
-            render_grid_row(out, "Grant", &format_grant_row(plugin, grant), theme);
-        }
-    }
-}
-
-/// One grant as a dashboard row: `plugin [capabilities]: "declared" -> resolved -> canonical (where)`.
-fn format_grant_row(plugin: &PluginJson, grant: &GrantJson) -> String {
-    let host = match &grant.canonical {
-        Some(canonical) => format!("{canonical} ({})", grant.location_note()),
-        None => grant.location_note().to_string(),
-    };
-    format!(
-        "{} [{}]: \"{}\" -> {} -> {host}",
-        plugin.name,
-        plugin.capabilities.join(", "),
-        grant.declared,
-        grant.resolved
-    )
 }
 
 /// Reads the version to display, or `None` when it cannot be read.

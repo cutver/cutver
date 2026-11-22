@@ -9,6 +9,7 @@
 use super::*;
 use crate::plugin::driver::{env_grants_from_lookup, resolve_env_grants};
 use crate::plugin::types::PluginCall;
+use std::time::{Duration, Instant};
 
 #[test]
 fn test_unsupported_capability() {
@@ -240,7 +241,6 @@ fn test_stdin_that_is_never_read_fails_closed_with_timeout() {
     // Larger than any OS pipe buffer, so an unbounded blocking write could never finish.
     let payload = serde_json::json!({ "blob": "x".repeat(2 * 1024 * 1024) });
     let invocation = PluginInvocation::new(PluginCall::PreBump, &payload).unwrap();
-
     let start = Instant::now();
     let err = driver.invoke(&invocation).unwrap_err();
     let elapsed = start.elapsed();
@@ -263,10 +263,8 @@ fn test_stdin_that_is_never_read_fails_closed_with_timeout() {
     );
 }
 
-/// The minimum environment a shell needs when it must also find an external child command.
-///
-/// `ping` and `sleep` are external programs, so the platform shell needs `PATH` on both
-/// platforms; Windows additionally needs `SystemRoot` to start at all.
+/// The minimum environment a shell needs to find an external child command (`ping`, `sleep`);
+/// Windows also needs `SystemRoot` to start at all.
 fn descendant_env() -> BTreeMap<String, String> {
     let keys: Vec<String> = if cfg!(windows) {
         vec!["SystemRoot".to_string(), "PATH".to_string()]
@@ -277,54 +275,72 @@ fn descendant_env() -> BTreeMap<String, String> {
     resolve_env_grants(&plugin, &keys).expect("the platform shell needs these keys to start")
 }
 
-/// S3: the whole exchange -- write, wait, drain -- stays inside `timeout_seconds`. A plugin that
-/// leaves a descendant holding the stdin pipe must not extend the caller's wait, because the
-/// driver kills only the direct child and the descendant keeps the pipe open after it.
-#[test]
-fn test_a_descendant_holding_stdin_cannot_outlive_the_timeout() {
-    let name = PluginName::new("orphan-plugin").unwrap();
+/// A plugin that never exits inside the budget, plus one descendant writing `marker` three seconds in.
+fn plugin_with_a_descendant_that_writes(marker: &std::path::Path) -> (String, Vec<String>) {
+    let m = marker.display();
+    let script = if cfg!(windows) {
+        // The carets keep `&` and `>` for the descendant's own command line.
+        format!("start /b cmd /c ping -n 4 127.0.0.1 >NUL ^& type nul ^> {m} & ping -n 25 127.0.0.1")
+    } else {
+        format!("(sleep 3; touch {m}) & sleep 25")
+    };
+    let (shell, flag) = if cfg!(windows) { ("cmd", "/C") } else { ("sh", "-c") };
+    (shell.to_string(), vec![flag.to_string(), script])
+}
+
+/// Runs one invocation of a plugin that starts a marker-writing descendant and asserts the deadline
+/// reached the whole tree: it ended on its own budget, naming plugin, capability and limit (S8), the
+/// caller never waited past it, and the descendant never wrote its marker (S3, S6).
+fn assert_deadline_reaches_the_descendant(plugin: &str, label: &str, payload: serde_json::Value) {
     let mut caps = HashSet::new();
     caps.insert(Capability::LifecycleV1);
-
-    let (cmd, args) = if cfg!(windows) {
-        (
-            "cmd".to_string(),
-            vec![
-                "/C".to_string(),
-                "start /b ping -n 25 127.0.0.1 >NUL & ping -n 25 127.0.0.1".to_string(),
-            ],
-        )
-    } else {
-        (
-            "sh".to_string(),
-            vec!["-c".to_string(), "sleep 25 & sleep 25".to_string()],
-        )
-    };
-
-    let driver = ProcessDriver::new(name.clone(), cmd, args, descendant_env(), 1, caps);
-    // Larger than any OS pipe buffer, so the write cannot complete while nobody drains stdin.
-    let payload = serde_json::json!({ "blob": "x".repeat(2 * 1024 * 1024) });
+    let marker = std::env::temp_dir().join(format!("cutver-descendant-{label}-{}.marker", std::process::id()));
+    let _ = std::fs::remove_file(&marker);
+    let (cmd, args) = plugin_with_a_descendant_that_writes(&marker);
+    let driver = ProcessDriver::new(PluginName::new(plugin).unwrap(), cmd, args, descendant_env(), 1, caps);
     let invocation = PluginInvocation::new(PluginCall::PreBump, &payload).unwrap();
-
     let start = Instant::now();
     let err = driver.invoke(&invocation).unwrap_err();
     let elapsed = start.elapsed();
-
     match err {
         PluginError::Timeout {
-            name: err_name,
+            name,
+            capability,
             timeout_secs,
-            ..
         } => {
-            assert_eq!(err_name, name);
-            assert_eq!(timeout_secs, 1);
+            assert_eq!(&name, driver.name());
+            assert_eq!(capability, "lifecycle.v1");
+            assert_eq!(timeout_secs, 1, "the invocation budget is unchanged");
         }
         other => panic!("expected Timeout, got {other:?}"),
     }
+    let budget = Duration::from_secs(5);
+    assert!(elapsed < budget, "the budget bounds the exchange, took {elapsed:?}");
+    // The descendant was due three seconds in, after the deadline that ended the invocation.
+    std::thread::sleep(Duration::from_secs(4));
+    let survived = marker.exists();
+    let _ = std::fs::remove_file(&marker);
     assert!(
-        elapsed < Duration::from_secs(5),
-        "a descendant of the killed child must not extend the caller's wait, took {elapsed:?}"
+        !survived,
+        "a descendant outlived the invocation and wrote {}: the deadline must reach the whole tree",
+        marker.display()
     );
+}
+
+/// S2, S6: the descendant pinned as a survivor is killed with the plugin, and a plugin that never
+/// drains its stdin cannot hold the caller past the budget either.
+#[test]
+fn test_a_descendant_holding_stdin_cannot_outlive_the_timeout() {
+    // Larger than any OS pipe buffer, so the write cannot complete while nobody drains stdin.
+    let payload = serde_json::json!({ "blob": "x".repeat(2 * 1024 * 1024) });
+    assert_deadline_reaches_the_descendant("orphan-plugin", "stdin", payload);
+}
+
+/// S3: a timed-out plugin whose descendant writes a marker leaves no descendant to write it. Not
+/// unix-gated: the leak and its fix exist on both platforms, and a `cfg(unix)` leg proves nothing.
+#[test]
+fn test_a_descendant_of_a_timed_out_plugin_never_writes_its_marker() {
+    assert_deadline_reaches_the_descendant("marker-plugin", "timeout", serde_json::json!({}));
 }
 
 /// S4: a declared but unset grant is an error naming the plugin and the key, never an empty

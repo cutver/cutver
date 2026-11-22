@@ -95,7 +95,7 @@ is an `InvalidPayload` error naming the plugin and the capability.
 
 | | `runtime = "wasm"` | `runtime = "process"` |
 | :--- | :--- | :--- |
-| What runs | A `.wasm` module exporting `invoke`, inside the Extism sandbox (`src/plugin/driver/wasm.rs:16,159-163`). | An executable, spawned once per invocation (`src/plugin/driver/process.rs:74-90`). |
+| What runs | A `.wasm` module exporting `invoke`, inside the Extism sandbox (`src/plugin/driver/wasm.rs:16,159-163`). | An executable, spawned once per invocation (`src/proc.rs::spawn_group`, via `src/plugin/driver/process.rs::child_command`). |
 | Declared with | `source`, plus an optional `hash`. | `command`, required and non-empty (`src/plugin/manager/factory.rs:57-70`). `source` and `hash` are unused. |
 | Host access | Only what the entry grants: hosts, directories, environment keys (`src/plugin/driver/wasm.rs:118-137`). | Everything the account running `cutver` can reach. **No sandbox.** |
 | Bound on the call | `timeout_seconds` when set; with no value the sandbox gets no timeout configured (`src/plugin/driver/wasm.rs:139-143`). | `timeout_seconds`, default 30 (`src/plugin/manager/factory.rs:10,67`). |

@@ -64,7 +64,6 @@ impl SupervisionError {
 }
 
 /// Everything one completed exchange produced.
-#[allow(dead_code)] // its fields are read by the driver in the next commit, not here.
 pub(crate) struct Capture {
     pub(crate) status: ExitStatus,
     pub(crate) stdout: Vec<u8>,
@@ -156,7 +155,6 @@ pub(crate) fn supervise(child: &mut Child, start: Instant, timeout: Option<Durat
 /// kill semantics is beyond #316. What is bounded instead is the remaining joins — L3 of
 /// `odd/tasks/cutver-proc-spawn-authority.md`: closing that second hole without inventing a kill,
 /// and still never handing the caller a wait past its budget.
-#[allow(dead_code)] // wired in by the next commit; a build of this commit alone has no caller yet.
 pub(crate) fn run_capture(cmd: &mut Command, payload: &[u8], timeout: Duration) -> Result<Capture, SupervisionError> {
     let start = Instant::now();
     cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());

@@ -325,9 +325,10 @@ fn an_absent_sink_is_removed_by_rollback_instead_of_recreated_empty() {
     let fixture = guard.fixture();
     write_fixture(fixture);
     // The lock makes `git stage` fail after the sink was written, so the drop guard rolls back.
-    // It is named by absolute path because `src/preflight.rs::spawn` gives the preflight shell no
-    // `current_dir`: a relative `.git/index.lock` lands wherever the process was launched, and in a
-    // linked worktree `.git` is a file, so `touch` fails there instead of locking anything (#295).
+    // It is named by absolute path: the step's directory comes from `src/proc.rs::spawn_group` since
+    // #295, so a relative `.git/index.lock` would resolve into the fixture rather than the caller's
+    // directory — and naming it absolutely is what keeps this test independent of that, including in
+    // a linked worktree, where `.git` is a file and `touch` fails instead of locking anything.
     let index_lock = fixture.dir.join(".git/index.lock");
     fixture.write(
         "cutver.toml",

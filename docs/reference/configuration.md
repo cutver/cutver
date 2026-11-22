@@ -84,6 +84,28 @@ never hides behind a warning.
 
 ---
 
+## Plugin Filesystem Grants
+
+A `[plugins.<name>.permissions] filesystem` entry is a capability, not a hint. Each entry is resolved
+against the workspace root when `cutver.toml` loads — forward-slashed, without the Windows verbatim
+prefix, lexically normalized — and a grant whose *real* directory falls outside the workspace is a
+load error that names the directory it reached, before anything is mounted:
+
+```text
+plugin 'probe' grants filesystem entry '../outside', which resolves to '/tmp/outside' — outside the workspace root '/tmp/repo'.
+  A sandboxed plugin may only reach the workspace: declare a path inside it, or drop the grant.
+```
+
+Resolution keeps all three values, and `cutver doctor` prints one row per grant: the spelling the
+document declared, the guest path the plugin mounts and the canonical host directory behind it, plus
+the plugin name and its capability set. A grant naming a directory that does not exist yet has no
+canonical host path, and the row says so instead of guessing. `cutver doctor --json` carries the same
+three values per grant under `plugins[].grants[]` (`declared`, `resolved`, `canonical`, and `location`:
+`inside`, `outside` or `unresolved`), so a pipeline can report what a sandbox really opened without
+scraping the dashboard.
+
+---
+
 ## Configuration Tables
 
 The tables are indexed here and specified in the [configuration tables reference](configuration-tables.md), which is canonical for every key, its type and its default:

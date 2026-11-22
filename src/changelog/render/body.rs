@@ -6,7 +6,8 @@ use crate::conventional::ConventionalCommit;
 use crate::plugin::PluginManager;
 use crate::plugin::types::PluginName;
 use std::fs;
-use std::path::Path;
+use std::io;
+use std::path::{Path, PathBuf};
 
 fn resolve_template_path(file_path: &str) -> std::path::PathBuf {
     let p = Path::new(file_path);
@@ -36,6 +37,19 @@ fn load_template_string(config: &Changelog) -> Result<String, Error> {
     } else {
         Ok(config.entry_template.clone())
     }
+}
+
+/// The workspace root a changelog plugin request advertises, resolved through `cwd`.
+///
+/// `std::env::current_dir` failing means the process has no directory to name, so the sandbox root the
+/// request would advertise does not exist. That used to be flattened into an empty string: the guest
+/// received a fabricated empty workspace and the cause was gone (#266 S9). A render that cannot name
+/// its root fails with [`Error::CurrentDir`] instead. `cwd` is a parameter so both answers are
+/// testable without changing the process directory — the seam `crate::plugin::cache` and
+/// `crate::cli::ci` use for the same reason.
+fn plugin_root_dir(cwd: impl FnOnce() -> io::Result<PathBuf>) -> Result<String, Error> {
+    let dir = cwd().map_err(|source| Error::CurrentDir { source })?;
+    Ok(dir.to_string_lossy().to_string())
 }
 
 /// Render the Keep-a-Changelog section body for a release based on `config`, parsed `commits`,
@@ -82,9 +96,7 @@ pub fn render_body_with_plugin(
             }
         };
 
-        let root_dir = std::env::current_dir()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_default();
+        let root_dir = plugin_root_dir(std::env::current_dir)?;
         let req = context.to_changelog_render_request(root_dir);
         let res = manager.dispatch_changelog(&plugin_name, &req)?;
         return Ok(res.body);
@@ -275,5 +287,47 @@ pub(crate) fn render_categorised(config: &Changelog, commits: &[ConventionalComm
         format!("- {}", config.fallback_entry.trim())
     } else {
         sections.join("\n\n")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// S9 (#266): `env::current_dir` failing used to be flattened into `root_dir: ""`, so a changelog
+    /// plugin received a fabricated empty workspace and the cause was gone. The failure is typed now
+    /// and carries its `io::Error`, which also means there is no value left to put in a request.
+    #[test]
+    fn a_missing_current_directory_is_a_typed_error_instead_of_an_empty_root_dir() {
+        let error = plugin_root_dir(|| {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "the current directory no longer exists",
+            ))
+        })
+        .expect_err("a directory that cannot be determined is not an empty one");
+
+        assert!(
+            matches!(error, Error::CurrentDir { .. }),
+            "the failure keeps its own variant instead of borrowing a file-shaped one: {error:?}"
+        );
+        assert_eq!(
+            error.to_string(),
+            "failed to determine the current directory: the current directory no longer exists"
+        );
+        assert!(
+            std::error::Error::source(&error).is_some(),
+            "the cause travels with the error instead of being replaced by `\"\"`: {error:?}"
+        );
+    }
+
+    /// The success path is unchanged: the request carries the directory the boundary reports, and its
+    /// spelling stays the lossy string the plugin surface has always advertised.
+    #[test]
+    fn the_root_dir_is_the_directory_the_seam_reports() {
+        let root = plugin_root_dir(|| Ok(std::path::PathBuf::from("/work/repo"))).expect("a reported directory");
+
+        assert_eq!(root, "/work/repo");
+        assert!(!root.is_empty(), "a resolved workspace root is never the empty string");
     }
 }

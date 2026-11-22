@@ -299,7 +299,7 @@ field = "version"
     assert_eq!(drift.missing_in_changelog, vec!["v1.1.0".to_string()]);
     assert!(drift.orphan_sections.is_empty(), "unexpected orphans: {drift:?}");
 
-    let rendered = crate::cli::doctor::render_changelog_drift(&drift, &crate::cli::style::Theme::new(false));
+    let rendered = crate::cli::runner::doctor::render_changelog_drift(&drift, &crate::cli::style::Theme::new(false));
     assert_eq!(
         rendered,
         concat!(

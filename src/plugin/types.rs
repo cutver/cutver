@@ -155,6 +155,26 @@ impl fmt::Display for RuntimeKind {
     }
 }
 
+/// One `permissions.filesystem` entry as resolution left it (#268 S3, S5).
+///
+/// Resolution used to overwrite the declared spelling with the guest path, so the three values that
+/// describe one grant could not be read together anywhere: `declared` was destroyed, `resolved` was
+/// the only survivor, and the canonical host directory existed only as a local in the WASM driver and
+/// in the `ConfigError::GrantOutsideWorkspace` variant. `config::discovery` fills one record per entry
+/// now, and `cutver doctor` renders them.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct FilesystemGrant {
+    /// The spelling `cutver.toml` declared, exactly as written.
+    pub declared: String,
+    /// The guest path the plugin mounts: `declared` resolved against the workspace root, forward
+    /// slashed and lexically normalized. This is also what `filesystem` carries.
+    pub resolved: String,
+    /// The canonical host directory behind `resolved`, which is the directory the sandbox really
+    /// opens. `None` when it cannot be canonicalized — a grant naming a directory that does not
+    /// exist yet has no canonical host path, which is a third answer, not a failure.
+    pub canonical: Option<String>,
+}
+
 /// Sandboxed permissions configuration for WASM plugins.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PermissionsConfig {
@@ -164,6 +184,13 @@ pub struct PermissionsConfig {
     pub env: Vec<String>,
     #[serde(default)]
     pub filesystem: Vec<String>,
+    /// One record per `filesystem` entry, in declaration order, filled by `config::discovery`.
+    ///
+    /// Not a key of `cutver.toml` and not part of the wire form: a `PermissionsConfig` that was only
+    /// parsed carries no records, and a driver built from one of those canonicalizes its own host
+    /// paths, exactly as it did before this field existed.
+    #[serde(skip)]
+    pub filesystem_grants: Vec<FilesystemGrant>,
 }
 
 /// Plugin declaration parsed from `cutver.toml`.

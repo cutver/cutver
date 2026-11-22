@@ -9,7 +9,8 @@ use crate::config;
 use crate::git::types::strip_one_version_marker;
 
 pub use super::changelog_context::{
-    extract_heading_date, find_raw_heading_version, load_template_file, resolve_prefix, resolve_release_tag_and_prefix,
+    extract_heading_date, find_raw_heading_version, load_optional_config, load_template_file, resolve_prefix,
+    resolve_release_tag_and_prefix,
 };
 use super::dispatch::{print_error, resolve_changelog_path};
 use super::open::run_open;
@@ -64,7 +65,9 @@ fn read_raw_commits(
 }
 
 fn git_history_error(err: &crate::git::Error) -> String {
-    format!("failed to read the release commit range from git: {err}")
+    format!(
+        "failed to read the release commit range from git: {err}\n  Where: reading the commits behind the requested version, through `git log` in the workspace root\n  Fix: run the command inside the repository that holds the tags, and check that the tags the range names exist (`git tag --list`)."
+    )
 }
 
 pub fn resolve_latest_target_info(
@@ -137,30 +140,25 @@ pub fn resolve_show_target_info(
 }
 
 pub fn resolve_changelog_context(
-    config_override: Option<&Path>,
+    cfg: Option<&config::Config>,
     target_path: &Path,
     content: &str,
     target: ReleaseTargetInfo,
 ) -> ReleaseContext {
-    let cfg = config_override
-        .and_then(|p| config::load(p).ok())
-        .or_else(|| std::env::current_dir().ok().and_then(|d| config::discover(d).ok()));
-
     let default_changelog = crate::config::Changelog::default();
-    let changelog_config = cfg.as_ref().map(|c| &c.changelog).unwrap_or(&default_changelog);
+    let changelog_config = cfg.map(|c| &c.changelog).unwrap_or(&default_changelog);
     let dummy_root = PathBuf::from(".");
     let root_dir = cfg
-        .as_ref()
         .map(|c| c.root_dir.as_path())
         .or_else(|| target_path.parent())
         .unwrap_or(&dummy_root);
 
-    let (tag, _) = resolve_release_tag_and_prefix(cfg.as_ref(), root_dir, content, &target.version);
+    let (tag, _) = resolve_release_tag_and_prefix(cfg, root_dir, content, &target.version);
     let prev_tag = target
         .prev_version
         .as_deref()
-        .map(|pv| resolve_release_tag_and_prefix(cfg.as_ref(), root_dir, content, pv).0);
-    let prefix = resolve_prefix(cfg.as_ref());
+        .map(|pv| resolve_release_tag_and_prefix(cfg, root_dir, content, pv).0);
+    let prefix = resolve_prefix(cfg);
 
     let commit_messages: Vec<String> = target.raw_commits.iter().map(|r| r.message.clone()).collect();
     let (_bump, parsed_commits) = crate::conventional::parse_and_deduce_bump(&commit_messages);
@@ -315,7 +313,10 @@ pub fn read_file_content(path: &Path) -> Result<String, i32> {
 }
 
 pub fn run_changelog_latest(config_override: Option<&Path>, target_path: &Path, format: ChangelogFormat) -> i32 {
-    let cfg = load_optional_config(config_override);
+    let cfg = match load_optional_config(config_override) {
+        Ok(cfg) => cfg,
+        Err(code) => return code,
+    };
     let prefix = resolve_prefix(cfg.as_ref());
     let on_git_failure = GitHistoryFailure::for_format(&format);
 
@@ -323,12 +324,7 @@ pub fn run_changelog_latest(config_override: Option<&Path>, target_path: &Path, 
         let content = read_file_content(target_path)?;
         let root_dir = root_dir_for(cfg.as_ref(), target_path);
         let target = resolve_latest_target_info(&content, target_path, &root_dir, cfg.as_ref(), on_git_failure)?;
-        Ok(resolve_changelog_context(
-            config_override,
-            target_path,
-            &content,
-            target,
-        ))
+        Ok(resolve_changelog_context(cfg.as_ref(), target_path, &content, target))
     };
 
     let markdown_supplier =
@@ -343,7 +339,10 @@ pub fn run_changelog_show(
     version: &str,
     format: ChangelogFormat,
 ) -> i32 {
-    let cfg = load_optional_config(config_override);
+    let cfg = match load_optional_config(config_override) {
+        Ok(cfg) => cfg,
+        Err(code) => return code,
+    };
     let prefix = resolve_prefix(cfg.as_ref());
     let on_git_failure = GitHistoryFailure::for_format(&format);
 
@@ -351,12 +350,7 @@ pub fn run_changelog_show(
         let content = read_file_content(target_path)?;
         let root_dir = root_dir_for(cfg.as_ref(), target_path);
         let target = resolve_show_target_info(&content, version, target_path, &root_dir, cfg.as_ref(), on_git_failure)?;
-        Ok(resolve_changelog_context(
-            config_override,
-            target_path,
-            &content,
-            target,
-        ))
+        Ok(resolve_changelog_context(cfg.as_ref(), target_path, &content, target))
     };
 
     let markdown_supplier =
@@ -365,16 +359,18 @@ pub fn run_changelog_show(
     execute_changelog_output(config_override, format, context_supplier, markdown_supplier)
 }
 
-/// The configuration this read surface resolves for the invocation, or `None` when there is none.
-fn load_optional_config(config_override: Option<&Path>) -> Option<config::Config> {
-    config_override
-        .and_then(|p| config::load(p).ok())
-        .or_else(|| std::env::current_dir().ok().and_then(|d| config::discover(d).ok()))
-}
-
+/// The directory git queries run against.
+///
+/// A relative `--path` has an empty parent, and an empty path is not a directory: handing it to `git`
+/// as the working directory failed with an opaque OS error instead of the `"."` this fallback means.
 fn root_dir_for(cfg: Option<&config::Config>, target_path: &Path) -> PathBuf {
     cfg.map(|c| c.root_dir.clone())
-        .or_else(|| target_path.parent().map(Path::to_path_buf))
+        .or_else(|| {
+            target_path
+                .parent()
+                .filter(|parent| !parent.as_os_str().is_empty())
+                .map(Path::to_path_buf)
+        })
         .unwrap_or_else(|| PathBuf::from("."))
 }
 
@@ -658,17 +654,21 @@ mod tests {
         );
     }
 
-    /// The fail-closed path names the read that failed, so the operator sees which range was
-    /// unreadable rather than a bare exit code.
+    /// The fail-closed path names the read that failed *and* what to do about it.
     #[test]
     fn the_git_failure_message_names_the_failed_read() {
         let err = crate::git::Error::Command {
             command: "log".to_string(),
             source: std::io::Error::other("git is not installed"),
         };
-        assert_eq!(
-            git_history_error(&err),
-            "failed to read the release commit range from git: git command 'log' failed to run: git is not installed"
+        let message = git_history_error(&err);
+        assert!(
+            message.starts_with("failed to read the release commit range from git: git command 'log' failed"),
+            "the sentence names the read that failed: {message}"
+        );
+        assert!(
+            message.contains("\n  Where: ") && message.contains("\n  Fix: "),
+            "and what to do: {message}"
         );
     }
 

@@ -9,5 +9,6 @@ pub mod init;
 pub mod manifest;
 pub mod plugin;
 pub mod preflight;
+pub mod proc;
 pub mod semver_bump;
 pub mod warnings;

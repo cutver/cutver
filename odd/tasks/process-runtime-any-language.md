@@ -72,9 +72,9 @@ restart policy).
 | T1 | S2 | **Done in #367** — merged as `c3b7390` (commit `fda707c`). `child_command` names the
 workspace root, no constructor is root-less, and `tests/plugin_process_cwd.rs` is the behavioural
 proof. Recorded here as closed so nobody redoes it | — |
-| T2 | S1 | **Done** — `5b32071` on `feat/369-process-env-baseline`. One named list, `SYSTEM_ENV_BASELINE`,
-applied between `env_clear()` and the declared grants in `child_command`, and listed by name in the
-reference page. See L7 for what moved and what verification caught | 1 |
+| T2 | S1 | **Done** — `6d5bd5c` on `feat/369-process-env-baseline`, plus `90202e6` and `f2d70fa` repairing the
+fixtures that CI caught. One named list, `SYSTEM_ENV_BASELINE`, applied between `env_clear()` and the
+declared grants in `child_command`, listed by name in the reference page. See L7 | 1 |
 | T3 | S3 | `protocol` in the envelope, typed mismatch error, PDK constant, wire golden updated | 2 |
 | T4 | S5 | One golden per capability for the request bytes | 2 |
 | T5 | S4 | Docs: request/response pairs for `manifest.v1`, `versioning.v1`, lifecycle, optionality rules | 3 |
@@ -119,8 +119,31 @@ lands before T4 because the goldens pin the version field.
   #300 and #367 closed; 11 issues open. The maintainer's disposition is «mergea, crea pr para lo que
   está sin commitear y lo que resta pendiente lo atacaremos cuando despierte» — so this lands as
   documentation and every task in it stays unimplemented and unauthorized until it is picked up.
-- **L7** — **T2 (S1) implemented** on `feat/369-process-env-baseline` as `5b32071` (13 files, 346
-  insertions / 51 deletions). T1 and T2 are now the two closed tasks; T3-T8 stay unimplemented.
+- **L7** — **T2 (S1) implemented** on `feat/369-process-env-baseline`, opened as **PR #370**. The unit is
+  four commits and 453 authored lines — past the 300-400 target, because CI found two fixture defects
+  that are its own slices:
+  - `6d5bd5c` — the behaviour (`feat(plugin): …`), 13 files, 346/51. **This is the hash to quote**;
+    `5b32071` never landed, it was rewritten by an amend and two earlier notes pointed at it. A rewritten
+    commit is a dangling reference, not evidence.
+  - `417b627` — this document, updated when T2 closed.
+  - `90202e6` — the dump fixture drank from a pipe the child had closed: `/usr/bin/env` and `cmd /C set`
+    answer without reading stdin, so the host's envelope write races the exit and lands on
+    `StdinWriteFailed { BrokenPipe }` on any host where the child wins. Windows and ubuntu won it; macOS
+    lost it and turned the first CI round red. The fixture now drains first.
+  - `f2d70fa` — **the fix's own bug**: with `sh` in the middle, `PWD` is synthesized by the shell, so
+    naming it as an ambient key the driver must strip made the assertion about `sh` and turned all three
+    unix legs red. `SHELL`, `LOGNAME` and `USER` are inherited and synthesized by nothing. Verified with
+    `env -i /bin/sh -c 'cat </dev/null; exec /usr/bin/env'`.
+  - **A third copy of the dump fixture lives in `src/plugin/driver/process/tests.rs` and was deliberately
+    not touched**: the file is at 397 of its enforced 400-line budget and rustfmt expands the new literal
+    into three lines. Known latent race, same one-line fix, waiting for whoever next opens that file.
+  - **The descendant/timeout family flaked under my gate and I did not call it pre-existing without
+    numbers.** Measured on this host, `cargo test --lib --features plugins`: branch 2 failures in 8 full
+    runs, `main` 0 in 10; **isolated, the two tests are 0/10 on each side**. So it only reproduces under
+    full-suite parallelism. 2/8 against 0/10 is not separable from chance (Fisher p ≈ 0.48), which means
+    neither "my diff causes it" nor "it was already there" is established. The unit adds four
+    process-spawning tests, which is a plausible load source and an unproven one. **Not fixed here** —
+    those tests are timing-sensitive and deserve their own unit; the recipe above is the starting point.
   - The two decisions L5 said this task owed the maintainer, taken before the first write: the
     baseline is the twelve-key portable set — `PATH`, `HOME`, `USERPROFILE`, `TMPDIR`, `TEMP`, `TMP`,
     `LANG`, `LC_ALL`, `SystemRoot`, `SYSTEMDRIVE`, `APPDATA`, `LOCALAPPDATA` — one list for both
@@ -144,3 +167,7 @@ lands before T4 because the goldens pin the version field.
     out of two unrelated paragraphs; verification flagged that as reviewer-visible churn, the
     paragraphs were restored verbatim, and the page now sits at **200/200** — the next edit there must
     trim something. Editing a page that close to its ceiling is a scope decision, not a formatting one.
+  - **State at close**: `f2d70fa`, PR #370 open against `main` with all five test legs, `CI gate`,
+    `Exactly one type label` and `Publish dry-run` **green**; local `sh scripts/check.sh` = `9 passed, 0
+    failed, 1 not run here` (the linux+plugins clippy needs a cross C compiler this host lacks). Merge is
+    the maintainer's call. The next task is **T3**, the protocol version in the envelope.

@@ -17,9 +17,12 @@ pub fn load_template_file(config_override: Option<&Path>, template_path: &Path) 
     let resolved = if template_path.is_absolute() {
         template_path.to_path_buf()
     } else {
-        let cfg = config_override
-            .and_then(|p| config::load(p).ok())
-            .or_else(|| std::env::current_dir().ok().and_then(|d| config::discover(d).ok()));
+        let cfg = optional_config(config_override).map_err(|error| {
+            format!(
+                "failed to read the configuration that resolves template file '{}': {error}",
+                template_path.display()
+            )
+        })?;
         if let Some(ref c) = cfg {
             let candidate = c.root_dir.join(template_path);
             if candidate.is_file() {
@@ -34,6 +37,44 @@ pub fn load_template_file(config_override: Option<&Path>, template_path: &Path) 
 
     std::fs::read_to_string(&resolved)
         .map_err(|e| format!("failed to read template file '{}': {e}", template_path.display()))
+}
+
+/// The configuration this read surface resolves for one invocation, reported as a failure the command
+/// can return.
+///
+/// The typed failure is printed here because the read surfaces answer in exit codes, the same way
+/// `dispatch::load_config` does; what changed with #266 S9 is that a configuration which *exists* and
+/// does not load is no longer read as "this workspace declares none".
+pub fn load_optional_config(config_override: Option<&Path>) -> Result<Option<config::Config>, i32> {
+    optional_config(config_override).map_err(|error| {
+        super::dispatch::print_error(
+            crate::cli::machine::FailureCode::Changelog,
+            format!("failed to read the configuration this read resolves against: {error}"),
+        );
+        1
+    })
+}
+
+/// The same resolution, keeping the typed error so each caller can name what it was resolving.
+///
+/// `None` is the domain answer "this workspace declares no configuration": `changelog latest` and
+/// `show` read a changelog that may live outside any cutver workspace, so discovery finding nothing
+/// is not a failure. Anything else is the failure `.ok()` used to convert into that answer, after
+/// which the read carried on from defaults (#266 S7, S9; the `.ok()` half of #267 absorbed by S11).
+fn optional_config(config_override: Option<&Path>) -> Result<Option<config::Config>, config::ConfigError> {
+    let loaded = match config_override {
+        Some(path) => config::load(path),
+        None => match std::env::current_dir() {
+            Ok(dir) => config::discover(dir),
+            // No directory to discover from is the same "no configuration" answer.
+            Err(_) => return Ok(None),
+        },
+    };
+    match loaded {
+        Ok(config) => Ok(Some(config)),
+        Err(config::ConfigError::NotFound(_)) => Ok(None),
+        Err(error) => Err(error),
+    }
 }
 
 pub fn extract_heading_date(content: &str, target_ver: &str, prefix: &TagPrefix) -> Option<String> {
@@ -122,4 +163,33 @@ pub fn resolve_release_tag_and_prefix(
     }
 
     (bare_tag, empty_prefix)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// S9, S11: the template read resolved the workspace root through the same `.ok()`-discarded
+    /// configuration, so a document that did not load silently fell back to resolving the template
+    /// against whatever directory the process was launched from. It fails closed now.
+    #[test]
+    fn the_template_read_fails_closed_when_the_configuration_does_not_load() {
+        let dir = tempfile::Builder::new()
+            .prefix("cutver-template-config-")
+            .tempdir()
+            .expect("a temp dir");
+        let config = dir.path().join("cutver.toml");
+        std::fs::write(&config, "[version\ncurrent_source = \"package.json\"\n").expect("the document is written");
+        std::fs::write(dir.path().join("notes.j2"), "Release {{ version }}").expect("the template is written");
+
+        let error = match load_template_file(Some(&config), Path::new("notes.j2")) {
+            Ok(_) => panic!("a configuration that does not load must not be read as no configuration"),
+            Err(error) => error,
+        };
+
+        assert!(
+            error.contains("failed to parse config file"),
+            "the error carries the configuration failure instead of falling back: {error}"
+        );
+    }
 }

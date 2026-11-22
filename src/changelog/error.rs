@@ -30,6 +30,13 @@ pub enum Error {
         #[source]
         source: io::Error,
     },
+    /// The process has no directory to name. A render path that needs one — the workspace root a
+    /// changelog plugin request advertises — reports this instead of substituting an empty path.
+    #[error("failed to determine the current directory: {source}")]
+    CurrentDir {
+        #[source]
+        source: io::Error,
+    },
     #[error("plugin error: {0}")]
     Plugin(#[from] crate::plugin::PluginError),
     #[error("plugin manager is required to format changelog with format = \"plugin\"")]

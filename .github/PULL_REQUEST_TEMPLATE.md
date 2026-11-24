@@ -1,13 +1,13 @@
 <!-- One pull request, one unit. Tick a box only when you can point at the evidence: an unticked box
      invites a question, and a ticked box without evidence spends the reviewer's attention twice.
-     What each of the four is really asking for lives in the contributing guide; this file is only the
+     What each of the five is really asking for lives in the contributing guide; this file is only the
      prompt, kept short because a reviewer reads it in fifteen seconds or not at all. -->
 
 ## What changed
 
 <One or two sentences: the behaviour before, the behaviour after, and the command that shows it.>
 
-## The four checks
+## The five checks
 
 - [ ] **The gate was run.** `sh scripts/check.sh` exited `0`, and its summary reads zero failed and zero *not run here*. A step this host could not run is reported there as not-run, never as a pass — if one is in that bucket, name it and say why the change is still safe, or run it somewhere it can.
 
@@ -16,6 +16,10 @@
 - [ ] **The slice boundary is stated.** Either this diff sits inside 300–400 lines of effective change, or the section below says why it is one unit and where its reviewable slices are. That range is a target with an evidence rule attached, not a gate: the evidence is the paragraph, not a line count.
 
 - [ ] **Every claim is verified.** Every command, number and behaviour named above was run in this tree, in this state. A claim nobody ran is a rumour, and a reviewer who has to check one is not reviewing the diff.
+
+- [ ] **A test failed before the fix.** The body names the test that fails on the previous commit, and the command that shows it red. A change with no behaviour to test says so and why — "nothing to test" without that sentence is a claim nobody can check, and a test written after the code pins what it does instead of what it was supposed to do.
+
+A change that alters something others consume — a flag's meaning, a config format, a JSON field, a promise a document makes — says so above and says what a reader upgrading across it has to do. A `minor` or `major` release fails until the commits of `<previous tag>..HEAD` declare what the release does about compatibility (#307); the declaration is a commit message, so it goes through the grammar in [the contributing guide's commits section](CONTRIBUTING.md#commits).
 
 ## The slice boundary, when the diff is past the target
 

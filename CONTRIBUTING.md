@@ -90,7 +90,9 @@ file when it exists and renders the template otherwise: optional, never a step a
 ## The pull request
 
 Pull requests open with [the review checklist](.github/PULL_REQUEST_TEMPLATE.md) already in the
-body: four boxes, ticked only with evidence, in the order a reviewer reads them.
+body: five boxes, ticked only with evidence, in the order a reviewer reads them. A vulnerability is not
+a pull request: it goes through [the private advisory form](https://github.com/cutver/cutver/security/advisories/new),
+the only channel [the security page](SECURITY.md) names.
 
 Two checks are required on `main`: **`CI gate`** and **`Exactly one type label`**. The ruleset that requires
 them lives outside this repository, which is why the names are pinned by exact string in

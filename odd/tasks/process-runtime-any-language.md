@@ -89,9 +89,12 @@ proof. Recorded here as closed so nobody redoes it | — |
 | T2 | S1 | **Done** — `6d5bd5c` on `feat/369-process-env-baseline`, plus `90202e6` and `f2d70fa` repairing the
 fixtures that CI caught. One named list, `SYSTEM_ENV_BASELINE`, applied between `env_clear()` and the
 declared grants in `child_command`, listed by name in the reference page. See L7 | 1 |
-| T3 | S3 | `protocol` first in the envelope from the PDK constant; optional `protocol` in the answer checked where
-it is decoded; `ProtocolMismatch` with `Where:`/`Fix:`; wire golden and `cutver-pdk` 0.2.0 | 2 |
-| T4 | S5 | One golden per capability for the request bytes | 2 |
+| T3 | S3 | **Done** — `236e47f` + `9fbc626` on `feat/369-protocol-version`, merged as `96e4189` (PR #371);
+`cutver-pdk` 0.2.0 published to crates.io. See L9 | 2 |
+| T4 | S5 | **Done** — `tests/plugin_request_goldens.rs`: one golden per request *shape* (seven, because
+`manifest.v1` and `lifecycle.v1` each carry more than one), produced through the driver's own
+`encode_invocation` so the framing has a single author, plus a `sha256` per request so `cutver/plugins`
+reconciles with one line instead of a byte diff. See L10 | 2 |
 | T5 | S4 | Docs: request/response pairs for `manifest.v1`, `versioning.v1`, lifecycle, optionality rules | 3 |
 | T6 | S9, S7 | Authoring guide: `sys.stdout.buffer`, stderr's fate, the PATH-of-the-parent oddity | 3 |
 | T7 | S6 | Bounded stdout read with a typed overrun error | 4 |
@@ -222,3 +225,34 @@ lands before T4 because the goldens pin the version field.
     so the *plugin* can refuse a host it cannot talk to. A PDK-0.2 plugin cannot talk to a pre-0.2 host
     (`missing field protocol`), which is the cost of "never defaulted", and it is not documented yet.
   - **Next**: T4, one golden per capability for the request bytes, now that the version field is pinned.
+- **L10** — **T4 (S5) implemented** on `feat/369-request-goldens` as `2631260`. **Slice boundary recorded
+  here because it is the first one past the ~400-line target**: 432 authored lines in one commit, of which
+  391 are the new test module, 22 the extraction below, and the rest seven fixtures plus 8 `.gitattributes`
+  lines. The reviewable production change is 22 added lines; the goldens are data.
+  - **What landed**: `tests/plugin_request_goldens.rs` (four tests), `tests/fixtures/plugin_requests/` (seven
+    files, no trailing newline, marked `-text` in `.gitattributes` as the sibling twin is), and
+    `encode_invocation` as a free function in `src/plugin/driver/process.rs`.
+  - **Seven goldens for four capabilities, deliberately**: `manifest.v1` carries `read` and `write`, and
+    `lifecycle.v1` carries three payloads, so "one golden per capability" would have left four request
+    *shapes* unpinned. A fifth assertion states that every `PluginCall` variant has an entry, so a capability
+    added later fails until its bytes are pinned.
+  - **The defect this unit found in its own first attempt**: pinning `serde_json::to_vec` *inside the test*
+    pinned the serializer and not the driver — appending a newline in `ProcessDriver::invoke` would have left
+    the suite green. Hence the extraction, so the test and the driver go through one function. Proven by
+    mutation rather than by reading: `bytes.push(b'\n')` inside `encode_invocation` reddened the framing, the
+    bytes and the digest assertions, and after reverting it `git diff` was byte-identical to the pre-mutation
+    diff.
+  - **The digest leg is feature-gated on purpose**: `sha2` is optional behind `plugins`, so the sha256
+    assertions run only there. The byte assertions run on every leg, and the digest field is *read* on every
+    leg too (length and lowercase-hex shape), which keeps `-D warnings` honest instead of an
+    `allow(dead_code)`.
+  - **A gate failure worth recording**: clippy with default features caught the `sha256` field as dead code
+    that clippy with `--features plugins` could not see, because the only test reading it was compiled out. A
+    feature-gated test that leaves a field unread is an error on the other leg, not a warning.
+  - **Registry correction**: T3's row had no **Done** despite L9, so it was closed here. L7 needed nothing —
+    it already records `bfeebe1` in "State at close", and the stale note that prompted the correction was
+    itself wrong. A document that records state in prose gets read by whoever next opens it; reading it
+    before editing it is cheaper than trusting a summary of it.
+  - **Gate**: `9 passed, 0 failed, 1 not run here` — the `x86_64-unknown-linux-gnu` + `plugins` clippy needs
+    `x86_64-linux-gnu-gcc`, absent on this host.
+  - **Next**: **T5**, the request/response pairs in the docs (S4).

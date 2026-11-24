@@ -23,7 +23,7 @@ or to write one.
 
 Four **capabilities** — a closed set. A plugin declares the ones it serves, and `cutver` refuses to
 invoke a capability the entry did not declare, before any call reaches the plugin
-(`src/plugin/manager/core.rs:209-235`).
+(`src/plugin/manager/core.rs:274-289`).
 
 | Capability | Operations on the wire | What the plugin decides |
 | :--- | :--- | :--- |
@@ -36,6 +36,9 @@ A `changelog.v1` plugin is only consulted when `[changelog] format = "plugin"`, 
 only when `[version] strategy = "plugin"`, and a `manifest.v1` one only for a manifest whose
 `kind = "plugin"`. Otherwise they load and stay idle.
 
+The fields of each request and answer, capability by capability, with the one rule that decides
+optionality: the [capability reference](plugin-capabilities.md).
+
 ## The three lifecycle slots, and when each runs
 
 | Slot | Runs | What it can change |
@@ -47,7 +50,7 @@ only when `[version] strategy = "plugin"`, and a `manifest.v1` one only for a ma
 Three details decide what runs and when:
 
 - **`events` picks the slots.** Empty means all three; a non-empty list means exactly those
-  (`src/plugin/manager/core.rs:63-73`).
+  (`src/plugin/manager/core.rs:92-104`).
 - **`bump --defer-publish` skips `on_post_release`.** The slot belongs to the closing
   `cutver publish`, together with the tag pushes, once the built artifacts have been checked
   (`src/bump/exec/publish.rs:265-273`).
@@ -112,7 +115,7 @@ checked in every answer, the two discarded slots included.
 - **Grant itself anything.** Permissions are read from `cutver.toml` and nowhere else; the envelope
   has no permission channel (`crates/cutver-pdk/src/invocation.rs:14-24`).
 - **Be called outside a capability it declared.** Refused before dispatch, with no bypass flag
-  (`src/plugin/manager/core.rs:249-262`).
+  (`src/plugin/manager/core.rs:249-250`).
 - **A WASM plugin, reach anything ungranted.** No directory, host or variable enters the sandbox
   unless the entry names it; nothing skips that mapping (`src/plugin/driver/wasm.rs:118-137`).
 - **A WASM plugin, leave the workspace through a grant.** A `filesystem` entry that resolves outside

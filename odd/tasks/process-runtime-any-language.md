@@ -41,12 +41,14 @@ S1-S9 are the plan this document proposes; S10 quotes the maintainer's requireme
     driver only serializes the request and never sees the answer's shape.
   - **`cutver-pdk` goes to `0.2.0`**: a published crate whose public struct gains a field is a breaking
     change for anyone matching on it exhaustively.
-- **S4 — All four capabilities are specified outside Rust.** `changelog.v1` is documented end to end
-  (`docs/guides/plugin-overview.md:61-91`); `manifest.v1`, `versioning.v1` and the three lifecycle
-  payloads are not, and their request field lists exist only in `crates/cutver-pdk/src/*.rs`. Each
-  capability gets its request/response pair in the docs, field by field, with the optionality rules
-  that `tests/plugin_wire_contract.rs:110-124` already proves: `Option` fields are omitted and never
-  `null`, while `commits`, `is_prerelease` and `contributors` are always present.
+- **S4 — All four capabilities are specified outside Rust.** As first written this spec claimed
+  `changelog.v1` was documented end to end (`docs/guides/plugin-overview.md:61-91`), and that premise was
+  false: the overview carries one worked request and answer (`docs/guides/plugin-overview.md:63-88`) with no
+  per-field list and no statement of which fields are optional. `manifest.v1`, `versioning.v1` and the three
+  lifecycle payloads are not documented at all, and the request field lists of all four exist only in
+  `crates/cutver-pdk/src/*.rs`. Each capability gets its request/response pair in the docs, field by field,
+  with the optionality rules that `tests/plugin_wire_contract.rs:187-218` already proves: `Option` fields are
+  omitted and never `null`, while `commits`, `is_prerelease` and `contributors` are always present.
 - **S5 — The framing is pinned by test, per capability.** No test asserts that the request has no
   trailing newline or that stdin is closed; every fixture uses `cat` or `read -r line`, both
   framing-agnostic. A golden per capability pins the exact bytes written to stdin and the sha256 of
@@ -94,8 +96,9 @@ declared grants in `child_command`, listed by name in the reference page. See L7
 | T4 | S5 | **Done** — `tests/plugin_request_goldens.rs`: one golden per request *shape* (seven, because
 `manifest.v1` and `lifecycle.v1` each carry more than one), produced through the driver's own
 `encode_invocation` so the framing has a single author, plus a `sha256` per request so `cutver/plugins`
-reconciles with one line instead of a byte diff. See L10 | 2 |
-| T5 | S4 | Docs: request/response pairs for `manifest.v1`, `versioning.v1`, lifecycle, optionality rules | 3 |
+reconciles with one line instead of a byte diff. Merged as `ce8976b` (PR #372). See L10, L11 | 2 |
+| T5 | S4 | **Done** — `docs/guides/plugin-capabilities.md`: the seven request/answer shapes field by field,
+the optionality rule that decides them, and the link from the overview. See L12 | 3 |
 | T6 | S9, S7 | Authoring guide: `sys.stdout.buffer`, stderr's fate, the PATH-of-the-parent oddity | 3 |
 | T7 | S6 | Bounded stdout read with a typed overrun error | 4 |
 | T8 | S8 | Invalid UTF-8 gets its own message | 4 |
@@ -282,3 +285,52 @@ lands before T4 because the goldens pin the version field.
   - **The lesson, which cost one function extraction**: a test that pins a *value* is not a test that pins the
     *producer* of that value, and the difference stays invisible until someone asks what would have to change
     for the test to stay green while the behaviour broke.
+- **L12** — **T5 (S4) implemented** on `docs/369-capability-reference`, one commit. The first unit of this plan
+  whose product is prose: `docs/guides/plugin-capabilities.md`, **166 lines** against the 200-line ceiling
+  (`tests/ci_workflow_contract.rs:302`), plus two lines of prose in `docs/guides/plugin-overview.md`, which is
+  now 160/200. No exemption was added, and none could be: an exemption may not start with `docs/`
+  (`tests/ci_workflow_contract.rs:338`) and the docs-voice skill forbids one.
+  - **What landed**: one page carrying the seven request/answer shapes — `manifest.v1` `read` and `write`,
+    `changelog.v1` `render`, `versioning.v1` `compute`, and the three lifecycle payloads — field by field, in
+    declaration order, with the one optionality rule that decides them; a table naming which operation carries
+    which pair; and a sentence in the overview's "Where a plugin can plug in" section linking the two.
+  - **S4's premise was false and is corrected in place above**: it claimed `changelog.v1` was documented end to
+    end. The overview carried one worked request and answer (`docs/guides/plugin-overview.md:63-88`) and
+    nothing else — no per-field list, no statement of which fields are optional — and the citation it leant on
+    for the optionality rules, `tests/plugin_wire_contract.rs:110-124`, is now two unrelated tests; the proof
+    is `absent_optional_fields_are_omitted_from_the_wire` at `:187-218`.
+  - **Checking the page against the code found two false claims in it, both fixed before the commit.**
+    **One**: "`rationale` is what `cutver` prints as the reason for the bump when it is present" — the string
+    is never printed. The plugin path pins the level to `patch` with every count at zero
+    (`src/bump/plan/resolve.rs:89-98`), and `BumpRationale::summary` consults its sample only in the `major`
+    arm, so the tree reads `patch (default - no breaking changes or features)`
+    (`src/conventional/types.rs:31-81`, printed at `src/cli/tree.rs:29-34`). **Two**: the omission of an
+    optional key was said to be pinned "per capability in the PDK's own tests"; it is asserted there for
+    `versioning.v1` and `lifecycle.v1` only, and `manifest.v1` has no optional field to assert about. Both
+    sentences now name what exists.
+  - **Every other citation in the page was checked against its target in this unit**: `src/plugin/types.rs:90-123`
+    is the `PluginCall` enum with `capability()`/`operation()`; `src/plugin/manager/core.rs:207-217` is exactly
+    the two `on_post_*` dispatchers that bind the answer to `_`, which keeps `protocol` checked because
+    `decode_answer` (`src/plugin/dto.rs`) is the only answer-decode seam; `crates/cutver-pdk/src/lifecycle.rs:50-70`
+    is `PostReleasePayload` with the `notes` doc comment, whose "absent" half is produced at
+    `src/bump/exec/pipeline.rs:100-104` and `src/bump/exec/publish.rs:448`; and `PreBumpResponse.allow` is
+    genuinely required — a bare `bool` with no `#[serde(default)]` and no container-level `#[serde(default)]`,
+    the derived `Default` being invisible to serde. Every table row was compared against declaration order,
+    name, type and attribute: the "present" rows are the bare `#[serde(default)]` fields, the "optional" rows
+    are the `skip_serializing_if` ones, and no row disagrees.
+  - **The residual, stated on the page too**: nothing in the suite compares these tables to the structs. The
+    bytes are pinned by `tests/plugin_request_goldens.rs`; the field lists are pinned by whoever reads them next.
+  - **Checks**: `cargo test --test documentation_links` — `1 passed; 0 failed`;
+    `cargo test --test ci_workflow_contract` — `8 passed; 0 failed`, `every_document_stays_under_the_line_ceiling`
+    among them. No broad suite was run: this unit changes prose only.
+  - **Found in this page's own neighbour and fixed in the same commit**: three `path:line` citations in
+    `docs/guides/plugin-overview.md` no longer pointed at what their sentences said. `core.rs:209-235` was cited
+    for "refuses to invoke a capability the entry did not declare", but that range is `dispatch_post_bump`,
+    `dispatch_post_release` and `dispatch_changelog`; the refusal is `validate_capability`, defined at `:274-289`
+    and called at `:249-250`. `core.rs:63-73` was cited for `events` picking the slots, but that range is the
+    constructor's map-filling loop; `plugins_for_event` is at `:92-104`. A third instance of the same defect sat
+    in "What a plugin cannot do", citing `:249-262` for the refusal. All three now cite `:274-289`, `:92-104` and
+    `:249-250`. **This is L9's failure class a third time**: a citation is a claim, and the suite checks none of
+    them — which means a documentation unit is the only place a stale one can be caught, by the person reading it.
+  - **The next task is T6** (S9, S7): the authoring guide — `sys.stdout.buffer`, stderr's fate, the
+    PATH-of-the-parent oddity.

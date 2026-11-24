@@ -4,9 +4,16 @@
 # exactly those questions, so it costs a round trip and returns nothing. If a fourth class appears, the
 # answer is a fourth form in this directory, not a blank page.
 #
-# No `contact_links`, deliberately. A contact link is a promise to answer somewhere: neither the README
-# nor the contributing guide names a discussions board, a support channel or a security address, and no
-# `SECURITY.md` exists. A URL invented here would route a reporter to a 404, and a channel nobody runs
-# is worse than no channel. A question that fits none of the three forms goes into the feature form's
-# "Anything else" field, where it is at least attached to a workflow.
+# One `contact_links` entry, and it is the only channel this project runs: the private advisory form
+# `SECURITY.md` sends a vulnerability report to. Private vulnerability reporting is enabled on the
+# repository, so that form is live rather than a guess. A contact link is a promise to answer somewhere,
+# and a vulnerability report is the one class where a 404 is the whole damage — the reporter's next stop
+# is a public issue, which is the disclosure the form exists to prevent. Nothing else is linked here:
+# neither the README nor the contributing guide names a support address, a chat or a discussions board,
+# and inventing one would repeat the 404. A question that fits none of the three forms still goes into
+# the feature form's "Anything else" field, where it is at least attached to a workflow.
 blank_issues_enabled: false
+contact_links:
+  - name: Report a vulnerability privately
+    about: A defect in cutver that affects the machine or repository it runs in. Not a public issue.
+    url: https://github.com/cutver/cutver/security/advisories/new

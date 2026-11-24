@@ -58,18 +58,39 @@ S1-S9 are the plan this document proposes; S10 quotes the maintainer's requireme
   unbounded `Vec`. A plugin that logs to stdout by mistake exhausts the host's memory. The read is
   capped at a named limit and overrunning it is a typed error naming the limit and the remedy.
 - **S7 — stderr has a stated fate.** It is captured and used only when the exit status is non-zero
-  (`src/plugin/driver/process.rs:154-170`); on success it is discarded, undocumented. Choose one and
-  write it down: forward it when a verbose flag is set, or document that it is dropped unless the
+  (`src/plugin/driver/process.rs:169-176,205-226`); on success it is discarded, undocumented. Choose one
+  and write it down: forward it when a verbose flag is set, or document that it is dropped unless the
   process fails. A plugin author debugging a working call needs the answer in the reference page
   either way.
+  - **Amended before implementation: the first option was not actionable.** "Forward it when a verbose
+    flag is set" presupposed a flag and a log level; this program has neither. There is no `--verbose`,
+    no `-v` and no `--quiet` on `cutver`, and nothing in `src/**` reads `RUST_LOG` — the program's own
+    diagnostics are `eprintln!` at the call site (9 in `src/**`). Writing the sentence above would have
+    documented a mechanism that does not exist.
+  - **Decided by the maintainer on 2026-11-24: document the drop, change nothing in the driver.** The
+    child's stderr stays in memory, stays unused on the success path, and reaches the user only inside
+    `ExecutionFailed { stderr }`, trimmed, on a non-zero exit. The verbose flag that would change that is
+    its own issue, not this plan.
+  - **What the docs owe the author, then**, is stated in `docs/guides/plugin-process-authoring.md`:
+    where the bytes go, what to do instead (write a file under `payload.root_dir`, or exit non-zero
+    deliberately while debugging), and the residual that nothing in the suite pins the success-path drop.
 - **S8 — Two failures are distinguishable.** Invalid UTF-8 on stdout and a well-formed JSON document
   that does not match the schema both surface as `InvalidPayload` (`src/plugin/error.rs:86-95`). The
   first gets its own message naming the byte offset or the decode error, so the author is not sent
   hunting a schema bug that does not exist.
-- **S9 — The authoring guide says how to write bytes.** The child has no locale, so a Python author
-  must write UTF-8 through `sys.stdout.buffer` rather than `print()`; the failure on a non-ASCII
-  commit message is otherwise a `UnicodeEncodeError` inside their plugin on Windows only. Stated in
-  `docs/guides/plugin-process-runtime.md` beside the "log to stderr" rule.
+- **S9 — The authoring guide says how to write bytes.** The premise of this spec as first written was
+  false: it said "the child has no locale". T2 (S1) put `LANG` and `LC_ALL` in the baseline
+  (`src/plugin/driver/baseline.rs:36-37`), and `baseline_from_lookup` (`:59-63`) omits a key the host
+  does not set **or sets to the empty string** (pinned at `:86-100`), so the child inherits the host's
+  locale whenever the host exports one. It is locale-less only on a host that exports none.
+  - **What survives, now stated in `docs/guides/plugin-process-authoring.md`**, is the OS-dependent
+    half: on a host with no locale — a typical Windows host — the interpreter falls back to a
+    single-byte code page, and a character outside it reaches the answer as a `UnicodeEncodeError`
+    raised inside the plugin. A Python author therefore writes UTF-8 through `sys.stdout.buffer`
+    rather than `print()`.
+  - **The scope was wrong too.** The failure is not "Windows only": it is any host whose resolved
+    encoding cannot carry the character, the C locale included. Writing the bytes removes the question
+    instead of predicting it, which is why the guide gives the reason and not a platform table.
 - **S10 — the maintainer's requirement, verbatim**: «Realmentee no quiero borrar las APIs de plugins
   process, pero me gustaría hacerla lo más robusta posible, porque si un desarrollador de python
   quiere crear un plugin o cualquier otro lenguaje que no sea de los soportados, por eso lo incluí».
@@ -99,7 +120,10 @@ declared grants in `child_command`, listed by name in the reference page. See L7
 reconciles with one line instead of a byte diff. Merged as `ce8976b` (PR #372). See L10, L11 | 2 |
 | T5 | S4 | **Done** — `docs/guides/plugin-capabilities.md`: the seven request/answer shapes field by field,
 the optionality rule that decides them, and the link from the overview. See L12 | 3 |
-| T6 | S9, S7 | Authoring guide: `sys.stdout.buffer`, stderr's fate, the PATH-of-the-parent oddity | 3 |
+| T6 | S9, S7 | **Done** — the runtime page was full (177 of 200), so the authoring half is its own page,
+`docs/guides/plugin-process-authoring.md` (150 lines): the bytes rule with its corrected premise,
+stderr's fate as decided, the `command`/`PATH` trap, and a Python plugin verified against the real
+request fixture. Linked from the runtime page and the capability reference. See L13 | 3 |
 | T7 | S6 | Bounded stdout read with a typed overrun error | 4 |
 | T8 | S8 | Invalid UTF-8 gets its own message | 4 |
 
@@ -334,3 +358,61 @@ lands before T4 because the goldens pin the version field.
     them — which means a documentation unit is the only place a stale one can be caught, by the person reading it.
   - **The next task is T6** (S9, S7): the authoring guide — `sys.stdout.buffer`, stderr's fate, the
     PATH-of-the-parent oddity.
+- **L13** — **T6 (S9, S7) implemented** on `docs/369-process-authoring`, one commit. The unit that turns the
+  first five into something an author who does not write Rust can use, and the second whose product is prose.
+  - **A new page, because the target page is full.** `docs/guides/plugin-process-runtime.md` was at 177 of the
+    hard 200-line ceiling (`tests/ci_workflow_contract.rs:301-318`), so T6's content is
+    `docs/guides/plugin-process-authoring.md`, **150 lines**, and the runtime page grew by five lines to
+    **182/200** instead of swallowing a section it had no room for. `docs/guides/plugin-capabilities.md` went
+    from 166 to **168**. The new page links to the exchange rather than restating it: the runtime page stays
+    the one canonical copy of the stdin/stdout protocol and of the envelope's shape.
+  - **S9's premise was wrong and is rewritten above, not deleted.** S9 said "the child has no locale"; T2 put
+    `LANG` and `LC_ALL` in `SYSTEM_ENV_BASELINE` and made an empty value absent from the map, so the child
+    inherits the host's locale whenever the host exports one. S9's scope was wrong too: the `UnicodeEncodeError`
+    is not "Windows only", it is any host whose resolved encoding cannot carry the character, the C locale
+    included. The surviving half is the instruction, and it is now given with its real reason.
+  - **S7's first option did not exist and is rewritten above.** "Forward it when a verbose flag is set"
+    presupposed a flag and a log level: `cutver` has no `--verbose`, no `-v` and no `--quiet`, and nothing in
+    `src/**` reads `RUST_LOG` — its own diagnostics are `eprintln!` at the call site. The maintainer chose on
+    2026-11-24 to document the drop and change nothing in the driver, with the flag as its own issue.
+  - **What landed on the page**: the bytes rule (read stdin to EOF, one JSON value out) with Python's
+    `sys.stdout.buffer` and the honest reason; stderr's fate — drained into memory, unused on the success path,
+    reaching a human only through `ExecutionFailed { stderr }` — beside the two things to do instead (a file
+    under `payload.root_dir`, or a deliberate non-zero exit while debugging) and the residual that nothing in
+    the suite pins the success-path drop; the `command` trap, which no page stated outright, that a bare
+    `my_plugin.py` is looked up on the **host's** `PATH` and not in the workspace root even though the workspace
+    root is the child's working directory, with an absolute path or a `./`-prefixed one as the two ways out;
+    one complete `lifecycle.v1` / `on_pre_bump` plugin with its `[plugins.<name>]` table; and the cost model —
+    one process per call, 30 seconds of shared budget, an import paid every time, a `manifest.v1` plugin
+    spawned twice per file.
+  - **The example is verified, not asserted.** A Python interpreter exists on this host (Python 3.15.2), so the
+    `python` code block was extracted from the page verbatim and run against the repository's own request
+    fixture:
+    `env -i PATH="$PATH" <scratch>/pre_bump_guard.py < tests/fixtures/plugin_requests/lifecycle-pre-bump.json`
+    → exit `0`, stdout exactly `{"allow": true}` (15 bytes, no trailing newline), stderr 0 bytes, and
+    `json.load` of stdout is `{'allow': True}`. It was run through its shebang, so `chmod +x` plus
+    `#!/usr/bin/env python3` is exercised too. **Not exercised**: the Windows rule the page states, that a
+    `.py` needs a launcher there, which this Unix-shebang-shaped Git Bash run cannot show either way.
+  - **The encoding claim was measured rather than reasoned.** With `PYTHONIOENCODING=cp1252` standing in for a
+    single-byte locale, `sys.stdout.write` of a string holding `✓` raised
+    `UnicodeEncodeError: 'charmap' codec can't encode character '\u2713'` and exited 3, while the
+    `sys.stdout.buffer` line wrote the same text as UTF-8 and exited 0. Recording it because it changed the
+    page: Python 3.15 turns UTF-8 mode on by default (PEP 686), so reproducing the failure needed `-X utf8=0`,
+    and the page now says to name the encoding rather than trust the interpreter.
+  - **Checks**: `cargo test --test documentation_links` — `1 passed; 0 failed`; `cargo test --test
+    ci_workflow_contract` — `8 passed; 0 failed`, with `every_document_stays_under_the_line_ceiling` among them;
+    `sh scripts/check.sh` — `9 passed, 0 failed, 1 not run here`, the not-run step being the
+    `x86_64-unknown-linux-gnu` + `plugins` clippy that needs a cross C compiler this host lacks.
+  - **Found and deliberately not fixed by the worker, closed by the parent in the same commit**: the
+    `src/plugin/manager/factory.rs:10,67` citation for the 30-second default repeated on **three** pages —
+    `plugin-process-runtime.md`, `plugin-overview.md` and `docs/reference/plugins.md`. The constant is at
+    `:12` and its use at `:102`; all three now cite those. `plugin-overview.md`'s "Not documented anywhere
+    yet" bullet also claimed `command` was undocumented, which this unit falsified, so it now points here
+    instead of lying. **Third appearance of L9's class in this plan**: a citation is a claim, and the sweep
+    is all instances or none.
+  - **One claim narrowed rather than kept.** The page first said a relative `command` resolves against the
+    workspace root on Unix *and* against the starting directory on Windows. Only the Unix half was
+    exercised (the authoring example was run through its shebang on this host); the Windows half is now
+    stated as unverified and the absolute form as the recommendation for a repository that runs on both.
+    An unverified platform claim in a guide for platform-sensitive behaviour is the defect, not the detail.
+  - **The next task is T7** (S6): the bounded stdout read with a typed overrun error.

@@ -18,7 +18,11 @@ type. Two habits follow.
   and a `readline()` that stops at the first newline in a commit message is not.
 - **Write one JSON value and nothing else.** stdout is decoded as one document, so a second document, a
   progress line or a `print("debug")` makes the answer undecodable and is reported as
-  `returned invalid IPC JSON payload`.
+  `returned invalid IPC JSON payload`. It is also bounded: past `MAX_PLUGIN_STDOUT_BYTES` (1 MiB,
+  `src/plugin/driver/process.rs`) the answer is refused with its own error instead of being read into
+  memory, so a stray print costs a message, not the machine. stderr has the opposite policy — past
+  `MAX_PLUGIN_STDERR_BYTES` (64 KiB) the host keeps the first 64 KiB, appends a line saying so, and
+  the call is not failed for it.
 
 Then the encoding, which is where a working plugin becomes an intermittent one. Python's `print()`
 encodes with whatever the interpreter derives from the locale, and the child is given the host's
@@ -46,8 +50,8 @@ the plugin rather than trust the interpreter.
 
 The host drains the child's stderr into memory and hands it to `finish_outcome` as `stderr_bytes`, and
 the success path never reads that parameter: it is not printed, not logged and not returned
-(`src/plugin/driver/process.rs:169-176,205-226`). The bytes reach a human in exactly one place, the
-non-zero exit, trimmed into `invocation failed with exit status <n>: <your text>` (`:213-218`).
+(`src/plugin/driver/process.rs:201-208,247-268`). The bytes reach a human in exactly one place, the
+non-zero exit, trimmed into `invocation failed with exit status <n>: <your text>` (`:255-260`).
 
 So a child that writes to stderr and returns `0` writes into the void. The drain still runs, so the
 bytes cost part of the `timeout_seconds` budget either way. There is no way to ask for them: `cutver`

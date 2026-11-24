@@ -161,6 +161,7 @@ whole tree.
 | `failed to spawn plugin '<name>' process: ...` | `command` does not exist, is not executable, or a shell expression was used instead of a program (`src/plugin/error.rs:43`). |
 | `invocation failed with exit status <n>: <stderr>` | The plugin exited non-zero; the message carries its stderr (`src/plugin/error.rs:66`). |
 | `returned invalid IPC JSON payload` | stdout was empty, not one JSON value, or not the DTO the capability expects (`src/plugin/error.rs:90`). |
+| `wrote more than <n> bytes to stdout ...` | The answer ran past `MAX_PLUGIN_STDOUT_BYTES` — 1 MiB — so what arrived is not one document, usually a `print` in a loop. The excess is read and dropped, never handed on, and no budget ran out: this is not a timeout, and a longer `timeout_seconds` would change nothing (`src/plugin/error.rs:145`). Move diagnostics to stderr, which is truncated rather than fatal. |
 | `timed out after <n>s` | The exchange outlived `timeout_seconds`; the plugin's process tree was killed. |
 | `failed to write the invocation envelope ... to stdin` | The plugin, or something it started, stopped reading stdin before the envelope ended (`src/plugin/error.rs:78`). |
 | `declares the environment grant '<key>', but ...` | A granted key is unset in the environment running `cutver`, and the plugin was invoked. Resolving it is the invocation's job, so a configuration check never reports this (#300). |

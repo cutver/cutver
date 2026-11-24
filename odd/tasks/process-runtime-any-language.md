@@ -234,8 +234,9 @@ lands before T4 because the goldens pin the version field.
     `encode_invocation` as a free function in `src/plugin/driver/process.rs`.
   - **Seven goldens for four capabilities, deliberately**: `manifest.v1` carries `read` and `write`, and
     `lifecycle.v1` carries three payloads, so "one golden per capability" would have left four request
-    *shapes* unpinned. A fifth assertion states that every `PluginCall` variant has an entry, so a capability
-    added later fails until its bytes are pinned.
+    *shapes* unpinned. The coverage assertion names every variant in an exhaustive `match` with no wildcard
+    arm, so a new `PluginCall` variant breaks that test's compilation instead of slipping past a list nobody
+    updated — which is what the first version of it did (see L11).
   - **The defect this unit found in its own first attempt**: pinning `serde_json::to_vec` *inside the test*
     pinned the serializer and not the driver — appending a newline in `ProcessDriver::invoke` would have left
     the suite green. Hence the extraction, so the test and the driver go through one function. Proven by
@@ -256,3 +257,28 @@ lands before T4 because the goldens pin the version field.
   - **Gate**: `9 passed, 0 failed, 1 not run here` — the `x86_64-unknown-linux-gnu` + `plugins` clippy needs
     `x86_64-linux-gnu-gcc`, absent on this host.
   - **Next**: **T5**, the request/response pairs in the docs (S4).
+- **L11** — **independent verification of T4** (`Risk: item 3`, because the diff changes the body of
+  `ProcessDriver::invoke`, which every process-plugin invocation goes through): **S1, S2 and S4 Met; S3 and S5
+  Partial; no blockers**, four advisories — all four closed inside the unit before publishing.
+  - **A1, the claim that overstated its own guard**: the module doc said framing "cannot be added at the
+    driver" without failing. It can: the verifier traced the gap from `encode_invocation`'s call site
+    (`src/plugin/driver/process.rs:161`) through `proc::run_capture` to the supervisor's `write_all`
+    (`src/proc.rs:242`), where a newline or an early close leaves all seven tests green. The doc now names that
+    gap instead of papering over it; closing it needs an end-to-end test with a real child, which this unit
+    deliberately does not add.
+  - **A2, the coverage assertion could not notice a variant**: it iterated a hand-written array, so an eighth
+    `PluginCall` variant would have slipped past it green. It is now an exhaustive `match` with no wildcard arm,
+    so adding a variant breaks the test file's compilation. L10's sentence was corrected, not left standing.
+  - **A3, two fixtures held values production cannot emit**: `is_prerelease: true` beside `version: "1.2.0"` —
+    the host derives that flag from the semver string (`src/changelog/context/assemble.rs`) — and a 20-hex sha
+    where `src/git/log/range.rs` emits the full 40. The shapes were right and the *examples* were wrong, which
+    is what a golden nobody compares against production decays into. Fixed to `1.3.0-rc.1` and a 40-character
+    sha; two goldens and their two digests regenerated.
+  - **A4**: the digest comparison is the only thing `--features plugins` adds, and the module doc says so
+    rather than implying a second guard.
+  - **What verification confirmed, kept here as evidence**: the extraction is byte-identical to `96e4189` (same
+    `to_vec`, same error variant and field values), the `UnsupportedCapability` check still precedes the encode,
+    all seven digests re-derived independently match their constants, and no fixture carries a trailing newline.
+  - **The lesson, which cost one function extraction**: a test that pins a *value* is not a test that pins the
+    *producer* of that value, and the difference stays invisible until someone asks what would have to change
+    for the test to stay green while the behaviour broke.

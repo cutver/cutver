@@ -17,7 +17,9 @@
 //!   their presence as `false`/`[]`, the sorted key order inside `payload`, and
 //!   the framing (no line ending, no length prefix, nothing before `{`). The bytes
 //!   are produced by `encode_invocation`, the same function the driver calls, so
-//!   the framing cannot be added at the driver without failing here.
+//!   framing added **inside that function** fails here. Framing added at its call
+//!   site — between `encode_invocation` and `proc::run_capture`, or inside the
+//!   supervisor's write — does not, and that is the gap only a real child closes.
 //! - **Pinned here, by digest**: the sha256 of each request, so the `cutver/plugins`
 //!   repository can reconcile its decoder with one `sha256sum` instead of a byte
 //!   diff. It runs only under `--features plugins`, because `sha2` enters the
@@ -75,7 +77,7 @@ fn goldens() -> Vec<Golden> {
             fixture: "tests/fixtures/plugin_requests/changelog-render.json",
             call: PluginCall::ChangelogRender,
             request: changelog_render,
-            sha256: "c0ceb2bd361ff8ccfa8b1119e9ff1483f3fb9d1cf8b164b9d3dc8c280c955916",
+            sha256: "49275903e7fdf29c074b33be885e327fae71e0e959ab978783b3b5ff1b5203e7",
         },
         Golden {
             fixture: "tests/fixtures/plugin_requests/manifest-read.json",
@@ -111,7 +113,7 @@ fn goldens() -> Vec<Golden> {
             fixture: "tests/fixtures/plugin_requests/lifecycle-post-release.json",
             call: PluginCall::PostRelease,
             request: post_release,
-            sha256: "13ce98a1d035bf33799ab0462fd7df8cbb687a56a39bd816a1fda66014f83b2f",
+            sha256: "9746f6533375aa22ad5dfbb3550dab267e555e98d2d9ae6077f2a97bf56603d6",
         },
     ]
 }
@@ -120,15 +122,21 @@ fn goldens() -> Vec<Golden> {
 /// and `compare_url` are omitted rather than sent as `null`, and the two
 /// `#[serde(default)]` collections are present as `[]` because a plugin may read
 /// them unconditionally (`docs/guides/plugin-overview.md`).
+///
+/// The values obey the invariants production keeps, because a golden that says
+/// `"is_prerelease": true` beside `"version": "1.2.0"` teaches the wrong thing
+/// even though it pins the shape: the host derives the flag from the version
+/// (`src/changelog/context/assemble.rs`), and it sends the full 40-character sha
+/// (`src/git/log/range.rs`), not a short one.
 fn changelog_render(call: PluginCall) -> PluginInvocation {
     let request = ChangelogRenderRequest {
         root_dir: "/workspace".to_string(),
-        version: "1.2.0".to_string(),
-        tag_name: "v1.2.0".to_string(),
+        version: "1.3.0-rc.1".to_string(),
+        tag_name: "v1.3.0-rc.1".to_string(),
         previous_tag: None,
         release_date: "2026-03-14".to_string(),
         commits: vec![PluginCommitEntry {
-            sha: "a1b2c3d4e5f6a7b8c9d0".to_string(),
+            sha: "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0".to_string(),
             message: "feat: add tree view".to_string(),
             r#type: Some("feat".to_string()),
             scope: None,
@@ -208,7 +216,7 @@ fn post_release(call: PluginCall) -> PluginInvocation {
         root_dir: "/workspace".to_string(),
         version: "1.3.0".to_string(),
         tag_name: "v1.3.0".to_string(),
-        commit_sha: "4f2c1ab".to_string(),
+        commit_sha: "4f2c1ab8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4".to_string(),
         dry_run: false,
         notes: None,
     };
@@ -259,26 +267,30 @@ fn describe_mismatch(golden: &Golden, produced: &[u8], reason: &str) -> String {
 
 #[test]
 fn every_request_shape_the_host_can_write_has_a_golden() {
-    // A capability added without a golden is a shape a non-Rust author discovers by hand, which is
-    // the failure this file exists to prevent (#369 S5). The list is written out rather than derived
-    // so that adding a `PluginCall` variant fails here until its bytes are pinned.
-    let every_call = [
-        PluginCall::ManifestRead,
-        PluginCall::ManifestWrite,
-        PluginCall::PreBump,
-        PluginCall::PostBump,
-        PluginCall::PostRelease,
-        PluginCall::ChangelogRender,
-        PluginCall::VersioningCompute,
-    ];
-
-    let pinned: Vec<PluginCall> = goldens().iter().map(|golden| golden.call).collect();
-    for call in every_call {
-        assert!(
-            pinned.contains(&call),
-            "{call:?} puts a request on a plugin's stdin and no golden pins its bytes"
-        );
+    // No wildcard arm, on purpose: adding a `PluginCall` variant breaks this file's compilation, so a
+    // new capability cannot reach a plugin's stdin without someone pinning its bytes here. The array
+    // was written by hand before an independent verification pointed out the obvious — a hand-written
+    // list cannot notice a variant it never mentioned.
+    fn index(call: PluginCall) -> usize {
+        match call {
+            PluginCall::ManifestRead => 0,
+            PluginCall::ManifestWrite => 1,
+            PluginCall::PreBump => 2,
+            PluginCall::PostBump => 3,
+            PluginCall::PostRelease => 4,
+            PluginCall::ChangelogRender => 5,
+            PluginCall::VersioningCompute => 6,
+        }
     }
+
+    let mut pinned = [false; 7];
+    for golden in goldens() {
+        pinned[index(golden.call)] = true;
+    }
+    assert!(
+        pinned.iter().all(|seen| *seen),
+        "a PluginCall variant puts a request on a plugin's stdin and no golden pins its bytes: {pinned:?}"
+    );
 
     // The digest is read on every feature set, not only where `sha2` is in the build: a truncated or
     // mistyped digest is a broken reconciliation for the plugins repository, not a detail of this run.

@@ -89,9 +89,12 @@ proof. Recorded here as closed so nobody redoes it | — |
 | T2 | S1 | **Done** — `6d5bd5c` on `feat/369-process-env-baseline`, plus `90202e6` and `f2d70fa` repairing the
 fixtures that CI caught. One named list, `SYSTEM_ENV_BASELINE`, applied between `env_clear()` and the
 declared grants in `child_command`, listed by name in the reference page. See L7 | 1 |
-| T3 | S3 | `protocol` first in the envelope from the PDK constant; optional `protocol` in the answer checked where
-it is decoded; `ProtocolMismatch` with `Where:`/`Fix:`; wire golden and `cutver-pdk` 0.2.0 | 2 |
-| T4 | S5 | One golden per capability for the request bytes | 2 |
+| T3 | S3 | **Done** — `236e47f` + `9fbc626` on `feat/369-protocol-version`, merged as `96e4189` (PR #371);
+`cutver-pdk` 0.2.0 published to crates.io. See L9 | 2 |
+| T4 | S5 | **Done** — `tests/plugin_request_goldens.rs`: one golden per request *shape* (seven, because
+`manifest.v1` and `lifecycle.v1` each carry more than one), produced through the driver's own
+`encode_invocation` so the framing has a single author, plus a `sha256` per request so `cutver/plugins`
+reconciles with one line instead of a byte diff. See L10 | 2 |
 | T5 | S4 | Docs: request/response pairs for `manifest.v1`, `versioning.v1`, lifecycle, optionality rules | 3 |
 | T6 | S9, S7 | Authoring guide: `sys.stdout.buffer`, stderr's fate, the PATH-of-the-parent oddity | 3 |
 | T7 | S6 | Bounded stdout read with a typed overrun error | 4 |
@@ -222,3 +225,60 @@ lands before T4 because the goldens pin the version field.
     so the *plugin* can refuse a host it cannot talk to. A PDK-0.2 plugin cannot talk to a pre-0.2 host
     (`missing field protocol`), which is the cost of "never defaulted", and it is not documented yet.
   - **Next**: T4, one golden per capability for the request bytes, now that the version field is pinned.
+- **L10** — **T4 (S5) implemented** on `feat/369-request-goldens` as `2631260`. **Slice boundary recorded
+  here because it is the first one past the ~400-line target**: 432 authored lines in one commit, of which
+  391 are the new test module, 22 the extraction below, and the rest seven fixtures plus 8 `.gitattributes`
+  lines. The reviewable production change is 22 added lines; the goldens are data.
+  - **What landed**: `tests/plugin_request_goldens.rs` (four tests), `tests/fixtures/plugin_requests/` (seven
+    files, no trailing newline, marked `-text` in `.gitattributes` as the sibling twin is), and
+    `encode_invocation` as a free function in `src/plugin/driver/process.rs`.
+  - **Seven goldens for four capabilities, deliberately**: `manifest.v1` carries `read` and `write`, and
+    `lifecycle.v1` carries three payloads, so "one golden per capability" would have left four request
+    *shapes* unpinned. The coverage assertion names every variant in an exhaustive `match` with no wildcard
+    arm, so a new `PluginCall` variant breaks that test's compilation instead of slipping past a list nobody
+    updated — which is what the first version of it did (see L11).
+  - **The defect this unit found in its own first attempt**: pinning `serde_json::to_vec` *inside the test*
+    pinned the serializer and not the driver — appending a newline in `ProcessDriver::invoke` would have left
+    the suite green. Hence the extraction, so the test and the driver go through one function. Proven by
+    mutation rather than by reading: `bytes.push(b'\n')` inside `encode_invocation` reddened the framing, the
+    bytes and the digest assertions, and after reverting it `git diff` was byte-identical to the pre-mutation
+    diff.
+  - **The digest leg is feature-gated on purpose**: `sha2` is optional behind `plugins`, so the sha256
+    assertions run only there. The byte assertions run on every leg, and the digest field is *read* on every
+    leg too (length and lowercase-hex shape), which keeps `-D warnings` honest instead of an
+    `allow(dead_code)`.
+  - **A gate failure worth recording**: clippy with default features caught the `sha256` field as dead code
+    that clippy with `--features plugins` could not see, because the only test reading it was compiled out. A
+    feature-gated test that leaves a field unread is an error on the other leg, not a warning.
+  - **Registry correction**: T3's row had no **Done** despite L9, so it was closed here. L7 needed nothing —
+    it already records `bfeebe1` in "State at close", and the stale note that prompted the correction was
+    itself wrong. A document that records state in prose gets read by whoever next opens it; reading it
+    before editing it is cheaper than trusting a summary of it.
+  - **Gate**: `9 passed, 0 failed, 1 not run here` — the `x86_64-unknown-linux-gnu` + `plugins` clippy needs
+    `x86_64-linux-gnu-gcc`, absent on this host.
+  - **Next**: **T5**, the request/response pairs in the docs (S4).
+- **L11** — **independent verification of T4** (`Risk: item 3`, because the diff changes the body of
+  `ProcessDriver::invoke`, which every process-plugin invocation goes through): **S1, S2 and S4 Met; S3 and S5
+  Partial; no blockers**, four advisories — all four closed inside the unit before publishing.
+  - **A1, the claim that overstated its own guard**: the module doc said framing "cannot be added at the
+    driver" without failing. It can: the verifier traced the gap from `encode_invocation`'s call site
+    (`src/plugin/driver/process.rs:161`) through `proc::run_capture` to the supervisor's `write_all`
+    (`src/proc.rs:242`), where a newline or an early close leaves all seven tests green. The doc now names that
+    gap instead of papering over it; closing it needs an end-to-end test with a real child, which this unit
+    deliberately does not add.
+  - **A2, the coverage assertion could not notice a variant**: it iterated a hand-written array, so an eighth
+    `PluginCall` variant would have slipped past it green. It is now an exhaustive `match` with no wildcard arm,
+    so adding a variant breaks the test file's compilation. L10's sentence was corrected, not left standing.
+  - **A3, two fixtures held values production cannot emit**: `is_prerelease: true` beside `version: "1.2.0"` —
+    the host derives that flag from the semver string (`src/changelog/context/assemble.rs`) — and a 20-hex sha
+    where `src/git/log/range.rs` emits the full 40. The shapes were right and the *examples* were wrong, which
+    is what a golden nobody compares against production decays into. Fixed to `1.3.0-rc.1` and a 40-character
+    sha; two goldens and their two digests regenerated.
+  - **A4**: the digest comparison is the only thing `--features plugins` adds, and the module doc says so
+    rather than implying a second guard.
+  - **What verification confirmed, kept here as evidence**: the extraction is byte-identical to `96e4189` (same
+    `to_vec`, same error variant and field values), the `UnsupportedCapability` check still precedes the encode,
+    all seven digests re-derived independently match their constants, and no fixture carries a trailing newline.
+  - **The lesson, which cost one function extraction**: a test that pins a *value* is not a test that pins the
+    *producer* of that value, and the difference stays invisible until someone asks what would have to change
+    for the test to stay green while the behaviour broke.

@@ -1,0 +1,1 @@
+{"protocol":"1","capability":"versioning.v1","operation":"compute","payload":{"bump_level":"minor","commits":["feat: add tree view","fix!: correct tag prefix"],"current_version":"0.0.0","root_dir":"/workspace","tag_prefix":"v"}}

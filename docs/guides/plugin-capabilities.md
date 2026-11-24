@@ -158,6 +158,8 @@ the release. The `protocol` key is still checked in those answers like in any ot
   [the plugin overview](plugin-overview.md).
 - **Declaring a capability** in `[plugins.<name>]`, including the closed set and the refusal when a call
   arrives for one the entry did not declare: the [plugin reference](../reference/plugins.md).
+- **Writing the plugin.** The bytes on the wire, stderr's fate, `command` resolution and a complete
+  Python plugin: [writing a process plugin in another language](plugin-process-authoring.md).
 - **The exact bytes.** This page lists fields; `tests/plugin_request_goldens.rs` pins the serialized request
   for one instance of each of the seven shapes, with a `sha256` per request so the `cutver/plugins`
   repository can reconcile its decoder with one `sha256sum`.

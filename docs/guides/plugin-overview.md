@@ -106,7 +106,7 @@ checked in every answer, the two discarded slots included.
 | What runs | A `.wasm` module exporting `invoke`, inside the Extism sandbox (`src/plugin/driver/wasm.rs:16,159-163`). | An executable, spawned once per invocation (`src/proc.rs::spawn_group`, via `src/plugin/driver/process.rs::child_command`). |
 | Declared with | `source`, plus an optional `hash`. | `command`, required and non-empty (`src/plugin/manager/factory.rs:57-70`). `source` and `hash` are unused. |
 | Host access | Only what the entry grants: hosts, directories, environment keys (`src/plugin/driver/wasm.rs:118-137`). | Everything the account running `cutver` can reach. **No sandbox.** |
-| Bound on the call | `timeout_seconds` when set; with no value the sandbox gets no timeout configured (`src/plugin/driver/wasm.rs:139-143`). | `timeout_seconds`, default 30 (`src/plugin/manager/factory.rs:10,67`). |
+| Bound on the call | `timeout_seconds` when set; with no value the sandbox gets no timeout configured (`src/plugin/driver/wasm.rs:139-143`). | `timeout_seconds`, default 30 (`src/plugin/manager/factory.rs:12,102`). |
 | Extra gate | A declared `hash` is re-verified on every load (`src/plugin/driver/wasm.rs:93-96`). | None: the file on disk is executed as it is. |
 | When to choose it | Default. Untrusted or third-party code. | Only code you already trust — see [the process runtime](plugin-process-runtime.md). |
 
@@ -155,6 +155,8 @@ The six runtime rows carry `Where:` and `Fix:` lines naming where the failure ha
 - **The reference plugin, end to end.** The declaration this repository releases with, the
   draft-then-promote workflow and its failure modes: [the reference plugin](plugin-github-publish.md).
 - **Why the engine looks like this:** [RFC 0001](../rfcs/0001-wasm-plugin-architecture.md).
-- **Not documented anywhere yet:** a plugin entry's `command` is only checked for being non-empty at
-  load time, so a missing executable is reported at the first call; and no grant on the process
-  runtime is a containment guarantee, because that runtime has no sandbox at all.
+- **Not a containment guarantee, and now documented elsewhere:** no grant on the process runtime is a
+  containment guarantee, because that runtime has no sandbox at all; and `command` is only checked for
+  being non-empty at load time, so a missing executable is reported at the first call. Both are on
+  [writing a process plugin](plugin-process-authoring.md) now, which is why this list no longer claims
+  they are undocumented.

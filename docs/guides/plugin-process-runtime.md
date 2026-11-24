@@ -85,7 +85,9 @@ One invocation is one process, start to finish:
 4. `cutver` reads stdout to EOF and decodes it as the capability's response DTO
    (`src/plugin/dto.rs`, `decode_answer`). Trailing text after the JSON value makes the answer
    undecodable, so log to stderr, never to stdout. Declaring a different `protocol` in the answer is a
-   `ProtocolMismatch` naming both versions, not a decode error.
+   `ProtocolMismatch` naming both versions, not a decode error. What stderr is worth on a call that
+   succeeds, and how to write bytes in a language with no Rust types, is on
+   [writing a process plugin in another language](plugin-process-authoring.md).
 5. The slots whose answer is discarded (`on_post_bump`, `on_post_release`) still need one JSON value,
    `{}` being enough: the host decodes what arrives before dropping it
    (`src/plugin/manager/core.rs:179-188`).
@@ -132,7 +134,7 @@ also in the baseline is how you *pin* it: `env = ["PATH"]` fails the invocation 
 | | |
 | :--- | :--- |
 | Type | `integer`, seconds (`src/plugin/types.rs:184`) |
-| Default | `30` when unset (`src/plugin/manager/factory.rs:10,67`) |
+| Default | `30` when unset (`src/plugin/manager/factory.rs:12,102`) |
 | Bounds | The whole exchange is one budget: the stdin write, the wait for exit, and draining the answer (`src/proc.rs`, `run_capture`) |
 | On expiry | `plugin '<name>' timed out after <n>s during capability '<cap>'` (`src/plugin/error.rs:55`) |
 | Reaches | The whole process tree: the plugin and every process it started |
@@ -173,5 +175,8 @@ whole tree.
   [ADR-0001](../adr/0001-dual-runtime-plugin-microkernel.md).
 - **Nothing validates `command` until it is called.** A missing or non-executable file is reported as
   `SpawnFailed` at the first invocation, not when the configuration loads.
+- **Authoring a plugin in a language that is not Rust.** The bytes rule, stderr's fate, the `PATH`
+  lookup behind `command` and a complete Python plugin: [writing a process plugin in another
+  language](plugin-process-authoring.md).
 - **The argument list and the working directory cannot be configured** in `cutver.toml`: a plugin that
   needs either stays behind a wrapper script, since neither key exists yet.

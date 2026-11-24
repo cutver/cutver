@@ -3,3 +3,10 @@
 # rewrite its line endings on checkout, or the test fails on any platform with
 # `core.autocrlf` enabled.
 tests/fixtures/plugin_wire_contract/changelog_request.json -text
+
+# The request goldens in `tests/fixtures/plugin_requests/` are byte-significant for
+# the same reason, and more strictly: `tests/plugin_request_goldens.rs` compares them
+# to the bytes the host writes to a plugin's stdin, including the absence of a
+# trailing newline. A checkout that appends CRLF fails the test on the developer's
+# git configuration instead of on the contract.
+tests/fixtures/plugin_requests/*.json -text

@@ -1,0 +1,1 @@
+{"protocol":"1","capability":"manifest.v1","operation":"read","payload":{"content":"apiVersion: v2\nname: chart\nversion: 1.2.3\n","path":"Chart.yaml"}}

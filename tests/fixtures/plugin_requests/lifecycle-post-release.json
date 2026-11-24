@@ -1,0 +1,1 @@
+{"protocol":"1","capability":"lifecycle.v1","operation":"on_post_release","payload":{"commit_sha":"4f2c1ab","dry_run":false,"root_dir":"/workspace","tag_name":"v1.3.0","version":"1.3.0"}}

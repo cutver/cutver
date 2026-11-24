@@ -123,6 +123,27 @@ impl ProcessDriver {
     }
 }
 
+/// Serializes one invocation into the exact bytes a `runtime = "process"` child reads on stdin.
+///
+/// The plugin decodes this with whatever JSON library its language ships, so the bytes are the
+/// contract and the framing is part of it: one document, nothing before `{`, no trailing newline, no
+/// length prefix (#369 S5). A lenient parser in one language and a strict one in another disagree
+/// about exactly the things nobody writes down, and the author discovers it as a bug in their plugin.
+///
+/// This is a named function rather than one expression inside [`PluginDriver::invoke`] so the golden
+/// tests (`tests/plugin_request_goldens.rs`) go through the same door the driver does: appending a
+/// newline here fails those tests instead of a user's Python plugin.
+///
+/// The error carries the plugin and capability because a request that cannot be serialized is the
+/// plugin author's diagnosis, not an internal invariant.
+pub fn encode_invocation(name: &PluginName, invocation: &PluginInvocation) -> Result<Vec<u8>, PluginError> {
+    serde_json::to_vec(invocation).map_err(|source| PluginError::InvalidPayload {
+        name: name.clone(),
+        capability: invocation.capability.as_str().to_string(),
+        source,
+    })
+}
+
 impl PluginDriver for ProcessDriver {
     fn name(&self) -> &PluginName {
         &self.name
@@ -137,11 +158,7 @@ impl PluginDriver for ProcessDriver {
             });
         }
 
-        let envelope = serde_json::to_vec(invocation).map_err(|source| PluginError::InvalidPayload {
-            name: self.name.clone(),
-            capability: capability.as_str().to_string(),
-            source,
-        })?;
+        let envelope = encode_invocation(&self.name, invocation)?;
 
         // The plugin is spawned directly -- no shell, so its argv means what it says -- and its
         // whole exchange (the envelope write, the wait and the output drain) runs under the one

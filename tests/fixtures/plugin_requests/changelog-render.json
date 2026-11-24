@@ -1,0 +1,1 @@
+{"protocol":"1","capability":"changelog.v1","operation":"render","payload":{"commits":[{"is_breaking":false,"message":"feat: add tree view","sha":"a1b2c3d4e5f6a7b8c9d0","type":"feat"}],"contributors":[],"is_prerelease":true,"release_date":"2026-03-14","root_dir":"/workspace","tag_name":"v1.2.0","version":"1.2.0"}}

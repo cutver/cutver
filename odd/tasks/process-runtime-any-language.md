@@ -124,7 +124,9 @@ the optionality rule that decides them, and the link from the overview. See L12 
 `docs/guides/plugin-process-authoring.md` (150 lines): the bytes rule with its corrected premise,
 stderr's fate as decided, the `command`/`PATH` trap, and a Python plugin verified against the real
 request fixture. Linked from the runtime page and the capability reference. See L13 | 3 |
-| T7 | S6 | Bounded stdout read with a typed overrun error | 4 |
+| T7 | S6 | **Done** — `fix/369-bound-plugin-answer`, one commit: `MAX_PLUGIN_STDOUT_BYTES` (1 MiB) is a
+`PluginError::AnswerTooLarge`, `MAX_PLUGIN_STDERR_BYTES` (64 KiB) is a truncation plus a marker, and
+the drain keeps reading past both. See L14 | 4 |
 | T8 | S8 | Invalid UTF-8 gets its own message | 4 |
 
 Splitting note for the reviewer: T1 is already merged (#367). T2 is the one that changes behaviour a
@@ -416,3 +418,119 @@ lands before T4 because the goldens pin the version field.
     stated as unverified and the absolute form as the recommendation for a repository that runs on both.
     An unverified platform claim in a guide for platform-sensitive behaviour is the defect, not the detail.
   - **The next task is T7** (S6): the bounded stdout read with a typed overrun error.
+- **L14** — **T7 (S6) implemented** on `fix/369-bound-plugin-answer`, one commit that the parent lands (this
+  worker does not stage or commit). Three files of behaviour, one test module, two guides and this page.
+  - **Two limits, two policies, on purpose.** `MAX_PLUGIN_STDOUT_BYTES` (**1 MiB**, `pub const` in
+    `src/plugin/driver/process.rs`) is a **typed error**: an answer the host cannot parse at that size is not
+    an answer, it is a stray `print` in a loop, and truncating it would hand `decode_answer` a document that
+    is silently wrong at the end. `MAX_PLUGIN_STDERR_BYTES` (**64 KiB**, same place) is a **truncation**: over
+    it the drain keeps the **first** 64 KiB and appends
+    `[cutver] stderr truncated at <n> bytes; <m> more were dropped.`, because diagnostics are a log and
+    losing the beginning of a traceback would be worse than losing its tail — and because a loud plugin must
+    never fail a call that answered correctly.
+  - **The values, with the argument that picked them.** stdout: 1 MiB, the size of `MAX_ENTRY_BYTES`
+    (`src/plugin/registry/fetch.rs:24`), which is the largest document this host parses anywhere else, while
+    the largest *real* answer is a rewritten manifest or a rendered release entry — a few KiB. Two orders of
+    magnitude above any legal answer, a fraction of a second of runaway output below it. stderr: 64 KiB, the
+    size of a message a human reads in a terminal; anything longer is a log file, which belongs under
+    `payload.root_dir` (S7's own advice).
+  - **The sequencing trap, which is the whole reason the read keeps going.** Past a limit the drain
+    **keeps reading and discards** (`read_capped`, `src/proc.rs`: `io::copy` into the buffer through
+    `take(limit)`, then `io::copy` into `io::sink()`). A drain that stopped reading would leave the child
+    blocked on a full pipe, `supervise` would reach the deadline first, and the user would be told the
+    invocation *timed out* — with a remedy (“raise `timeout_seconds`”) that cannot fix a plugin that is
+    merely loud. `an_answer_past_the_stdout_limit_is_a_typed_overrun_inside_the_budget` pins the difference:
+    30s of budget, and the assertion that the overrun lands inside 15s of wall clock.
+  - **What the fact travels in.** `SupervisionError::Overrun { limit_bytes }` is new and `process.rs` maps it
+    in **its own arm** — not through the `SpawnFailed` catch-all — into
+    `PluginError::AnswerTooLarge { name, capability, limit_bytes }`, rendered with `Where:`/`Fix:`. The drain
+    reports what happened (`Drained { bytes, dropped }`) and `run_capture` interprets it, so the numbers stay
+    in the plugin driver (`proc::Limits` only enforces what it is handed): `MAX_PLUGIN_*` is plugin policy,
+    not spawn machinery.
+  - **The 400-line ceiling shaped the implementation, and that is worth recording.** `src/proc.rs` was 331
+    lines with a hard 400-line ceiling, an allowlist it may not join (`tests/source_line_budget.rs`), and no
+    permission in this unit to split it into `proc.rs` + `proc/`. Two earlier shapes were **440** and **411**
+    lines and failed `no_source_file_climbs_over_the_ceiling`; the shipped one carries the two policies
+    inline in `run_capture` and reads each stream with two `io::copy` calls instead of a hand-written chunk
+    loop. `proc.rs` is **399**. A behaviour this size does not fit in that file a second time: the next one
+    splits the module first.
+  - **One precedence recorded rather than assumed**: an overrun outranks the exit status. `run_capture` reads
+    the answer before the diagnostics, so a plugin that overruns stdout *and* exits non-zero reports the
+    overrun. That does not contradict the documented rule ("the exit status outranks stdout … when stdout
+    held a valid answer") because a stream the host had to stop reading holds no answer at all; it is stated
+    in the arm's comment.
+  - **Tests** (`src/plugin/driver/process/tests/bounds.rs`, declared beside `env_grants`; `tests.rs` grew
+    397 → 399 of its 400-line ceiling, which is why they could not go inside it):
+    `an_answer_past_the_stdout_limit_is_a_typed_overrun_inside_the_budget`,
+    `an_answer_at_and_just_under_the_stdout_limit_still_decodes`,
+    `loud_diagnostics_do_not_fail_a_successful_call_and_keep_the_head`,
+    `loud_diagnostics_on_a_failing_call_still_reach_the_error`, and `a_small_answer_still_succeeds`
+    (preserve). The success-path bytes are read through `run_capture` because S7 decided the driver drops
+    stderr on success, so that seam is the only place they are observable at all.
+  - **RED, observed rather than asserted.** The tests were written first; run against a driver whose limits
+    were `usize::MAX` (the plumbing in place, the cap not applied) three of the five failed for the reason
+    they exist: `an answer past the limit must not be accepted; 2097152 bytes came back`, and twice
+    `the truncated text says it was truncated` / `… says so in its own bytes`. With the constants wired in,
+    all five pass. The two that passed in RED are the inside-the-limit ones, which is what they are for.
+  - **`PluginError`'s size budget did not move**, measured rather than argued: `size_of::<PluginError>()`
+    is **96** and `size_of::<bump::Error>()` is **128**, both unchanged, because `AnswerTooLarge` is 56 bytes
+    (24 + 24 + 8) against `ExecutionFailed`'s 76. The new variant was appended after `UnsetEnvGrant` so that
+    no existing `src/plugin/error.rs:<line>` citation moved either.
+  - **Citations, the class this plan keeps hitting.** The insertions were placed *below* every line range
+    those pages cite, so `docs/adr`, `docs/rfcs`, `docs/guides/plugin-overview.md`,
+    `docs/guides/plugin-github-publish.md` and `SECURITY.md:14,17,59` all still point at what they claim —
+    except one this unit cannot fix: **`SECURITY.md:12` cites `src/proc.rs:83-93` for `shell()`, which the new
+    `SupervisionError` variant and its `into_io` arm moved to `92-102`**. `SECURITY.md` is outside this unit's
+    edit surfaces; the replacement is the two numbers. The two citations that had to move with the behaviour
+    *are* fixed: the authoring page's `process.rs:169-176,205-226` → `:201-208,247-268` and `:213-218` →
+    `:255-260`.
+  - **Docs**: the runtime page gained one failure-table row (182 → **183/200**) and the authoring page
+    gained the limit and stderr's truncation policy where it says "write one JSON value and nothing else"
+    (150 → **154/200**).
+  - **Checks**: `cargo test --lib proc` — `19 passed; 0 failed; 1 ignored` on the runs that did not hit the
+    flake below; `cargo test --lib --features plugins driver::process::tests::bounds` — `5 passed; 0 failed`;
+    `cargo test --lib --features plugins plugin::error::tests` — `3 passed; 0 failed`;
+    `cargo clippy --features plugins --all-targets -- -D warnings` — clean; `cargo fmt --all --check` — clean;
+    `sh scripts/check.sh` — **PASS: `9 passed, 0 failed, 1 not run here`**, the not-run step being the
+    `x86_64-unknown-linux-gnu` + `plugins` clippy that needs a cross C compiler this host lacks.
+  - **The flake, measured instead of blamed on the diff.**
+    `test_a_descendant_holding_stdin_cannot_outlive_the_timeout` and
+    `test_a_descendant_of_a_timed_out_plugin_never_writes_its_marker` (L7's family) failed intermittently on
+    this host — two gate runs went red on them, and several filtered runs too — and they are
+    **load-sensitive, not diff-sensitive**: isolated with `--test-threads=1` they are 5/5 green; with the five
+    new bounds tests *skipped* (`cargo test --lib -- --skip bounds`) the same flake hit 2 of 3 runs, while
+    with them included it hit 0 of 3. Neither test reaches a line this unit changed — a timeout returns from
+    `run_capture` before any drain is joined — and L7 recorded the same family flaking on this host before
+    T7. Reported, not fixed: a timing-sensitive test deserves its own unit.
+  - **Unverified here**: the fixtures have a `sh -c` branch and a `powershell` branch; this host is Windows,
+    so every run exercised the `powershell` branch and the `sh` branch is proven by inspection only.
+  - **Verification returned no blockers, and three advisories were closed here.** **A2** — the two stderr
+    tests could not tell the head from the tail: both fixtures wrote uniform `b'x'`, so keeping the *first*
+    64 KiB and keeping the *last* were byte-identical, which left `src/proc.rs`'s promise (“the bytes kept
+    are the first ones, never the last”) unpinned; the marker was read only with `contains("truncated")`,
+    so its numbers were free; and nothing covered stderr at exactly the limit, where a bogus marker would
+    have stayed green. The fixtures now open with `HEAD-` and run past the limit in a `T` filler, the
+    marker is read byte for byte *after* the kept head with both its numbers in it, and the new
+    `diagnostics_of_exactly_the_limit_are_kept_whole_and_unmarked` pins the boundary — six tests in
+    `bounds.rs` now, at **399 of 400**, the ceiling the file's own header explains. **A3** — the
+    `AnswerTooLarge` `Fix:` said “send every log line to stderr”, a remedy that leads the author into
+    silence, because stderr is **discarded when the call succeeds** (S7); one clause now says that and
+    points anything the author must see at `root_dir`. **A4** — `docs/guides/plugin-overview.md` gave the
+    error enum's spread as `error.rs:39-138` when it reaches `:149`, and its “How a plugin fails” table
+    had no row for the new overrun; the range is corrected, the row is added, and the page is **164 of
+    200**.
+  - **Two advisories were accepted rather than fixed, and are recorded here so they are not lost.**
+    **A1** — an overrun outranks the exit status: a plugin that overflows stdout *and* exits non-zero
+    loses its exit code and its explanatory stderr, because `run_capture` settles the answer before the
+    diagnostics and a stream the host had to stop reading holds no answer at all. Spec-conformant, and the
+    known cost this entry records rather than resolves. **A5** — `src/proc.rs` is at **399 of its hard
+    400**, so it has one line of headroom: the next behaviour there must split the module (`proc.rs` +
+    `proc/`) before it lands, not squeeze into the one line that is left.
+  - **Slice boundary, past the ~400 target**: 728 authored lines in one commit, and the split is what makes
+    it reviewable — **399 of them are the new `src/plugin/driver/process/tests/bounds.rs`**, 113 the entries
+    in this document, and the reviewable production change is **~155**: `src/proc.rs` (+100, the drain and
+    the sequencing), `src/plugin/driver/process.rs` (+44, the two limits and the error arm), `src/plugin/error.rs`
+    (+11, the variant). Read it as two seams: the supervisor's read path first, then the policy the driver sets
+    on it. The tests are not a separate slice — they are the evidence for both, and shipping them apart would
+    hand a reviewer a cap without the sequence that makes it arrive as the right error.
+  - **The next task is T8** (S8): invalid UTF-8 on stdout gets its own message, naming the decode error.

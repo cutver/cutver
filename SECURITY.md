@@ -9,7 +9,7 @@ A report belongs here when the defect is in `cutver` itself and its effect is on
 repository a run touches. Those surfaces, with the code that shows each:
 
 - **Configured commands run as you.** `[hooks] pre_bump` and `post_bump` go through the platform shell
-  in the workspace root (`src/bump/exec/hooks.rs:89-91`, `src/proc.rs:83-93`), and a
+  in the workspace root (`src/bump/exec/hooks.rs:89-91`, `src/proc.rs:92-102`), and a
   `runtime = "process"` plugin is spawned as a program with no shell and no privilege change
   (`src/plugin/driver/process.rs:114-122`). Running your own code is the feature; a way to run a
   command the configuration did not name is the vulnerability.

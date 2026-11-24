@@ -394,4 +394,6 @@ fn test_child_command_names_the_workspace_root_as_its_working_directory() {
 }
 
 #[cfg(test)]
+mod bounds;
+#[cfg(test)]
 mod env_grants;

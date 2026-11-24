@@ -123,6 +123,38 @@ impl ProcessDriver {
     }
 }
 
+/// The most a plugin may write to stdout while answering one invocation (1 MiB).
+///
+/// An answer past this is a typed [`PluginError::AnswerTooLarge`], never a silently truncated
+/// payload: a document `cutver` cannot parse at this size is not an answer, it is a stray `print`
+/// inside a loop, and the host must not pay for it in memory.
+///
+/// One mebibyte is chosen against the documents this program already parses. The largest of them is
+/// a registry entry, capped at `MAX_ENTRY_BYTES` — also 1 MiB (`src/plugin/registry/fetch.rs:24`) —
+/// while the largest answer a plugin legitimately returns is a rewritten manifest or a rendered
+/// release entry, a few KiB at most. So the bound sits two orders of magnitude above any real answer
+/// and is still reached in a fraction of a second by a runaway loop, which is the whole trade: a
+/// stray log line costs a typed error instead of the machine's memory.
+pub const MAX_PLUGIN_STDOUT_BYTES: usize = 1024 * 1024;
+
+/// The most of a plugin's stderr the host keeps (64 KiB).
+///
+/// Diagnostics are a log, never a payload, and the host reads them in exactly one place: the failure
+/// message of a non-zero exit. Past this bound the drain keeps the **first** 64 KiB and records the
+/// cut in the bytes themselves, because the beginning of a message — where a traceback starts — is
+/// the useful half, and because a loud plugin must never fail an otherwise valid call. 64 KiB is
+/// chosen against what a human reads: a plugin whose diagnostics exceed it is writing a log file,
+/// and a log file belongs under `payload.root_dir`.
+pub const MAX_PLUGIN_STDERR_BYTES: usize = 64 * 1024;
+
+/// The bounds one invocation is read under, in the shape [`crate::proc`] enforces.
+fn capture_limits() -> proc::Limits {
+    proc::Limits {
+        stdout: MAX_PLUGIN_STDOUT_BYTES,
+        stderr: MAX_PLUGIN_STDERR_BYTES,
+    }
+}
+
 /// Serializes one invocation into the exact bytes a `runtime = "process"` child reads on stdin.
 ///
 /// The plugin decodes this with whatever JSON library its language ships, so the bytes are the
@@ -166,7 +198,7 @@ impl PluginDriver for ProcessDriver {
         // come from `crate::proc`, which is why a process the plugin starts cannot outlive it (S6).
         let timeout = Duration::from_secs(self.timeout_seconds);
         let mut command = self.child_command()?;
-        match proc::run_capture(&mut command, &envelope, timeout) {
+        match proc::run_capture(&mut command, &envelope, timeout, capture_limits()) {
             Ok(Capture {
                 status,
                 stdout,
@@ -180,6 +212,16 @@ impl PluginDriver for ProcessDriver {
                 name: self.name.clone(),
                 capability: capability.as_str().to_string(),
                 timeout_secs: timeout.as_secs(),
+            }),
+            // The answer is not a document at that size, so there is nothing to decode and nothing a
+            // later stage could recover: its own arm, never the catch-all. The drain read the excess
+            // and threw it away instead of leaving the child blocked on a full pipe, which is why
+            // this arrives as an overrun naming the limit — and not as a `Timeout` whose remedy,
+            // "raise `timeout_seconds`", would fix nothing.
+            Err(SupervisionError::Overrun { limit_bytes }) => Err(PluginError::AnswerTooLarge {
+                name: self.name.clone(),
+                capability: capability.as_str().to_string(),
+                limit_bytes,
             }),
             // The exchange was under way, so this is not a spawn failure: the output could not be
             // read to the end. `exit_code: -1` is this variant's existing "no code" value, used for

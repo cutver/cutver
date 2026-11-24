@@ -25,6 +25,46 @@ fn wasm_not_supported_names_the_plugins_feature_and_the_enabled_build() {
     );
 }
 
+/// S6 (#369): the overrun names the limit it crossed and routes the author to the channel that is
+/// safe to be loud on. Its remedy is never a longer `timeout_seconds` — nothing was waiting.
+#[test]
+fn an_answer_over_the_limit_names_the_limit_and_the_remedy() {
+    let name = PluginName::new("loud-plugin").unwrap();
+    let message = PluginError::AnswerTooLarge {
+        name,
+        capability: "changelog.v1".to_string(),
+        limit_bytes: 1024 * 1024,
+    }
+    .to_string();
+
+    assert!(
+        message.contains("1048576 bytes"),
+        "the message names the limit in bytes: {message}"
+    );
+    assert!(
+        message.contains("changelog.v1"),
+        "the message names the capability that was refused: {message}"
+    );
+    assert!(
+        message.contains("Where:") && message.contains("Fix:"),
+        "the house style carries a capitalized Where: and Fix:: {message}"
+    );
+    assert!(
+        message.contains("stderr"),
+        "the remedy points at the channel a plugin may be loud on: {message}"
+    );
+    assert!(
+        !message.contains("timeout_seconds"),
+        "an overrun is not a deadline, so its remedy must not be a longer timeout: {message}"
+    );
+    assert!(
+        message.contains("kept only when the call fails") && message.contains("root_dir"),
+        "the remedy sends the author to stderr, which is discarded on a successful call (#369 S7): \
+         leaving that out walks them into silence, so the message must say where a line survives \
+         and where to write what they must see: {message}"
+    );
+}
+
 /// Pins the size of the plugin error so it cannot silently break `bump`'s lint gate.
 ///
 /// `bump::Error` embeds this enum by value (`Plugin(#[from] PluginError)` in

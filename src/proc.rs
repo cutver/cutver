@@ -52,6 +52,11 @@ pub(crate) enum SupervisionError {
     TimedOut {
         timeout: Duration,
     },
+    /// A stream that is a *payload* produced more than the exchange's limit for it, so there is no
+    /// document for the caller. The drain read the excess and dropped it instead of blocking the child.
+    Overrun {
+        limit_bytes: usize,
+    },
 }
 
 impl SupervisionError {
@@ -61,6 +66,10 @@ impl SupervisionError {
             Self::TimedOut { timeout } => io::Error::new(
                 io::ErrorKind::TimedOut,
                 format!("the exchange did not finish inside the {timeout:?} budget"),
+            ),
+            Self::Overrun { limit_bytes } => io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("the exchange produced more than the {limit_bytes}-byte output limit"),
             ),
         }
     }
@@ -143,6 +152,26 @@ pub(crate) fn supervise(child: &mut Child, start: Instant, timeout: Option<Durat
     }
 }
 
+/// The byte limits one [`run_capture`] exchange applies to the child's two output streams.
+///
+/// The streams are bounded differently because they mean different things: `stdout` carries the
+/// **payload**, so a run past its limit leaves no document and the exchange fails with
+/// [`SupervisionError::Overrun`]; `stderr` carries **diagnostics**, so a run past its limit keeps the
+/// first bytes and records the cut in them. The numbers are the caller's: a plugin's are
+/// `MAX_PLUGIN_*_BYTES` in `crate::plugin::driver::process`.
+pub(crate) struct Limits {
+    pub(crate) stdout: usize,
+    pub(crate) stderr: usize,
+}
+
+/// What one drained stream produced, and what had to be dropped to fit its limit.
+#[derive(Debug, Default)]
+struct Drained {
+    bytes: Vec<u8>,
+    /// Bytes the child wrote past the limit; zero when the stream stayed inside it.
+    dropped: u64,
+}
+
 /// Runs `cmd` as one bounded exchange: write `payload` to its stdin, wait for it, drain its output.
 ///
 /// `cmd` comes from the caller because what a plugin is — a program, its argv, and `env_clear()`
@@ -158,13 +187,18 @@ pub(crate) fn supervise(child: &mut Child, start: Instant, timeout: Option<Durat
 /// kill semantics is beyond #316. What is bounded instead is the remaining joins — L3 of
 /// `odd/tasks/cutver-proc-spawn-authority.md`: closing that second hole without inventing a kill,
 /// and still never handing the caller a wait past its budget.
-pub(crate) fn run_capture(cmd: &mut Command, payload: &[u8], timeout: Duration) -> Result<Capture, SupervisionError> {
+pub(crate) fn run_capture(
+    cmd: &mut Command,
+    payload: &[u8],
+    timeout: Duration,
+    limits: Limits,
+) -> Result<Capture, SupervisionError> {
     let start = Instant::now();
     cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
     let mut child = spawn_group(cmd).map_err(SupervisionError::Spawn)?;
     let writer = spawn_writer_thread(child.stdin.take(), payload.to_vec());
-    let stdout_drain = spawn_drain_thread(child.stdout.take());
-    let stderr_drain = spawn_drain_thread(child.stderr.take());
+    let stdout_drain = spawn_drain_thread(child.stdout.take(), limits.stdout);
+    let stderr_drain = spawn_drain_thread(child.stderr.take(), limits.stderr);
 
     let status = match supervise(&mut child, start, Some(timeout)).map_err(SupervisionError::Wait)? {
         Ended::Exited(status) => status,
@@ -175,15 +209,28 @@ pub(crate) fn run_capture(cmd: &mut Command, payload: &[u8], timeout: Duration) 
         Ended::TimedOut { timeout, .. } => return Err(SupervisionError::TimedOut { timeout }),
     };
 
-    // The child exited, but a descendant it started may still hold the pipes open. Every join below
-    // is bounded by what is left of the same budget (L3), so the caller never waits past it.
+    // Every join below is bounded by what is left of the same budget (L3), so the caller never waits
+    // past it. The answer is settled first because an overrun outranks the exit status: a payload the
+    // host stopped reading holds no document for a non-zero exit to have explained.
     let stdin = recv_written(writer, left(start, timeout));
-    let stdout = recv_drained(stdout_drain, start, timeout)?;
-    let stderr = recv_drained(stderr_drain, start, timeout)?;
+    let answer = recv_drained(stdout_drain, start, timeout)?;
+    if answer.dropped > 0 {
+        return Err(SupervisionError::Overrun {
+            limit_bytes: limits.stdout,
+        });
+    }
+    let Drained { mut bytes, dropped } = recv_drained(stderr_drain, start, timeout)?;
+    if dropped > 0 {
+        let marker = format!(
+            "\n[cutver] stderr truncated at {} bytes; {dropped} more were dropped.\n",
+            limits.stderr
+        );
+        bytes.extend_from_slice(marker.as_bytes());
+    }
     Ok(Capture {
         status,
-        stdout,
-        stderr,
+        stdout: answer.bytes,
+        stderr: bytes,
         stdin,
     })
 }
@@ -193,11 +240,13 @@ fn left(start: Instant, timeout: Duration) -> Duration {
     timeout.saturating_sub(start.elapsed())
 }
 
+/// The payload stream and the diagnostics stream differ in what a cut means (`Limits`), so the
+/// excess is reported here rather than decided: `dropped` is the caller's to interpret.
 fn recv_drained(
-    drained: mpsc::Receiver<io::Result<Vec<u8>>>,
+    drained: mpsc::Receiver<io::Result<Drained>>,
     start: Instant,
     timeout: Duration,
-) -> Result<Vec<u8>, SupervisionError> {
+) -> Result<Drained, SupervisionError> {
     match drained.recv_timeout(left(start, timeout)) {
         // A read that failed is a read that failed. Returning the bytes collected so far would hand
         // the caller a truncated payload it cannot tell from a complete one (#266).
@@ -253,18 +302,37 @@ fn spawn_writer_thread(stdin: Option<ChildStdin>, payload: Vec<u8>) -> mpsc::Rec
 /// A channel rather than a join handle for the same reason as the writer: the drain waits for an
 /// EOF that a descendant holding the pipe can postpone, so the caller must be able to stop waiting
 /// without stopping the read.
-fn spawn_drain_thread<R: Read + Send + 'static>(reader: Option<R>) -> mpsc::Receiver<io::Result<Vec<u8>>> {
+fn spawn_drain_thread<R: Read + Send + 'static>(
+    reader: Option<R>,
+    limit: usize,
+) -> mpsc::Receiver<io::Result<Drained>> {
     let (sender, receiver) = mpsc::channel();
     thread::spawn(move || {
-        let mut buffer = Vec::new();
+        let mut drained = Drained::default();
         let result = match reader {
-            Some(mut reader) => reader.read_to_end(&mut buffer).map(|_bytes_read| buffer),
-            None => Ok(buffer),
+            Some(mut reader) => read_capped(&mut reader, limit, &mut drained).map(|()| drained),
+            None => Ok(drained),
         };
         // A send error only means the caller already returned; the thread ends here either way.
         let _ = sender.send(result);
     });
     receiver
+}
+
+/// Reads `reader` to EOF, keeping at most `limit` bytes of it and throwing the rest away.
+///
+/// The read **keeps going after the limit is reached**, and the excess is read rather than left in
+/// the pipe. That sequencing is the reason this is two copies and not a bounded `read_to_end`: a
+/// drain that stopped reading would leave the child blocked on a full pipe, so [`supervise`] would
+/// reach the deadline first and the caller would report a *timeout* — the wrong diagnosis for a
+/// plugin that is merely loud, with a remedy ("raise `timeout_seconds`") that cannot fix it.
+///
+/// The bytes kept are the **first** ones, never the last, and `dropped` says how many passed by:
+/// for a payload the limit means "this is not a document", for diagnostics the head is the useful half.
+fn read_capped<R: Read>(reader: &mut R, limit: usize, drained: &mut Drained) -> io::Result<()> {
+    io::copy(&mut reader.by_ref().take(limit as u64), &mut drained.bytes)?;
+    drained.dropped = io::copy(reader, &mut io::sink())?;
+    Ok(())
 }
 
 /// Kills the child and every process it started, then reaps it.
@@ -320,7 +388,7 @@ mod tests {
     /// buffer is exactly what makes that opaque, so the read failure has to reach the caller.
     #[test]
     fn a_failed_drain_is_reported_instead_of_truncating_the_output() {
-        let drained = spawn_drain_thread(Some(FailingReader));
+        let drained = spawn_drain_thread(Some(FailingReader), 1024);
         let error = recv_drained(drained, Instant::now(), Duration::from_secs(1))
             .expect_err("a read that failed must not look like an empty output");
         assert!(

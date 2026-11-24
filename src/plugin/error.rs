@@ -138,6 +138,17 @@ pub enum PluginError {
     UnsetEnvGrant { name: PluginName, key: String },
 
     #[error(
+        "plugin '{name}' wrote more than {limit_bytes} bytes to stdout while answering capability '{capability}', so its answer is not one document cutver can decode.\n  \
+        Where: reading the answer of capability '{capability}' from the plugin's stdout\n  \
+        Fix: write exactly one JSON answer to stdout and nothing else, and send every log line to stderr, which is truncated rather than fatal and is kept only when the call fails — on success it is discarded, so write anything the author must see under 'root_dir'; this limit exists so that a stray print cannot exhaust the host's memory."
+    )]
+    AnswerTooLarge {
+        name: PluginName,
+        capability: String,
+        limit_bytes: usize,
+    },
+
+    #[error(
         "multiple plugins matched manifest '{path}': {}.\n  \
         Where: manifest plugin resolution\n  \
         Fix: explicitly specify 'plugin = \"<name>\"' in [[manifest]] or disambiguate 'manifest_match' patterns in cutver.toml.",

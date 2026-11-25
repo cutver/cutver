@@ -9,24 +9,23 @@
 //! A facade, per Contract Pillar V.4: the checks that run before the first write live in
 //! [`validate`], and the evidence `cutver publish --resume` accepts lives in [`resume`] (#326 S4).
 
-use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use semver::Version;
 
 use crate::bump::Error;
-use crate::bump::exec::command::{format_command, read, run_publish_command};
+use crate::bump::exec::command::{format_command, run_publish_command};
 use crate::bump::exec::guard;
-use crate::bump::types::BumpLevel;
 use crate::changelog;
 use crate::config::Config;
 use crate::config::gates::{self, GateName};
 use crate::git;
 use crate::git::ops::{tag_force_push_args, tag_push_args};
 use crate::plugin::PluginManager;
-use crate::plugin::dto::PostReleasePayload;
 
+mod context;
+mod post_release;
 mod resume;
 mod validate;
 
@@ -173,7 +172,7 @@ fn publish_prepared(
     head: &str,
     plugin_manager: &PluginManager,
 ) -> Result<PublishSummary, Error> {
-    let (interp_ctx, notes) = publish_context(config, request, version)?;
+    let (interp_ctx, notes) = context::publish_context(config, request, version)?;
     let mut pushes = PushLog::default();
     let scope = PublicationScope {
         config,
@@ -203,61 +202,6 @@ fn publish_prepared(
     })
 }
 
-/// The interpolation context `[publish].commands` render against, plus the notes when this
-/// invocation carried any.
-fn publish_context(
-    config: &Config,
-    request: &PublishRequest,
-    version: &Version,
-) -> Result<(changelog::InterpolationContext, Option<String>), Error> {
-    let repo = &config.root_dir;
-    let prev_tag = git::latest_tag(repo, Some(&config.git.tag_prefix))?;
-    // The closing phase runs after the bump, so the previous version is only readable from the tag.
-    let previous = previous_version(prev_tag.as_deref(), &config.git.tag_prefix, version);
-    let context = guard::build_context(
-        repo,
-        &previous,
-        version,
-        &request.tag,
-        prev_tag.as_deref(),
-        BumpLevel::Auto,
-        false,
-    );
-    let notes = read_notes(request)?;
-    Ok((context, notes))
-}
-
-/// The release notes this invocation carries: the declared file, or the stream when the path is `-`.
-///
-/// A stream that carries nothing is an error rather than `Some("")`: the closing phase publishes a
-/// release nobody can correct afterwards, so empty notes are a refusal, not a default (#306).
-fn read_notes(request: &PublishRequest) -> Result<Option<String>, Error> {
-    match request.notes_file.as_deref() {
-        None => Ok(None),
-        Some(_) if notes_are_streamed(request) => {
-            let mut notes = String::new();
-            io::stdin().read_to_string(&mut notes).map_err(|source| Error::Read {
-                path: NOTES_STDIN.to_string(),
-                source,
-            })?;
-            if notes.trim().is_empty() {
-                return Err(Error::EmptyNotesStream);
-            }
-            Ok(Some(notes))
-        }
-        Some(path) => Ok(Some(read(path)?)),
-    }
-}
-
-/// The version the previous tag names, so the closing phase renders `previous_version` the way the
-/// inline phase does. A tag that does not carry `tag_prefix` or a semver after it names no version.
-fn previous_version(prev_tag: Option<&str>, tag_prefix: &str, version: &Version) -> Version {
-    prev_tag
-        .and_then(|tag| tag.strip_prefix(tag_prefix))
-        .and_then(|rest| Version::parse(rest).ok())
-        .unwrap_or_else(|| version.clone())
-}
-
 /// Publishes the release: tag, branch push, tag push, floating major tag, `[publish].commands`,
 /// post-release plugins — in that order, recording every push it made in `pushes`.
 pub(crate) fn finalize(scope: &PublicationScope<'_>, pushes: &mut PushLog) -> Result<Published, Error> {
@@ -278,7 +222,7 @@ pub(crate) fn finalize(scope: &PublicationScope<'_>, pushes: &mut PushLog) -> Re
     push_release_tag(scope, pushes)?;
     let floating_tag = handle_floating_tag(scope, pushes)?;
     let publish_commands = run_publish_commands(scope)?;
-    dispatch_post_release(scope)?;
+    post_release::dispatch(scope)?;
     Ok(Published {
         tag_skipped,
         floating_tag,
@@ -401,48 +345,4 @@ fn run_publish_commands(scope: &PublicationScope<'_>) -> Result<Vec<String>, Err
         publish_commands.push(formatted);
     }
     Ok(publish_commands)
-}
-
-fn dispatch_post_release(scope: &PublicationScope<'_>) -> Result<(), Error> {
-    // A resume repeats only what is harmless to repeat, and an `on_post_release` plugin is arbitrary
-    // code that may already have run against this release (#326 D2). A rehearsal skips it too, so a
-    // `--dry-run --resume` reports the verdict the real resume would.
-    if let Phase::Resuming = scope.phase {
-        return Ok(());
-    }
-    let commit_sha = if scope.dry_run {
-        "0000000000000000000000000000000000000000".to_string()
-    } else {
-        git::rev_parse(scope.repo, "HEAD")?
-    };
-    let payload = PostReleasePayload {
-        root_dir: scope.repo.to_string_lossy().replace('\\', "/"),
-        version: scope.version.to_string(),
-        tag_name: scope.tag.to_string(),
-        commit_sha,
-        dry_run: scope.dry_run,
-        notes: scope.notes.map(str::to_string),
-    };
-    for plugin_name in scope
-        .plugin_manager
-        .plugins_for_event(crate::plugin::PluginOperation::OnPostRelease.as_str())
-    {
-        scope
-            .plugin_manager
-            .dispatch_post_release(plugin_name, &payload)
-            .map_err(|source| {
-                if scope.dry_run {
-                    // Nothing landed, so the failure must not claim a commit exists.
-                    Error::Plugin(source)
-                } else {
-                    Error::PostReleasePlugin {
-                        plugin: plugin_name.to_string(),
-                        tag: scope.tag.to_string(),
-                        commit: scope.commit.to_string(),
-                        source: Box::new(source),
-                    }
-                }
-            })?;
-    }
-    Ok(())
 }

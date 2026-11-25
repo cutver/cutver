@@ -1839,8 +1839,13 @@ fn a_resume_dispatches_no_post_release_plugin_but_a_plain_publish_does() {
          line the plain run wrote; stdout:\n{stdout}"
     );
     assert!(
-        stdout.contains("`on_post_release` not dispatched") && stdout.contains("`release`"),
-        "the resume must name the plugin it left alone instead of omitting it silently: {stdout}"
+        stdout.contains(
+            "`on_post_release` not dispatched: `release` left alone, because a plugin may already \
+             have run in the attempt this resume continues (`cutver publish` without `--resume` \
+             dispatches it)"
+        ),
+        "the rendered Resume line must stay byte-identical now that the names come from \
+         PublishSummary: {stdout}"
     );
     assert_eq!(
         rev(&remote.dir, "refs/tags/v1.3.0^{commit}"),

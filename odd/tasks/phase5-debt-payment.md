@@ -189,7 +189,7 @@ scope" — which T6 turns into evidence instead of a question.
 matching the quotes in S6.
 
 - **Gap 2 — the artifact model — CLOSED.** `src/config/artifact.rs:1` declares `[[artifact]]` (a glob and
-  the name a message uses), and `src/bump/exec/publish/validate.rs:25` (`verify_artifacts`) refuses a
+  the name a message uses), and `src/bump/exec/publish/validate.rs:29` (`verify_artifacts`) refuses a
   declared glob that matches nothing before the first irreversible step. The config can say what a
   release produces, and the tool checks it.
 - **Gap 5 — the machine contract is versioned — CLOSED.** `src/cli/json.rs:15` is `SCHEMA_VERSION = 1`
@@ -208,8 +208,9 @@ Both open gaps stay phase 6's (D4): recording them here is the deliverable, and 
 line in `src/bump/exec/publish.rs`, which sat at exactly the 448 T2 had just recorded. Two pure moves gave
 it room — `publish/post_release.rs` (the `on_post_release` dispatch, 54 lines) and `publish/context.rs` (the
 interpolation context, the notes and the previous version, 70) — and the facade is now **356**, inside the
-400-line ceiling, so its `ALLOWLIST` entry is gone and the table is **14 rows**. `git diff -M` reads both as
-moves; the only behaviour change in the tree is T4's.
+400-line ceiling, so its `ALLOWLIST` entry is gone and the table is **14 rows**. Git reports both as new
+files rather than renames — a partial split of a surviving facade is not pairable — so reviewing them is a
+content comparison against the base, not `git log --follow`; the only behaviour change in the tree is T4's.
 
 Left alone deliberately, with the measurement that says so: `src/bump/types.rs` **399/400** (T3 took
 approach A, so nothing in T1-T6 owed it a line), `src/cli/runner/tests.rs` **949/950** (allowlisted and

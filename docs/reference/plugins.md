@@ -121,7 +121,7 @@ capabilities = ["changelog.v1"]
 | `permissions` | `network`, `env` and `filesystem` grants. For `wasm`, denied unless granted ([Runtime Sandbox](#runtime-sandbox)); for `process`, only `env` applies and nothing is sandboxed. |
 | `timeout_seconds` | `integer`, seconds. `30` when unset for `runtime = "process"` (`src/plugin/manager/factory.rs:12,102`); passed to the WASM sandbox when set, and with no value the sandbox gets no timeout configured (`src/plugin/driver/wasm.rs:139-143`). It bounds one call, not the whole release. |
 | `command` | Executable for a `runtime = "process"` plugin; required and non-empty there, and always run with an empty argument list. Unused by `wasm`. See [the process runtime](../guides/plugin-process-runtime.md). |
-| `config` | A free-form TOML table ([details](configuration.md)). `cutver` parses it, preserves it across `plugin update`, and reads nothing out of it: the keys are the plugin's own, and the host fills no channel from them. `github-publish` is the worked case ([the reference plugin](../guides/plugin-github-publish.md); `cutver.toml:84-94`). |
+| `config` | A free-form TOML table ([details](configuration.md)). `cutver` parses it, preserves it across `plugin update`, and reads nothing out of it: the keys are the plugin's own, and the host fills nothing from them. `github-publish` is the worked case ([the reference plugin](../guides/plugin-github-publish.md); `cutver.toml:84-94`). |
 
 > **A `changelog.v1` plugin only runs when `[changelog] format = "plugin"`.** With the default
 > `keep-a-changelog` the built-in renderer writes the notes and the installed plugin stays idle —

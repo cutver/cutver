@@ -138,6 +138,40 @@ MD
 
 *Gotcha*: `--commit` must be the full SHA `git rev-parse HEAD` prints; a short one is refused before anything is written. With no `on_post_release` plugin installed the notes are read and nothing consumes them yet, so no draft release appears.
 
+## Ship a Prerelease, Then Promote It
+
+`--channel` is the prerelease ladder, on `bump` and `plan` alike: `alpha`, `beta` and `rc` append the
+channel and start its counter, and `stable` is the release itself. Promotion is the same flag applied to
+a version that is already a prerelease — there is no separate promotion verb. After `cutver bump minor
+--channel rc` cuts `0.3.0-rc.1`, `cutver plan --channel stable` shows what the promotion does:
+
+```text
+# trimmed: manifests and changelog lines
+ℹ Release Plan: 0.3.0-rc.1 -> 0.3.0 (patch (default - no breaking changes or features), channel: rc -> stable)
+├── Git
+│   ├── commit: chore(release): v0.3.0 [skip ci]
+│   └── tag: v0.3.0
+```
+
+The header names the rung the run leaves and the one it lands on, so approving a promotion is not
+reading suffixes by eye. `cutver bump --channel stable` performs it, and what it produces is an ordinary
+release: the tag is `v0.3.0` with no suffix; with `[git] floating_major_tag = true` the floating major
+tag moves onto that commit exactly as it moves for a release cut without a channel; and the entry
+prepended is the release's own — `## [v0.3.0]` under the default heading, which renders the release tag
+rather than the suffix it promoted from — while the `v0.3.0-rc.1` entry stays where it is, because the
+run prepends one entry and rewrites none.
+
+*Gotcha*: on a prerelease the level is ignored, so `cutver bump major --channel stable` on `0.3.0-rc.1`
+promotes to `0.3.0`. On an already-stable version it is not ignored: `cutver bump minor --channel stable`
+on `0.3.0` cuts `0.4.0`, which is what lets one `[alpha, beta, rc, stable]` matrix treat its `stable`
+entry as the release itself.
+
+Re-running that entry is harmless: `cutver bump --channel stable` with no level named on a stable version
+releases nothing and says so instead of failing — exit `0`, no file, no commit, no tag, a `No-op` section,
+and the commit and tag it did not make marked `[SKIPPED]`. `--json` reports `"released":false`, so a
+workflow keyed on `released` does not read the re-run as a publication. The transitions — same channel,
+another channel, `stable` and the no-op — are spelled out in the [`bump` reference](../reference/cli.md#cutver-bump).
+
 ## The Short Path
 
 When there are no artifacts to smoke first, one command does the whole release — same pipeline, tag and pushes included:

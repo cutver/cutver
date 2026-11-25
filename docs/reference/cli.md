@@ -65,11 +65,11 @@ cutver bump [LEVEL] [OPTIONS]
 
 `[LEVEL]` is `patch`, `minor`, `major` or `auto` (default: `auto`).
 
-`--channel <CHANNEL>` is the prerelease ladder: `alpha`, `beta` and `rc` append the channel and start its counter (`1.3.0` becomes `1.3.0-alpha.1`), and `stable` is the release itself. The bare word "channel" always means that ladder; the [CI output channel](../internals/machine-contract-surfaces.md#ci-output-channel) and the gate channel carry their qualifier every time they are written. The plan tree names the channel the run leaves and the one it lands on, so reading suffixes by eye is not part of approving a release.
+`--channel <CHANNEL>` is the prerelease ladder: `alpha`, `beta` and `rc` append the channel and start its counter (`1.3.0` becomes `1.3.0-alpha.1`), and `stable` is the release itself. On a version that is already a prerelease the channel **promotes** it, and the level is ignored: the same channel moves only the counter (`1.2.0-alpha.1` → `1.2.0-alpha.2`, and any build metadata is dropped exactly as a level drops it, `1.2.0-alpha.1+build.7` → `1.2.0-alpha.2`), another channel starts its own counter on the same base (`1.2.0-alpha.3` with `--channel beta` → `1.2.0-beta.1`), and `stable` drops the suffix with no increment (`1.2.0-rc.1` → `1.2.0`) — no rung is validated, so `alpha` promotes exactly like `rc`. On a stable version a named level still cuts the version it names, so `plan minor --channel stable` on `1.2.3` reports `1.3.0`; a request that yields the version the repository already carries releases nothing ([No-op](#no-op)), which is why `--first-release`, whose tag carries the version the manifests declare, is never one. The bare word "channel" always means that ladder; the [CI output channel](../internals/machine-contract-surfaces.md#ci-output-channel) and the gate channel carry their qualifier every time they are written. The plan tree names the channel the run leaves and the one it lands on, so reading suffixes by eye is not part of approving a release.
 
 | Flag | Long Option | Description |
 | :--- | :--- | :--- |
-| | `--channel <CHANNEL>` | Publishes the version the level cuts on this prerelease channel: `alpha`, `beta`, `rc` or `stable`. Without the flag the version keeps no channel of its own, exactly as before. |
+| | `--channel <CHANNEL>` | Publishes on this channel: `alpha`, `beta`, `rc` or `stable` — applied to the version the level cuts, or as a promotion when the version already carries a prerelease. Without the flag the version keeps no channel of its own, exactly as before. |
 | | `--dry-run` | Simulates the release without writing to disk, committing, or pushing tags. |
 | `-fr`, `--fr` | `--first-release` | Cuts an initial release tag without incrementing the manifest version. |
 | | `--skip-preflight <STEP>` | Bypasses one or more named preflight checks (can be repeated). |
@@ -94,13 +94,17 @@ cutver bump minor --defer-publish
 {"released":true,"deferred":false,"version":"0.19.0","tag":"v0.19.0","commit":"abc1234","floating_tag":"v0","publish_push_command":null,"publish_commands":["cargo publish"]}
 ```
 
-`released` is `false` on a `--dry-run`; `floating_tag` is `null` when the run never reached it; `publish_commands` lists the rendered `[publish].commands` and is always an array. `publish_push_command` is the *planned* push line, so it is filled on a `--dry-run` report and `null` on a real run, whose pushes have already happened: read it before the run and confirm the refs afterwards with `git ls-remote origin`. On a detected CI it also fills the runner's sinks ([CI output channel](../internals/machine-contract-surfaces.md#ci-output-channel)).
+`released` is `false` on a `--dry-run` and on a [no-op](#no-op) — the one authority is `!dry_run && !no_op()` (`src/bump/types.rs:348`); `floating_tag` is `null` when the run never reached it; `publish_commands` lists the rendered `[publish].commands` and is always an array. `publish_push_command` is the *planned* push line, so it is filled on a `--dry-run` report and `null` on a real run, whose pushes have already happened: read it before the run and confirm the refs afterwards with `git ls-remote origin`. On a detected CI it also fills the runner's sinks ([CI output channel](../internals/machine-contract-surfaces.md#ci-output-channel)).
+
+#### No-op
+
+A request that yields the version the repository already carries releases nothing: `cutver bump --channel stable` on a stable version with no level named exits `0`, writes no file, makes no commit and creates no tag — no preflight step runs, no hook, no `[publish]` command and no lifecycle plugin dispatch, `on_pre_bump` included. The tree opens a `No-op` section and marks the commit and the tag `[SKIPPED]`, `released` is `false` in `--json`, `--report` and both CI sinks, and a versioning plugin that answers with the current version is reported the same way.
 
 ---
 
 ### `cutver plan`
 
-Computes the release the workspace is about to cut and reports it without changing anything: no file, no git mutation, no `[preflight]`, no `[hooks]`, no `[publish] commands` and no plugin dispatch — not even `on_pre_bump`, which `bump --dry-run` still dispatches. A dirty tree on the wrong branch is the normal case, because that is the state CI asks the question in.
+Computes the release the workspace is about to cut and reports it without changing anything: no file, no git mutation, no `[preflight]`, no `[hooks]`, no `[publish] commands` and no plugin dispatch — not even `on_pre_bump`, which `bump --dry-run` still dispatches. A dirty tree on the wrong branch is the normal case, because that is the state CI asks the question in. A plan on a channel names it in the tree and adds no `channel` key to the JSON: `current_version`, `next_version` and `manifests[].from`/`to` already report the transition.
 
 ```text
 cutver plan [LEVEL] [--json] [--skip-preflight <STEP>]... [--first-release] [--channel <CHANNEL>]

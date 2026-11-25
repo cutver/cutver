@@ -4,7 +4,7 @@
 **Date**: 2026-11-25
 **Owner**: repository maintainer
 **Review date**: 2027-11-25 (proposal; not yet committed by the maintainer)
-**Implementation**: not started
+**Implementation**: on `feat/prerelease-channel` and not yet on `main` — `9c86966` (`--channel` on `bump` and `plan`, its arithmetic, its tests and its reference rows) and `bbaaef0` (promotion). Awaiting merge.
 **Supersedes**: [ADR-0004](0004-prerelease-stage-not-channel.md)
 
 ## Context
@@ -64,7 +64,7 @@ The bare word "channel", with no qualifier, means the prerelease ladder from now
 ## Consequences
 
 - Easier: the flag name is the one a user from `rustup` or the container world already guesses, and nothing new collides with `phases[]`.
-- Easier: `docs/internals/design.md:135` returns to `Pre-release channels (--channel, promotion)` and now cites a decision instead of a proposal.
+- Easier: `docs/internals/design.md:135` reads `Pre-release channels (--channel, promotion)` as `Implemented`, citing the code that decides both cases (`src/semver_bump.rs:77`) and the decision that named it.
 - Harder: every page that mentions the CI surface must keep its qualifier, forever. A test pins the two help strings so the qualifier cannot erode silently.
 - Downside: "channel" is overloaded even when qualified. Three qualified senses is better than five unqualified ones, but it is not zero.
 - Kept honestly: this ADR reverses one made hours earlier, and it records *why* — the earlier cost estimate was wrong, not the earlier evidence. The evidence ADR-0004 gathered about where the word appears is still accurate and still the reason the qualifier is required.
@@ -81,4 +81,4 @@ If it does reopen, the work starts from the CI surface's identity (option b), ne
 - Issue: [#326](https://github.com/cutver/cutver/issues/326), gap 6 and phase 5.
 - Roadmap row: [Evolution Roadmap](../internals/design.md#evolution-roadmap) — `docs/internals/design.md:135`.
 - Surfaces that take their qualifier from this decision: `src/cli/args/commands.rs:13,16`, `docs/reference/cli.md:37`.
-- No issue or pull request number is recorded for the implementation, because there is none yet.
+- No pull request number is recorded for the implementation: the work sits on `feat/prerelease-channel`, and the delivery shape — one pull request with a commit-per-slice reading order, or chained ones — is decided when it is published.

@@ -16,7 +16,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com).
 
 ### ✨ Features
 - **config**: the deprecation channel the contract requires in [#348](https://github.com/cutver/cutver/pull/348) ([256a9e8](https://github.com/cutver/cutver/commit/256a9e875206d6d0660f476b86e659959a45cc98)) by @Row0902
-- **release**: take the release body from notes in the tree in [#343](https://github.com/cutver/cutver/pull/343) ([1deadea](https://github.com/cutver/cutver/commit/1deadeae9571366c6c92832d4299aebd0222da36)) by @Row0902
+- **release**: take the release body from notes in the tree in [#343](https://github.com/cutver/cutver/pull/343) ([1deadea](https://github.com/cutver/cutver/commit/1deadeae9571366c6c92832d4299aebd0222da36)) by @Row0902 — a change to this repository's `release.yml` (the `notes=` input of the render step), not a surface of the binary: the only notes input `cutver` itself accepts is `publish --notes-file`, and no `[release] notes_dir` key exists in the configuration schema
 
 ### 🐛 Fixes
 - **atomic**: bound the replace-rename retry on Windows in [#361](https://github.com/cutver/cutver/pull/361) ([4324adb](https://github.com/cutver/cutver/commit/4324adb97e970591d94b575cc1c9a538967667cf)) by @Row0902

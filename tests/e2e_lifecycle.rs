@@ -42,13 +42,13 @@ post_bump = "touch post_bump_ran.txt"
     let cfg = common::load_config(guard.fixture());
 
     // Dry run: summary records post_bump, command NOT executed
-    let dry_summary = bump_run(&cfg, Bump::Minor, true, &[]).unwrap();
+    let dry_summary = bump_run(&cfg, Bump::Minor, true, &[], None).unwrap();
     assert!(dry_summary.dry_run);
     assert_eq!(dry_summary.post_bump.as_deref(), Some("touch post_bump_ran.txt"));
     assert!(!fixture.dir.join("post_bump_ran.txt").exists());
 
     // Real run: post_bump executes and file is created
-    let real_summary = bump_run(&cfg, Bump::Minor, false, &[]).unwrap();
+    let real_summary = bump_run(&cfg, Bump::Minor, false, &[], None).unwrap();
     assert!(!real_summary.dry_run);
     assert_eq!(real_summary.post_bump.as_deref(), Some("touch post_bump_ran.txt"));
     assert!(fixture.dir.join("post_bump_ran.txt").exists());
@@ -90,13 +90,13 @@ pre_bump = "touch pre_bump_ran.txt"
     let cfg = common::load_config(guard.fixture());
 
     // Dry run: summary records pre_bump, command NOT executed
-    let dry_summary = bump_run(&cfg, Bump::Minor, true, &[]).unwrap();
+    let dry_summary = bump_run(&cfg, Bump::Minor, true, &[], None).unwrap();
     assert!(dry_summary.dry_run);
     assert_eq!(dry_summary.pre_bump.as_deref(), Some("touch pre_bump_ran.txt"));
     assert!(!fixture.dir.join("pre_bump_ran.txt").exists());
 
     // Real run: pre_bump executes and file is created
-    let real_summary = bump_run(&cfg, Bump::Minor, false, &[]).unwrap();
+    let real_summary = bump_run(&cfg, Bump::Minor, false, &[], None).unwrap();
     assert!(!real_summary.dry_run);
     assert_eq!(real_summary.pre_bump.as_deref(), Some("touch pre_bump_ran.txt"));
     assert!(fixture.dir.join("pre_bump_ran.txt").exists());
@@ -136,7 +136,7 @@ pre_bump = "exit 1"
     initial_commit(fixture);
 
     let cfg = common::load_config(guard.fixture());
-    let res = bump_run(&cfg, Bump::Minor, false, &[]);
+    let res = bump_run(&cfg, Bump::Minor, false, &[], None);
     assert!(res.is_err(), "expected bump to fail due to pre_bump exit 1");
 
     // Manifests never touched (remain 1.2.3)
@@ -183,7 +183,7 @@ post_bump = "echo \"lockfile-version-1.3.0\" > Cargo.lock"
     initial_commit(fixture);
 
     let cfg = common::load_config(guard.fixture());
-    let summary = bump_run(&cfg, Bump::Minor, false, &[]).unwrap();
+    let summary = bump_run(&cfg, Bump::Minor, false, &[], None).unwrap();
     assert_eq!(summary.next.to_string(), "1.3.0");
 
     // Check that Cargo.lock was updated and included in the release commit
@@ -236,7 +236,7 @@ post_bump = "echo \"lockfile-root-1.3.0\" > Cargo.lock && echo \"lockfile-nested
     initial_commit(fixture);
 
     let cfg = common::load_config(guard.fixture());
-    let summary = bump_run(&cfg, Bump::Minor, false, &[]).unwrap();
+    let summary = bump_run(&cfg, Bump::Minor, false, &[], None).unwrap();
     assert_eq!(summary.next.to_string(), "1.3.0");
 
     // All lockfiles were updated
@@ -303,7 +303,7 @@ post_bump = "echo \"lockfile-version-1.3.0\" > Cargo.lock && echo \"arbitrary-mo
     initial_commit(fixture);
 
     let cfg = common::load_config(guard.fixture());
-    let summary = bump_run(&cfg, Bump::Minor, false, &[]).unwrap();
+    let summary = bump_run(&cfg, Bump::Minor, false, &[], None).unwrap();
     assert_eq!(summary.next.to_string(), "1.3.0");
 
     // Both files were modified by post_bump hook
@@ -385,7 +385,7 @@ post_bump = "exit 1"
     initial_commit(fixture);
 
     let cfg = common::load_config(guard.fixture());
-    let res = bump_run(&cfg, Bump::Minor, false, &[]);
+    let res = bump_run(&cfg, Bump::Minor, false, &[], None);
     assert!(res.is_err(), "expected bump to fail due to post_bump exit 1");
 
     // Manifests rolled back to 1.2.3
@@ -441,7 +441,7 @@ commands = ["echo published {version} > published.txt"]
     let cfg = common::load_config(guard.fixture());
 
     // Dry run: reported in summary, neither push nor commands executed
-    let dry_summary = bump_run(&cfg, Bump::Minor, true, &[]).unwrap();
+    let dry_summary = bump_run(&cfg, Bump::Minor, true, &[], None).unwrap();
     assert!(dry_summary.dry_run);
     assert!(dry_summary.publish_push);
     assert_eq!(
@@ -457,7 +457,7 @@ commands = ["echo published {version} > published.txt"]
     assert!(String::from_utf8_lossy(&remote_tags.stdout).trim().is_empty());
 
     // Real run: push and commands executed
-    let real_summary = bump_run(&cfg, Bump::Minor, false, &[]).unwrap();
+    let real_summary = bump_run(&cfg, Bump::Minor, false, &[], None).unwrap();
     assert!(!real_summary.dry_run);
     assert!(real_summary.publish_push);
     assert_eq!(
@@ -516,7 +516,7 @@ push = true
     let cfg = common::load_config(guard.fixture());
 
     // Dry run
-    let dry_summary = bump_run(&cfg, Bump::Minor, true, &[]).unwrap();
+    let dry_summary = bump_run(&cfg, Bump::Minor, true, &[], None).unwrap();
     assert!(dry_summary.dry_run);
     assert!(dry_summary.publish_push);
     assert_eq!(
@@ -528,7 +528,7 @@ push = true
     );
 
     // Real run: both v1.3.0 and v1 pushed to remote
-    let real_summary = bump_run(&cfg, Bump::Minor, false, &[]).unwrap();
+    let real_summary = bump_run(&cfg, Bump::Minor, false, &[], None).unwrap();
     assert!(!real_summary.dry_run);
     assert_eq!(real_summary.floating_tag.as_deref(), Some("v1"));
 
@@ -579,14 +579,14 @@ push = true
     let cfg = common::load_config(guard.fixture());
 
     // Dry run dynamically resolves active branch "release-branch"
-    let dry_summary = bump_run(&cfg, Bump::Minor, true, &[]).unwrap();
+    let dry_summary = bump_run(&cfg, Bump::Minor, true, &[], None).unwrap();
     assert_eq!(
         dry_summary.publish_push_command.as_deref(),
         Some("git push origin refs/heads/release-branch && git push origin refs/tags/v1.3.0")
     );
 
     // Real run pushes release-branch and tag to remote
-    let real_summary = bump_run(&cfg, Bump::Minor, false, &[]).unwrap();
+    let real_summary = bump_run(&cfg, Bump::Minor, false, &[], None).unwrap();
     assert_eq!(real_summary.publish_push_command.as_deref(), None);
 
     // Verify tag pushed to remote
@@ -638,12 +638,12 @@ commands = ["sleep 5"]
     let cfg = common::load_config(guard.fixture());
 
     // Dry run remains unaffected (commands are recorded but not executed)
-    let dry_summary = bump_run(&cfg, Bump::Minor, true, &[]).unwrap();
+    let dry_summary = bump_run(&cfg, Bump::Minor, true, &[], None).unwrap();
     assert_eq!(dry_summary.publish_commands, vec!["sleep 5"]);
 
     // Real run: command times out and aborts without hanging
     let start = std::time::Instant::now();
-    let err = bump_run(&cfg, Bump::Minor, false, &[]).unwrap_err();
+    let err = bump_run(&cfg, Bump::Minor, false, &[], None).unwrap_err();
     let elapsed = start.elapsed();
 
     assert!(
@@ -710,7 +710,7 @@ post_bump = "echo bun-lock >> bun.lock && echo uv-lock >> uv.lock && echo pdm-lo
     initial_commit(fixture);
 
     let cfg = common::load_config(guard.fixture());
-    let _summary = bump_run(&cfg, Bump::Patch, false, &[]).unwrap();
+    let _summary = bump_run(&cfg, Bump::Patch, false, &[], None).unwrap();
 
     let commit_files = head_commit_files(fixture);
     assert!(
@@ -774,7 +774,7 @@ commands = [
 
     let cfg = common::load_config(guard.fixture());
 
-    let summary = bump_run(&cfg, Bump::Minor, false, &[]).unwrap();
+    let summary = bump_run(&cfg, Bump::Minor, false, &[], None).unwrap();
     assert_eq!(summary.next.to_string(), "1.3.0");
     assert_eq!(
         summary.post_bump.as_deref(),
@@ -853,7 +853,7 @@ env = ["PATH"]
     initial_commit(fixture);
 
     let cfg = common::load_config(guard.fixture());
-    let res = bump_run(&cfg, Bump::Minor, false, &[]);
+    let res = bump_run(&cfg, Bump::Minor, false, &[], None);
 
     let err = res.expect_err("bump must fail due to pre-bump rejection");
     match err {
@@ -930,7 +930,7 @@ env = ["PATH"]
     initial_commit(fixture);
 
     let cfg = common::load_config(guard.fixture());
-    let res = bump_run(&cfg, Bump::Minor, false, &[]);
+    let res = bump_run(&cfg, Bump::Minor, false, &[], None);
     assert!(res.is_err(), "expected bump to fail due to post_bump plugin exit 1");
 
     // Manifests rolled back to 1.2.3 byte-for-byte by MutationTransaction
@@ -999,7 +999,7 @@ env = ["PATH"]
     initial_commit(fixture);
 
     let cfg = common::load_config(guard.fixture());
-    let summary = bump_run(&cfg, Bump::Minor, false, &[]).unwrap();
+    let summary = bump_run(&cfg, Bump::Minor, false, &[], None).unwrap();
 
     assert_eq!(summary.next.to_string(), "1.3.0");
     assert_eq!(summary.tag, "v1.3.0");
@@ -1092,7 +1092,7 @@ env = ["PATH"]
     );
 
     let cfg = common::load_config(guard.fixture());
-    bump_run(&cfg, Bump::Minor, false, &[]).expect("bump should succeed");
+    bump_run(&cfg, Bump::Minor, false, &[], None).expect("bump should succeed");
 
     let payload = fixture.read("post-release.json");
     assert!(

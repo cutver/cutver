@@ -17,14 +17,16 @@ use crate::git;
 use crate::plugin::PluginManager;
 use crate::plugin::dto::{PostBumpPayload, PreBumpPayload};
 use crate::preflight;
+use crate::semver_bump::Channel;
 
 pub fn run(
     config: &Config,
     bump_kind: impl Into<BumpLevel>,
     dry_run: bool,
     skip_preflight: &[String],
+    channel: Option<Channel>,
 ) -> Result<Summary, Error> {
-    run_with_first_release(config, bump_kind, dry_run, skip_preflight, false)
+    run_with_first_release(config, bump_kind, dry_run, skip_preflight, false, channel)
 }
 
 pub fn run_with_first_release(
@@ -33,8 +35,17 @@ pub fn run_with_first_release(
     dry_run: bool,
     skip_preflight: &[String],
     first_release: bool,
+    channel: Option<Channel>,
 ) -> Result<Summary, Error> {
-    run_staged(config, bump_kind, dry_run, skip_preflight, first_release, false)
+    run_staged(
+        config,
+        bump_kind,
+        dry_run,
+        skip_preflight,
+        first_release,
+        false,
+        channel,
+    )
 }
 
 /// Same as [`run_with_first_release`], but stops after the bump commit and the branch push: the tag,
@@ -46,8 +57,9 @@ pub fn run_deferred_publish(
     dry_run: bool,
     skip_preflight: &[String],
     first_release: bool,
+    channel: Option<Channel>,
 ) -> Result<Summary, Error> {
-    run_staged(config, bump_kind, dry_run, skip_preflight, first_release, true)
+    run_staged(config, bump_kind, dry_run, skip_preflight, first_release, true, channel)
 }
 
 fn run_staged(
@@ -57,12 +69,14 @@ fn run_staged(
     skip_preflight: &[String],
     first_release: bool,
     defer_publish: bool,
+    channel: Option<Channel>,
 ) -> Result<Summary, Error> {
     let repo = &config.root_dir;
     let request = ComputeRequest {
         level: bump_kind.into(),
         skip_preflight,
         first_release,
+        channel,
         mode: if dry_run { PlanMode::DryRun } else { PlanMode::Write },
     };
     // Stage 1 of the one computation (`src/bump/plan.rs`): the guards, the versions, the tag, the

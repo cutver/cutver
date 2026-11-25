@@ -85,7 +85,7 @@ env = ["PATH"]
     run_git_ok(&fixture.dir, &["commit", "-m", "feat: cool new feature"]);
 
     let cfg = common::load_config(guard.fixture());
-    let res = bump_run(&cfg, Bump::Minor, false, &[]);
+    let res = bump_run(&cfg, Bump::Minor, false, &[], None);
 
     assert!(res.is_ok(), "bump should succeed with changelog plugin: {res:?}");
     let changelog_content = fixture.read("CHANGELOG.md");
@@ -147,7 +147,7 @@ env = ["PATH"]
     run_git_ok(&fixture.dir, &["commit", "-m", "feat: cool new feature"]);
 
     let cfg = common::load_config(guard.fixture());
-    let res = bump_run(&cfg, Bump::Minor, false, &[]);
+    let res = bump_run(&cfg, Bump::Minor, false, &[], None);
 
     assert!(
         res.is_ok(),
@@ -222,7 +222,7 @@ env = ["PATH"]
     run_git_ok(&fixture.dir, &["commit", "-m", "feat: cool new feature"]);
 
     let cfg = common::load_config(guard.fixture());
-    let res = bump_run(&cfg, Bump::Minor, false, &[]);
+    let res = bump_run(&cfg, Bump::Minor, false, &[], None);
 
     assert!(res.is_err(), "bump should fail when changelog plugin fails");
 

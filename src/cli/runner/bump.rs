@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use crate::atomic;
 use crate::bump::{self, Summary};
 use crate::cli::args::BumpLevel;
+use crate::cli::args::Channel;
 use crate::config;
 
 use super::dispatch::print_error;
@@ -29,12 +30,14 @@ pub fn run_bump(
     skip_preflight: &[String],
     first_release: bool,
     defer_publish: bool,
+    channel: Option<Channel>,
     output: BumpOutput,
 ) -> i32 {
+    let channel = channel.map(Into::into);
     let outcome = if defer_publish {
-        bump::run_deferred_publish(config, level, dry_run, skip_preflight, first_release)
+        bump::run_deferred_publish(config, level, dry_run, skip_preflight, first_release, channel)
     } else {
-        bump::run_with_first_release(config, level, dry_run, skip_preflight, first_release)
+        bump::run_with_first_release(config, level, dry_run, skip_preflight, first_release, channel)
     };
     match outcome {
         Ok(summary) => match emit(&summary, &output) {

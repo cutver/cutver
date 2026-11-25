@@ -77,6 +77,7 @@ pub fn run(args: Cli) -> i32 {
         }
         Commands::Bump {
             level,
+            channel,
             dry_run,
             skip_preflight,
             first_release,
@@ -96,11 +97,13 @@ pub fn run(args: Cli) -> i32 {
                 &skip_preflight,
                 first_release,
                 defer_publish,
+                channel,
                 BumpOutput { json, report },
             )
         }
         Commands::Plan {
             level,
+            channel,
             json,
             skip_preflight,
             first_release,
@@ -110,7 +113,7 @@ pub fn run(args: Cli) -> i32 {
                 Ok(c) => c,
                 Err(code) => return code,
             };
-            run_plan(&config, level, &skip_preflight, first_release, json)
+            run_plan(&config, level, &skip_preflight, first_release, channel, json)
         }
         Commands::Publish {
             tag,

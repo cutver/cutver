@@ -141,7 +141,7 @@ kind = "template"
     commit(fixture, "feat: default template path");
 
     let cfg = common::load_config(guard.fixture());
-    bump_run(&cfg, Bump::Minor, false, &[]).expect("bump should succeed with the default template");
+    bump_run(&cfg, Bump::Minor, false, &[], None).expect("bump should succeed with the default template");
 
     assert_eq!(fixture.read("include/version.h"), "#define DEMO_VERSION \"2.1.0\"\n");
 }
@@ -177,7 +177,7 @@ template = "src/absent.jinja"
     commit(fixture, "feat: missing template");
 
     let cfg = common::load_config(guard.fixture());
-    let err = bump_run(&cfg, Bump::Minor, false, &[]).unwrap_err();
+    let err = bump_run(&cfg, Bump::Minor, false, &[], None).unwrap_err();
     let message = err.to_string();
     assert!(
         message.contains("absent.jinja"),
@@ -294,7 +294,7 @@ fn an_unreadable_sink_aborts_before_any_write() {
     let cargo_before = fixture.read("Cargo.toml");
 
     let cfg = common::load_config(fixture);
-    let err = bump_run(&cfg, Bump::Minor, false, &[]).unwrap_err();
+    let err = bump_run(&cfg, Bump::Minor, false, &[], None).unwrap_err();
 
     assert!(
         matches!(err, cutver::bump::Error::ReadUnreadable { .. }),
@@ -364,7 +364,7 @@ path = "CHANGELOG.md"
     );
 
     let cfg = common::load_config(fixture);
-    let err = bump_run(&cfg, Bump::Minor, false, &[]).unwrap_err();
+    let err = bump_run(&cfg, Bump::Minor, false, &[], None).unwrap_err();
     let _ = std::fs::remove_file(fixture.dir.join(".git/index.lock"));
 
     assert!(

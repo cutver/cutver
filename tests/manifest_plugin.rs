@@ -103,7 +103,7 @@ env = ["PATH"]
     assert!(doctor_drifts.is_empty(), "doctor should report no drift");
 
     // Execute bump minor
-    let summary = bump_run(&cfg, Bump::Minor, false, &[]).unwrap();
+    let summary = bump_run(&cfg, Bump::Minor, false, &[], None).unwrap();
     assert_eq!(summary.next.to_string(), "1.3.0");
     assert_eq!(summary.tag, "v1.3.0");
 
@@ -184,7 +184,7 @@ env = ["PATH"]
     fixture.write("cutver.toml", &failing_toml);
 
     let cfg_fail = common::load_config(guard.fixture());
-    let res = bump_run(&cfg_fail, Bump::Minor, false, &[]);
+    let res = bump_run(&cfg_fail, Bump::Minor, false, &[], None);
     assert!(res.is_err(), "bump should fail when plugin manifest write fails");
 
     // Zero disk mutation occurred

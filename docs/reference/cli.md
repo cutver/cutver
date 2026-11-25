@@ -65,8 +65,11 @@ cutver bump [LEVEL] [OPTIONS]
 
 `[LEVEL]` is `patch`, `minor`, `major` or `auto` (default: `auto`).
 
+`--channel <CHANNEL>` is the prerelease ladder: `alpha`, `beta` and `rc` append the channel and start its counter (`1.3.0` becomes `1.3.0-alpha.1`), and `stable` is the release itself. The bare word "channel" always means that ladder; the [CI output channel](../internals/machine-contract-surfaces.md#ci-output-channel) and the gate channel carry their qualifier every time they are written. The plan tree names the channel the run leaves and the one it lands on, so reading suffixes by eye is not part of approving a release.
+
 | Flag | Long Option | Description |
 | :--- | :--- | :--- |
+| | `--channel <CHANNEL>` | Publishes the version the level cuts on this prerelease channel: `alpha`, `beta`, `rc` or `stable`. Without the flag the version keeps no channel of its own, exactly as before. |
 | | `--dry-run` | Simulates the release without writing to disk, committing, or pushing tags. |
 | `-fr`, `--fr` | `--first-release` | Cuts an initial release tag without incrementing the manifest version. |
 | | `--skip-preflight <STEP>` | Bypasses one or more named preflight checks (can be repeated). |
@@ -100,11 +103,12 @@ cutver bump minor --defer-publish
 Computes the release the workspace is about to cut and reports it without changing anything: no file, no git mutation, no `[preflight]`, no `[hooks]`, no `[publish] commands` and no plugin dispatch — not even `on_pre_bump`, which `bump --dry-run` still dispatches. A dirty tree on the wrong branch is the normal case, because that is the state CI asks the question in.
 
 ```text
-cutver plan [LEVEL] [--json] [--skip-preflight <STEP>]... [--first-release]
+cutver plan [LEVEL] [--json] [--skip-preflight <STEP>]... [--first-release] [--channel <CHANNEL>]
 ```
 
 | Flag | Long Option | Description |
 | :--- | :--- | :--- |
+| | `--channel <CHANNEL>` | Reports the version the run would cut on this prerelease channel: `alpha`, `beta`, `rc` or `stable`, computed exactly like `bump --channel`. A plan reports it and writes nothing. |
 | | `--json` | Prints the plan as one JSON object on stdout instead of the plan tree. |
 | | `--skip-preflight <STEP>` | Marks a named preflight step as skipped; a plan never runs one (can be repeated). |
 | `-fr`, `--fr` | `--first-release` | Plans the initial release: the tag carries the version the manifests already declare. |

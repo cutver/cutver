@@ -151,17 +151,64 @@ pub fn create_environment() -> minijinja::Environment<'static> {
 /// The process environment is read at exactly one place, [`create_environment`]; everything below
 /// the boundary takes the lookup as an argument, so a rendering test can state what the environment
 /// says without writing to a variable every other thread in the test binary can read (#352).
+///
+/// `env()` takes a variable name and an optional default (#358): one argument renders an absent
+/// variable as undefined, which is what shipped, and two render the default instead.
 pub fn create_environment_with_env_lookup<F>(lookup: F) -> minijinja::Environment<'static>
 where
     F: Fn(&str) -> Option<String> + Send + Sync + 'static,
 {
     let mut env = minijinja::Environment::new();
     env.set_auto_escape_callback(|_| minijinja::AutoEscape::None);
-    env.add_function("env", lookup);
+    let lookup = std::sync::Arc::new(lookup);
+    env.add_function("env", move |args: minijinja::value::Rest<minijinja::Value>| {
+        env_from_lookup(&*lookup, &args)
+    });
+
     env.add_filter("group_by_scope", group_by_scope_filter);
     env.add_filter("group_by_type", group_by_type_filter);
     env.add_filter("group_by_section", group_by_section_filter);
     env
+}
+
+/// The `env()` global behind the environment above: `<name>` plus an optional `<default>`.
+///
+/// The default applies **only** when the variable is absent. A set variable always wins, including
+/// an empty one, because the lookup already treats presence as the question it answers. Arity and
+/// types are checked here rather than left to miniJinja, so a template written against a different
+/// engine gets a message naming the call instead of a coercion.
+fn env_from_lookup<F>(
+    lookup: &F,
+    args: &minijinja::value::Rest<minijinja::Value>,
+) -> Result<minijinja::Value, minijinja::Error>
+where
+    F: Fn(&str) -> Option<String> + ?Sized,
+{
+    let missing = || {
+        minijinja::Error::new(
+            minijinja::ErrorKind::MissingArgument,
+            "env() needs a variable name: `env(\"NAME\")` or `env(\"NAME\", \"default\")`",
+        )
+    };
+    let name = args.0.first().ok_or_else(missing)?;
+    let name = name.as_str().ok_or_else(|| {
+        minijinja::Error::new(
+            minijinja::ErrorKind::InvalidOperation,
+            "env() takes the variable name as a string",
+        )
+    })?;
+
+    match args.0.len() {
+        1 => Ok(lookup(name).map_or(minijinja::Value::UNDEFINED, minijinja::Value::from)),
+        2 => Ok(match lookup(name) {
+            Some(value) => minijinja::Value::from(value),
+            None => args.0[1].clone(),
+        }),
+        given => Err(minijinja::Error::new(
+            minijinja::ErrorKind::TooManyArguments,
+            format!("env() takes a variable name and an optional default, {given} arguments given"),
+        )),
+    }
 }
 
 /// Helper to normalize legacy `{version}` and `{tag}` tokens to MiniJinja syntax `{{ version }}` and `{{ tag }}`.
@@ -270,5 +317,58 @@ mod tests {
         // leaves untouched; what the control proves is that the value above came from the lookup and
         // not from whatever the process happens to hold.
         assert_ne!(render(|_| None), "cutver_awesome_val");
+    }
+
+    /// #358: the authoring reference publishes `env("VAR", "default")`, and that page ships inside
+    /// the crates.io tarball, so a call the engine rejects is a defect in every published artefact
+    /// rather than a stale website.
+    #[test]
+    fn the_env_global_takes_an_optional_default() {
+        let render = |lookup: fn(&str) -> Option<String>| {
+            create_environment_with_env_lookup(lookup)
+                .render_str(
+                    r#"{{ env("CUTVER_TEST_ENV_VAR", "fallback") }}"#,
+                    minijinja::Value::UNDEFINED,
+                )
+                .expect("the env global renders with a default")
+        };
+
+        fn keeps(key: &str) -> Option<String> {
+            (key == "CUTVER_TEST_ENV_VAR").then(|| "cutver_awesome_val".to_string())
+        }
+
+        assert_eq!(
+            render(keeps),
+            "cutver_awesome_val",
+            "a set variable wins over the default"
+        );
+        assert_eq!(render(|_| None), "fallback", "an absent variable renders the default");
+    }
+
+    /// S1: arity and type are checked by the global, not left to the engine, so a template copied
+    /// from another ecosystem fails naming the call it wrote rather than with a coercion.
+    #[test]
+    fn the_env_global_rejects_a_call_it_cannot_answer() {
+        let render = |template: &str| {
+            create_environment_with_env_lookup(|_| None)
+                .render_str(template, minijinja::Value::UNDEFINED)
+                .expect_err("the call is refused")
+                .to_string()
+        };
+
+        let too_many = render(r#"{{ env("A", "b", "c") }}"#);
+        assert!(
+            too_many.contains("env() takes a variable name and an optional default"),
+            "{too_many}"
+        );
+
+        let no_args = render("{{ env() }}");
+        assert!(no_args.contains("env() needs a variable name"), "{no_args}");
+
+        let not_a_string = render("{{ env(1) }}");
+        assert!(
+            not_a_string.contains("env() takes the variable name as a string"),
+            "{not_a_string}"
+        );
     }
 }

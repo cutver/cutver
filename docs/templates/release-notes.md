@@ -112,7 +112,7 @@ The `commits` list provides rich commit metadata for custom loops:
   `style`, `revert` — followed by any other type alphabetically, so a release reads the same way
   regardless of the order the commits landed in.
 - `commits | group_by_scope`: Groups commits by conventional scope.
-- `env("VAR_NAME", "default")`: Accesses environment variables directly inside templates (e.g. `{{ env("GITHUB_ACTOR", "CI") }}`).
+- `env("VAR_NAME")` / `env("VAR_NAME", "default")`: Reads an environment variable inside a template. With one argument an absent variable renders as nothing; with a second, that second argument is used instead, and a variable that is set always wins over it. For example `{{ env("GITHUB_ACTOR", "CI") }}`. Any other number of arguments, or a name that is not a string, fails with a message naming the call (#358).
 
 ---
 

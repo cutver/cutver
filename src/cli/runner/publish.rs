@@ -8,6 +8,7 @@ use crate::bump::{self, PublishRequest, PublishSummary};
 use crate::cli::style::Theme;
 use crate::cli::tree;
 use crate::config;
+use crate::plugin::{PluginManager, PluginOperation};
 
 use super::dispatch::print_error;
 use crate::cli::machine::FailureCode;
@@ -24,7 +25,10 @@ pub fn run_publish(config: &config::Config, request: PublishRequest) -> i32 {
     }
     match bump::run_publish(config, &request) {
         Ok(summary) => {
-            print_publish_summary(&summary);
+            // A resume dispatches no `on_post_release` plugin, so the tree names the ones it left
+            // alone instead of letting the omission pass silently (#326 D2).
+            let left_alone = request.resume.then(|| left_alone_line(config));
+            print_publish_summary(&summary, left_alone.as_deref());
             crate::cli::ci::on_publish_success(&summary);
             0
         }
@@ -61,9 +65,15 @@ impl NotesInput {
     }
 }
 
-fn plan_header(summary: &PublishSummary, theme: &Theme) -> String {
+fn plan_header(summary: &PublishSummary, theme: &Theme, resume: Option<&str>) -> String {
+    let resumed = resume.is_some();
     let (icon, title) = if summary.dry_run {
-        (theme.info_icon(), "Publish Plan")
+        let title = if resumed { "Resume Plan" } else { "Publish Plan" };
+        (theme.info_icon(), title)
+    } else if resumed {
+        // A resume repeats the closing steps of a release an earlier run started; it is not a fresh
+        // publication, so it says what it is instead of claiming one (#326 S4, D2).
+        (theme.success_icon(), "Resumed")
     } else {
         (theme.success_icon(), "Published")
     };
@@ -73,7 +83,11 @@ fn plan_header(summary: &PublishSummary, theme: &Theme) -> String {
 }
 
 /// One entry per thing the closing phase did, in the order `publish::finalize` ran them.
-fn publish_sections(summary: &PublishSummary, theme: &Theme) -> Vec<(&'static str, Vec<String>)> {
+///
+/// A resume adds the one section its evidence cannot show: which steps were repeated because
+/// repeating them is harmless, what that means for a tag, a push or a floating major tag that was
+/// already in place, and which `on_post_release` plugins it left alone (#326 D2).
+fn publish_sections(summary: &PublishSummary, theme: &Theme, resume: Option<&str>) -> Vec<(&'static str, Vec<String>)> {
     let mut sections = vec![("Tag", vec![theme.accent(&summary.tag)])];
     if let Some(floating) = &summary.floating_tag {
         sections.push(("Floating tag", vec![theme.accent(floating)]));
@@ -85,13 +99,48 @@ fn publish_sections(summary: &PublishSummary, theme: &Theme) -> Vec<(&'static st
     if !summary.publish_commands.is_empty() {
         sections.push(("Commands", summary.publish_commands.clone()));
     }
+    if let Some(left_alone) = resume {
+        sections.push((
+            "Resume",
+            vec![
+                "repeated only the steps that are harmless to repeat: the release tag, its push, the floating major tag and the gates".to_string(),
+                "a tag, a push or a floating major tag already in place was left as it was, and no `[publish] commands` entry ran without its `publish-<n>` attestation".to_string(),
+                left_alone.to_string(),
+            ],
+        ));
+    }
     sections
 }
 
+/// The `Resume` line naming the `on_post_release` plugins this run left alone (#326 D2).
+///
+/// The selection is the manager's own, so the note cannot drift from what `finalize` would have
+/// dispatched: `dispatch_post_release` returns early on a resume. Building the manager a second time
+/// is the price of a `PublishSummary` that carries no field for the list, and a resume is the only
+/// path that asks.
+fn left_alone_line(config: &config::Config) -> String {
+    let event = PluginOperation::OnPostRelease.as_str();
+    let mut names: Vec<String> = match PluginManager::from_config(&config.plugins, &config.root_dir) {
+        Ok(manager) => manager.plugins_for_event(event).map(ToString::to_string).collect(),
+        // A publishing run built this same manager before it wrote anything, so a summary that
+        // exists proves the load; saying so beats naming plugins nobody selected.
+        Err(_) => return format!("`{event}` not dispatched: the plugins could not be loaded to name them"),
+    };
+    if names.is_empty() {
+        return format!("`{event}` not dispatched: this workspace declares no plugin for that event");
+    }
+    names.sort();
+    let named: Vec<String> = names.iter().map(|name| format!("`{name}`")).collect();
+    format!(
+        "`{event}` not dispatched: {} left alone, because a plugin may already have run in the attempt this resume continues (`cutver publish` without `--resume` dispatches it)",
+        named.join(", ")
+    )
+}
+
 /// Renders the closing phase as a tree, using the same glyphs as the release plan.
-pub fn render_publish_plan(summary: &PublishSummary, theme: &Theme) -> String {
-    let mut out = plan_header(summary, theme);
-    let sections = publish_sections(summary, theme);
+pub fn render_publish_plan(summary: &PublishSummary, theme: &Theme, resume: Option<&str>) -> String {
+    let mut out = plan_header(summary, theme, resume);
+    let sections = publish_sections(summary, theme, resume);
     let total = sections.len();
     for (index, (title, items)) in sections.iter().enumerate() {
         for line in tree::render_section_with_items(title, items, index + 1 == total) {
@@ -102,10 +151,10 @@ pub fn render_publish_plan(summary: &PublishSummary, theme: &Theme) -> String {
     out
 }
 
-pub fn print_publish_summary(summary: &PublishSummary) {
+pub fn print_publish_summary(summary: &PublishSummary, resume: Option<&str>) {
     let theme = Theme::stdout();
     if summary.dry_run {
         println!("{}\n", tree::render_simulation_banner(&theme));
     }
-    println!("{}", render_publish_plan(summary, &theme));
+    println!("{}", render_publish_plan(summary, &theme, resume));
 }

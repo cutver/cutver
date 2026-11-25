@@ -133,11 +133,42 @@ cutver publish --tag <TAG> [OPTIONS]
 | | `--notes-file <PATH>` | Release notes for the `on_post_release` payload, which is what renders the draft release. The file is the command's input rather than a change in the tree, so a path that names a directory is refused before the clean-tree check; `-` reads the notes from standard input instead. An empty stream — or one carrying only whitespace — is refused before the tag, the pushes and the commands, because a release published with no notes cannot be corrected by re-running. |
 | | `--require-gate <NAME>` | Refuses to publish unless this gate has an attestation for the commit being published (can be repeated). It adds to the gates `[gates] require` already declares, which `publish` enforces whether or not the flag is given; a gate named both ways is required once. The refusal names the gate and the commit, and a recorded `failure` refuses too. `[gates] dir` is exempt from the clean-tree check exactly like `--notes-file`: an attestation is an input, not a change in the tree. See [`cutver attest`](#cutver-attest). |
 | | `--dry-run` | Validates and prints the plan without creating a tag, pushing anything or running a command. |
+| | `--resume` | Continues a release an earlier `cutver publish` left unfinished, driven by the repository instead of a run record: it repeats only the steps that are harmless to repeat and refuses whatever the evidence contradicts. It requires `--commit`, it will not run a `[publish] commands` entry again unless `publish-<i>` — the entry's 1-based position in declaration order — holds an attestation with conclusion `success` for that commit, and it dispatches no `on_post_release` plugin. `--dry-run --resume` reports the verdict the real resume would reach and writes nothing. |
 | `-c <PATH>` | `--config <PATH>` | Explicit path to `cutver.toml`. |
+
+#### What `--resume` refuses
+
+Nothing persists a run record, so a resume reads the repository for its plan: the release tag here and
+on the remote, the floating major tag, and one `publish-<i>` attestation per `[publish] commands` entry.
+Within that evidence it repeats only what is harmless to repeat — creating a tag that is absent, pushing
+it, moving the floating major tag, verifying the gates read-only — and it refuses, naming the step and
+the evidence it found, whenever the repository says this is not the release it continues:
+
+- **no `--commit`** — a resume cannot re-identify the release it continues, which is why the flag
+  requires the commit rather than guessing at `HEAD`;
+- **`--commit` is not `HEAD`** — the release moved on, and the same rule a plain `cutver publish`
+  applies stands here;
+- **the version the manifests declare at `HEAD` does not produce `--tag`** — the same derivation a plain
+  `cutver publish` performs;
+- **the local or the remote tag `--tag` points at another commit** — a tag naming a different commit is
+  a different release, so repeating a step over it would rewrite something this run did not do;
+- **a `[publish] commands` entry has no `publish-<i>` attestation with conclusion `success` for
+  `--commit`**, where `<i>` is the entry's 1-based position in declaration order. An arbitrary command
+  is the one step a resume may not repeat on the tool's own judgement: record the verdict with
+  `cutver attest publish-1 --commit <sha> --conclusion success` once it really succeeded, then resume.
+- **an `on_post_release` plugin is not dispatched at all** — a plugin is arbitrary code too, and it may
+  already have run in the attempt this resume continues, so repeating it is exactly the guess a resume
+  refuses to make. The tree names the plugins it left alone. Inspect the release, and run `cutver publish`
+  without `--resume` if the plugin still has to run.
+
+A refusal names the entry's position and the command verbatim, and writes, tags, pushes and executes
+nothing. A resume whose steps are all already in place exits `0`, reports itself as `Resumed` rather
+than `Published`, and leaves the tag and the remote exactly as they were.
 
 ```bash
 cutver bump minor --defer-publish --report .cutver-release.json
 cutver publish --tag v1.3.0 --commit "$(git rev-parse HEAD)" --notes-file RELEASE_NOTES.md
+cutver publish --tag v1.3.0 --commit "$(git rev-parse HEAD)" --resume
 ```
 
 ---

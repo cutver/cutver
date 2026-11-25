@@ -84,6 +84,29 @@ pub enum Error {
     )]
     PublishCommitMismatch { expected: String, actual: String },
     #[error(
+        "`cutver publish --resume` requires `--commit`: a resume cannot re-identify the release it continues\n  Where: `cutver publish --resume` preconditions, before the clean-tree check and before the tag, the pushes and the publish commands\n  Fix: pass the release commit an earlier run left behind (`--commit $(git rev-parse HEAD)`). Nothing persists a run record, so `--commit` is the only thing a resume can compare HEAD, the tag and the attestations against; without it the invocation would be a plain publish, which is `cutver publish --tag <tag>` with no `--resume`. Nothing was written, tagged, pushed or executed."
+    )]
+    ResumeNeedsCommit,
+    #[error(
+        "`cutver publish --resume` cannot continue release '{tag}': the tag points at {actual} {found}, not at the release commit {expected}\n  Where: `cutver publish --resume` preconditions, before the tag, the pushes and the publish commands\n  Fix: a tag naming another commit is a different release, so repeating a step over it would rewrite something this run did not do. Confirm what the remote holds (`git ls-remote origin`), then either point the tag back at {expected} (`git tag -f -a {tag} {expected}`) if this release cut it, or publish the release {actual} belongs to. Nothing was written, pushed or executed."
+    )]
+    ResumeTagElsewhere {
+        tag: String,
+        found: String,
+        expected: String,
+        actual: String,
+    },
+    #[error(
+        "`cutver publish --resume` will not repeat `[publish] commands` entry {index} ('{command}'): the gate channel holds no '{gate}' attestation with conclusion 'success' for release commit {commit} (looked for '{path}')\n  Where: `cutver publish --resume` preconditions, before the tag, the pushes and the publish commands\n  Fix: a `[publish] commands` entry is an arbitrary command, so a resume repeats it only when the gate channel already records it as done for this commit, and '{gate}' names the entry's 1-based position in the declaration. Once that step really succeeded, record the verdict (`cutver attest {gate} --commit {commit} --conclusion success`) and re-run the resume. Nothing was written, pushed or executed."
+    )]
+    ResumePublishCommandUnattested {
+        index: usize,
+        command: String,
+        gate: String,
+        commit: String,
+        path: String,
+    },
+    #[error(
         "declared artifact '{label}' matched {found} file(s), {required} required (glob '{glob}')\n  Where: `cutver publish` artifact verification, after validation and before the tag, the pushes and the publish commands\n  Fix: build the files the glob names before publishing, or correct the `[[artifact]]` declaration in cutver.toml. Nothing was tagged, pushed or executed."
     )]
     ArtifactMissing {

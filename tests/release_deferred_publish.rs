@@ -96,6 +96,7 @@ fn publish_request(tag: &str, commit: Option<String>) -> PublishRequest {
         notes_file: None,
         require_gate: Vec::new(),
         dry_run: false,
+        resume: false,
     }
 }
 
@@ -1213,5 +1214,521 @@ fn a_publish_command_that_outlives_its_timeout_keeps_its_failure() {
     assert!(
         !fixture.dir.join("published.txt").exists(),
         "the killed command must not have produced its output"
+    );
+}
+
+// ------------------------------------------------------------------------------------------------
+// `cutver publish --resume` (#326 S4, D2, D4, D5)
+//
+// Nothing persists a run record, so a resume reads the repository for its evidence: the release tag
+// here and on the remote, the floating major tag, and one attestation per `[publish] commands` entry
+// (`publish-1`, `publish-2`, … by 1-based declaration order, D4). Within that evidence it repeats
+// only the steps that are harmless to repeat, and it refuses whatever the evidence contradicts.
+// ------------------------------------------------------------------------------------------------
+
+/// `cutver publish` spelled as an argument list, so the flag surface is what these cases exercise.
+fn publish_cli(fixture: &Fixture, args: &[&str]) -> std::process::Output {
+    cutver_command(&fixture.dir)
+        .args(["publish"])
+        .args(args)
+        .output()
+        .expect("failed to execute cutver publish")
+}
+
+/// `cutver attest publish-<n> …`, the one thing that makes a resume willing to repeat a step (D4).
+fn attest_step(fixture: &Fixture, gate: &str, commit: &str) {
+    let out = cutver_command(&fixture.dir)
+        .args(["attest", gate, "--commit", commit, "--conclusion", "success"])
+        .output()
+        .expect("failed to execute cutver attest");
+    assert!(
+        out.status.success(),
+        "attesting '{gate}' must succeed; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+/// Nothing a refused resume may leave behind: no tag, no push, no publish command.
+fn assert_nothing_was_published(fixture: &Fixture, remote: &Fixture) {
+    assert!(!tag_exists(fixture, "v1.3.0"), "no release tag may be created");
+    assert!(
+        !remote_refs(&remote.dir).contains("refs/tags/"),
+        "nothing may be pushed: {}",
+        remote_refs(&remote.dir)
+    );
+    assert!(
+        !fixture.dir.join("published.txt").exists(),
+        "no publish command may run"
+    );
+}
+
+/// The release was prepared and an earlier `cutver publish` wrote nothing (it required a gate nobody
+/// attested), so the tag, its push, the floating tag and the commands are all still undone: the
+/// resume is what closes them, and it says so instead of claiming a publication.
+#[test]
+fn a_resume_completes_the_tag_and_the_pushes_an_earlier_attempt_left_undone() {
+    let (guard, remote, cfg) = prepared_repo("resume-completes-the-closing-phase");
+    let fixture = guard.fixture();
+    run_deferred_publish(&cfg, Bump::Minor, false, &[], false, None).expect("the prepare phase succeeds");
+    let head = rev(&fixture.dir, "HEAD");
+    let blocked = publish_cli(fixture, &["--tag", "v1.3.0", "--commit", &head, "--require-gate", "ci"]);
+    assert!(
+        !blocked.status.success(),
+        "the earlier attempt must refuse on the gate it requires"
+    );
+    assert_nothing_was_published(fixture, &remote);
+    attest_step(fixture, "publish-1", &head);
+
+    let out = publish_cli(fixture, &["--tag", "v1.3.0", "--commit", &head, "--resume"]);
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "the resume must close the release; stderr:\n{stderr}"
+    );
+    assert!(
+        stdout.contains("Resumed"),
+        "a resume must report that it resumed instead of claiming a publication: {stdout}"
+    );
+    assert_eq!(
+        rev(&fixture.dir, "v1.3.0^{commit}"),
+        head,
+        "the resume must create the tag the earlier attempt never created"
+    );
+    assert_eq!(
+        rev(&remote.dir, "refs/tags/v1.3.0^{commit}"),
+        head,
+        "the resume must push the release tag"
+    );
+    assert_eq!(
+        rev(&remote.dir, "refs/tags/v1^{commit}"),
+        head,
+        "the resume must move the floating major tag"
+    );
+    assert_eq!(
+        fixture.read("published.txt").trim(),
+        "published 1.3.0",
+        "the attested publish command must run"
+    );
+}
+
+/// A resume that finds everything already done repeats the harmless steps and exits `0`: re-entry is
+/// the point of the flag, so a tag that already points at the release commit is evidence, not a
+/// collision. It must not report a publication that did not happen either.
+#[test]
+fn a_resume_that_finds_everything_already_done_exits_zero_and_says_so() {
+    // The command writes nothing into the worktree, so the second invocation of this test starts from
+    // the clean tree the guard requires: what it repeats is the closing phase, not the release.
+    let toml = TOML.replace(
+        r#"commands = ["echo published {version} > published.txt"]"#,
+        r#"commands = ["echo published {version}"]"#,
+    );
+    let (guard, remote, cfg) = prepared_repo_with("resume-nothing-left-to-do", &toml);
+    let fixture = guard.fixture();
+    run_deferred_publish(&cfg, Bump::Minor, false, &[], false, None).expect("the prepare phase succeeds");
+    let head = rev(&fixture.dir, "HEAD");
+    attest_step(fixture, "publish-1", &head);
+    let first = publish_cli(fixture, &["--tag", "v1.3.0", "--commit", &head]);
+    assert!(
+        first.status.success(),
+        "the first closing phase must publish; stderr:\n{}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+    let refs_before = remote_refs(&remote.dir);
+    let tag_before = rev(&fixture.dir, "v1.3.0^{commit}");
+
+    let out = publish_cli(fixture, &["--tag", "v1.3.0", "--commit", &head, "--resume"]);
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "a resume that finds nothing left to do is not an error; stderr:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("Error:"),
+        "the resume must report no failure; stderr:\n{stderr}"
+    );
+    assert!(
+        stdout.contains("Resumed"),
+        "the resume must say that it resumed: {stdout}"
+    );
+    assert!(
+        !stdout.contains("Published"),
+        "a resume must not claim a publication that did not happen: {stdout}"
+    );
+    assert_eq!(
+        rev(&fixture.dir, "v1.3.0^{commit}"),
+        tag_before,
+        "the resume must leave the tag where it already was"
+    );
+    assert_eq!(
+        remote_refs(&remote.dir),
+        refs_before,
+        "repeating the pushes must leave the remote exactly as it was"
+    );
+}
+
+/// D5: "HEAD moved" is only observable against something the caller states, so a resume without
+/// `--commit` cannot re-identify the release it continues and refuses before reading anything.
+#[test]
+fn a_resume_without_a_commit_cannot_re_identify_the_release_it_continues() {
+    let (guard, remote, cfg) = prepared_repo("resume-needs-a-commit");
+    let fixture = guard.fixture();
+    run_deferred_publish(&cfg, Bump::Minor, false, &[], false, None).expect("the prepare phase succeeds");
+    let head = rev(&fixture.dir, "HEAD");
+    attest_step(fixture, "publish-1", &head);
+
+    let out = publish_cli(fixture, &["--tag", "v1.3.0", "--resume"]);
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success(),
+        "a resume without --commit must refuse; stdout:\n{}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    for expected in ["re-identify", "--commit", "Where:", "Fix:", "Nothing was written"] {
+        assert!(
+            stderr.contains(expected),
+            "the refusal must carry '{expected}':\n{stderr}"
+        );
+    }
+    assert_nothing_was_published(fixture, &remote);
+}
+
+/// With `--commit` the existing rule stands: it must be HEAD, and a release that moved on is not the
+/// one this resume continues.
+#[test]
+fn a_resume_refuses_when_head_moved_away_from_the_commit_it_continues() {
+    let (guard, remote, cfg) = prepared_repo("resume-head-moved");
+    let fixture = guard.fixture();
+    run_deferred_publish(&cfg, Bump::Minor, false, &[], false, None).expect("the prepare phase succeeds");
+    let verified = rev(&fixture.dir, "HEAD");
+    run_git_ok(
+        &fixture.dir,
+        &[
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "chore: land something after the release",
+        ],
+    );
+    let head = rev(&fixture.dir, "HEAD");
+    assert_ne!(
+        head, verified,
+        "the test must have moved HEAD away from the release commit"
+    );
+    attest_step(fixture, "publish-1", &verified);
+
+    let out = publish_cli(fixture, &["--tag", "v1.3.0", "--commit", &verified, "--resume"]);
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success(),
+        "a resume cannot continue a release HEAD left behind"
+    );
+    assert!(
+        stderr.contains("is not HEAD"),
+        "the refusal must name the step and its evidence:\n{stderr}"
+    );
+    assert!(
+        stderr.contains(&verified) && stderr.contains(&head),
+        "the refusal must name both commits:\n{stderr}"
+    );
+    assert_nothing_was_published(fixture, &remote);
+}
+
+/// A local tag that names another commit is a different release, not a step this run may repeat.
+#[test]
+fn a_resume_refuses_a_tag_that_points_at_another_commit() {
+    let (guard, remote, cfg) = prepared_repo("resume-local-tag-elsewhere");
+    let fixture = guard.fixture();
+    let earlier = rev(&fixture.dir, "HEAD");
+    run_deferred_publish(&cfg, Bump::Minor, false, &[], false, None).expect("the prepare phase succeeds");
+    let head = rev(&fixture.dir, "HEAD");
+    run_git_ok(&fixture.dir, &["tag", "-a", "v1.3.0", "-m", "v1.3.0", &earlier]);
+    attest_step(fixture, "publish-1", &head);
+
+    let out = publish_cli(fixture, &["--tag", "v1.3.0", "--commit", &head, "--resume"]);
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(!out.status.success(), "a tag pointing elsewhere must refuse the resume");
+    for expected in ["v1.3.0", "points at", &earlier, &head, "--resume"] {
+        assert!(
+            stderr.contains(expected),
+            "the refusal must name '{expected}':\n{stderr}"
+        );
+    }
+    assert_eq!(
+        rev(&fixture.dir, "v1.3.0^{commit}"),
+        earlier,
+        "a resume must never move the tag it refused"
+    );
+    assert!(
+        !remote_refs(&remote.dir).contains("refs/tags/"),
+        "the refusal must come before every push: {}",
+        remote_refs(&remote.dir)
+    );
+    assert!(
+        !fixture.dir.join("published.txt").exists(),
+        "no publish command may run"
+    );
+}
+
+/// The same evidence lives on the remote, and it is checked on its own: a local tag that agrees is
+/// no answer for a remote tag that does not.
+#[test]
+fn a_resume_refuses_a_remote_tag_that_points_at_another_commit() {
+    let (guard, remote, cfg) = prepared_repo("resume-remote-tag-elsewhere");
+    let fixture = guard.fixture();
+    let earlier = rev(&fixture.dir, "HEAD");
+    run_deferred_publish(&cfg, Bump::Minor, false, &[], false, None).expect("the prepare phase succeeds");
+    let head = rev(&fixture.dir, "HEAD");
+    run_git_ok(&remote.dir, &["update-ref", "refs/tags/v1.3.0", &earlier]);
+    attest_step(fixture, "publish-1", &head);
+
+    let out = publish_cli(fixture, &["--tag", "v1.3.0", "--commit", &head, "--resume"]);
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success(),
+        "a remote tag pointing elsewhere must refuse the resume"
+    );
+    for expected in ["v1.3.0", "origin", &earlier] {
+        assert!(
+            stderr.contains(expected),
+            "the refusal must name '{expected}':\n{stderr}"
+        );
+    }
+    assert!(!tag_exists(fixture, "v1.3.0"), "no local tag may be created");
+    assert!(
+        !fixture.dir.join("published.txt").exists(),
+        "no publish command may run"
+    );
+}
+
+/// D2/D4: `[publish] commands` is an arbitrary command, so a resume repeats one only when the gate
+/// channel already records it as done — and the refusal names the position and the command verbatim.
+#[test]
+fn a_resume_refuses_an_unattested_publish_command_then_runs_it_once_attested() {
+    let (guard, remote, cfg) = prepared_repo("resume-publish-command-unattested");
+    let fixture = guard.fixture();
+    run_deferred_publish(&cfg, Bump::Minor, false, &[], false, None).expect("the prepare phase succeeds");
+    let head = rev(&fixture.dir, "HEAD");
+
+    let planned = publish_cli(
+        fixture,
+        &["--tag", "v1.3.0", "--commit", &head, "--resume", "--dry-run"],
+    );
+    assert!(
+        !planned.status.success(),
+        "a dry run reports the refusal the real resume would report"
+    );
+
+    let refused = publish_cli(fixture, &["--tag", "v1.3.0", "--commit", &head, "--resume"]);
+
+    let stderr = String::from_utf8_lossy(&refused.stderr);
+    assert!(
+        !refused.status.success(),
+        "a resume must not run an unattested publish command"
+    );
+    for expected in [
+        "entry 1",
+        "publish-1",
+        "echo published {version} > published.txt",
+        head.as_str(),
+    ] {
+        assert!(
+            stderr.contains(expected),
+            "the refusal must name '{expected}':\n{stderr}"
+        );
+    }
+    assert_nothing_was_published(fixture, &remote);
+
+    attest_step(fixture, "publish-1", &head);
+
+    let out = publish_cli(fixture, &["--tag", "v1.3.0", "--commit", &head, "--resume"]);
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "the attested resume must finish the release; stderr:\n{stderr}"
+    );
+    assert_eq!(
+        fixture.read("published.txt").trim(),
+        "published 1.3.0",
+        "the attested publish command must run"
+    );
+    assert_eq!(
+        rev(&fixture.dir, "v1.3.0^{commit}"),
+        head,
+        "the resume must create the tag"
+    );
+    assert_eq!(
+        rev(&remote.dir, "refs/tags/v1.3.0^{commit}"),
+        head,
+        "the resume must push the tag"
+    );
+}
+
+/// `--dry-run --resume` is allowed: it reports what the resume would do and writes nothing.
+#[test]
+fn a_resume_dry_run_reports_the_plan_and_writes_nothing() {
+    let (guard, remote, cfg) = prepared_repo("resume-dry-run");
+    let fixture = guard.fixture();
+    run_deferred_publish(&cfg, Bump::Minor, false, &[], false, None).expect("the prepare phase succeeds");
+    let head = rev(&fixture.dir, "HEAD");
+    let floating_before = rev(&fixture.dir, "v1^{commit}");
+    attest_step(fixture, "publish-1", &head);
+
+    let out = publish_cli(
+        fixture,
+        &["--tag", "v1.3.0", "--commit", &head, "--resume", "--dry-run"],
+    );
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "a resume dry run must pass; stderr:\n{stderr}");
+    assert!(stdout.contains("Resume"), "the plan must name the resume: {stdout}");
+    assert!(
+        stdout.contains("echo published 1.3.0 > published.txt"),
+        "the plan must name the command it would re-run: {stdout}"
+    );
+    assert!(!tag_exists(fixture, "v1.3.0"), "a dry run must not create the tag");
+    assert_eq!(
+        rev(&fixture.dir, "v1^{commit}"),
+        floating_before,
+        "a dry run must not move the floating major tag"
+    );
+    assert!(
+        !remote_refs(&remote.dir).contains("refs/tags/"),
+        "a dry run must push nothing: {}",
+        remote_refs(&remote.dir)
+    );
+    assert!(
+        !fixture.dir.join("published.txt").exists(),
+        "a dry run must not run the publish commands"
+    );
+}
+
+// ------------------------------------------------------------------------------------------------
+// `on_post_release` is the other step a resume may not repeat (#326 D2)
+//
+// `[publish] commands` is not the only arbitrary code a release runs. A plugin may already have run
+// in the attempt being continued, so a resume dispatches none and says which ones it left alone.
+// ------------------------------------------------------------------------------------------------
+
+/// A fixture plugin that drains its envelope, appends one line per invocation and answers. The line
+/// is the proof of dispatch, so "the resume dispatched nothing" is a count, not a claim. Both
+/// platforms are written out the way `tests/plugin_process_stderr_verbose.rs` does it: a `.cmd` file
+/// needs no mode bit, a POSIX script does.
+const POST_RELEASE_PLUGIN_UNIX: &str = "#!/bin/sh\ncat >/dev/null\nprintf 'ran\n' >> plugin-runs.log\nprintf '{}'\n";
+const POST_RELEASE_PLUGIN_WINDOWS: &str = "@echo off\r\nfindstr . >nul\r\necho ran>>plugin-runs.log\r\necho {}\r\n";
+
+fn post_release_plugin_file() -> &'static str {
+    if cfg!(windows) {
+        "release-plugin.cmd"
+    } else {
+        "release-plugin.sh"
+    }
+}
+
+/// Marks the POSIX fixture executable. A batch file needs no mode bit.
+fn make_executable(path: &Path) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(path)
+            .expect("the fixture script exists")
+            .permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(path, perms).expect("the fixture script is executable");
+    }
+    #[cfg(not(unix))]
+    let _ = path;
+}
+
+/// How many times the host dispatched the fixture plugin: one appended line per invocation.
+fn post_release_dispatches(fixture: &Fixture) -> usize {
+    std::fs::read_to_string(fixture.dir.join("plugin-runs.log"))
+        .map(|log| log.lines().count())
+        .unwrap_or(0)
+}
+
+#[test]
+fn a_resume_dispatches_no_post_release_plugin_but_a_plain_publish_does() {
+    // The plugin's command is an absolute path inside the fixture, so the config is written once the
+    // fixture exists: the helper below commits the four fixture files first, and this test commits
+    // the plugin, its `.gitignore` and the config that names it.
+    let (guard, remote, _) = prepared_repo_with("resume-post-release-plugin", TOML);
+    let fixture = guard.fixture();
+    let script = fixture.dir.join(post_release_plugin_file());
+    fixture.write(
+        post_release_plugin_file(),
+        if cfg!(windows) {
+            POST_RELEASE_PLUGIN_WINDOWS
+        } else {
+            POST_RELEASE_PLUGIN_UNIX
+        },
+    );
+    make_executable(&script);
+    // Both files the closing phase produces are ignored: an ignored file is invisible to the
+    // clean-tree guard, so the resume below starts from the tree that guard requires.
+    fixture.write(".gitignore", "plugin-runs.log\npublished.txt\n");
+    let command = script.to_string_lossy().replace('\\', "/");
+    fixture.write(
+        "cutver.toml",
+        &format!(
+            "{TOML}\n[plugins.release]\nruntime = \"process\"\ncommand = \"{command}\"\ncapabilities = [\"lifecycle.v1\"]\nevents = [\"on_post_release\"]\n"
+        ),
+    );
+    run_git_ok(&fixture.dir, &["add", "-A"]);
+    run_git_ok(
+        &fixture.dir,
+        &["commit", "-q", "-m", "chore: add the post-release fixture plugin"],
+    );
+    let cfg = common::load_config(guard.fixture());
+    run_deferred_publish(&cfg, Bump::Minor, false, &[], false, None).expect("the prepare phase succeeds");
+    let head = rev(&fixture.dir, "HEAD");
+    attest_step(fixture, "publish-1", &head);
+
+    let first = publish_cli(fixture, &["--tag", "v1.3.0", "--commit", &head]);
+    let first_stdout = String::from_utf8_lossy(&first.stdout);
+    assert!(
+        first.status.success(),
+        "the plain closing phase must publish; stderr:\n{}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+    assert_eq!(
+        post_release_dispatches(fixture),
+        1,
+        "a plain `cutver publish` dispatches `on_post_release` exactly once; stdout:\n{first_stdout}"
+    );
+    assert!(
+        !first_stdout.contains("not dispatched"),
+        "a plain publish leaves no plugin alone: {first_stdout}"
+    );
+
+    let out = publish_cli(fixture, &["--tag", "v1.3.0", "--commit", &head, "--resume"]);
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "the resume must succeed; stderr:\n{stderr}");
+    assert_eq!(
+        post_release_dispatches(fixture),
+        1,
+        "a resume must not dispatch `on_post_release` again: the marker must still hold the single \
+         line the plain run wrote; stdout:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("`on_post_release` not dispatched") && stdout.contains("`release`"),
+        "the resume must name the plugin it left alone instead of omitting it silently: {stdout}"
+    );
+    assert_eq!(
+        rev(&remote.dir, "refs/tags/v1.3.0^{commit}"),
+        head,
+        "the repeated push must leave the release tag on the remote"
     );
 }

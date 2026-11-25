@@ -735,7 +735,7 @@ require_clean_tree = true
     );
 
     let cfg = common::load_config(guard.fixture());
-    let summary = cutver::bump::run(&cfg, cutver::cli::BumpLevel::Auto, false, &[]).unwrap();
+    let summary = cutver::bump::run(&cfg, cutver::cli::BumpLevel::Auto, false, &[], None).unwrap();
 
     assert_eq!(summary.next.to_string(), "1.1.0");
     assert_eq!(summary.floating_tag, Some("v1".to_string()));
@@ -782,7 +782,7 @@ require_clean_tree = false
     initial_commit(fixture);
 
     let cfg = common::load_config(guard.fixture());
-    let summary = cutver::bump::run(&cfg, cutver::cli::BumpLevel::Minor, false, &[]).unwrap();
+    let summary = cutver::bump::run(&cfg, cutver::cli::BumpLevel::Minor, false, &[], None).unwrap();
     assert_eq!(summary.next.to_string(), "1.1.0");
     assert_eq!(summary.commit_message, "chore(release): v1.1.0 [bump: minor]");
     assert_eq!(head_commit_message(fixture), "chore(release): v1.1.0 [bump: minor]");
@@ -816,7 +816,7 @@ require_clean_tree = false
     initial_commit(fixture);
 
     let cfg = common::load_config(guard.fixture());
-    let summary = cutver::bump::run(&cfg, cutver::cli::BumpLevel::Patch, false, &[]).unwrap();
+    let summary = cutver::bump::run(&cfg, cutver::cli::BumpLevel::Patch, false, &[], None).unwrap();
     assert_eq!(summary.next.to_string(), "1.0.1");
     assert_eq!(summary.commit_message, "chore(release): v1.0.1 [skip ci]");
     assert_eq!(head_commit_message(fixture), "chore(release): v1.0.1 [skip ci]");
@@ -861,7 +861,7 @@ require_clean_tree = false
     run_git_ok(&fixture.dir, &["commit", "--allow-empty", "-m", "fix: small bug"]);
 
     let cfg = common::load_config(guard.fixture());
-    let err = cutver::bump::run(&cfg, cutver::cli::BumpLevel::Patch, false, &[]).unwrap_err();
+    let err = cutver::bump::run(&cfg, cutver::cli::BumpLevel::Patch, false, &[], None).unwrap_err();
 
     assert!(
         matches!(
@@ -925,7 +925,7 @@ require_clean_tree = false
     run_git_ok(&fixture.dir, &["commit", "--allow-empty", "-m", "fix: small bug"]);
 
     let cfg = common::load_config(guard.fixture());
-    let err = cutver::bump::run(&cfg, cutver::cli::BumpLevel::Patch, false, &[]).unwrap_err();
+    let err = cutver::bump::run(&cfg, cutver::cli::BumpLevel::Patch, false, &[], None).unwrap_err();
 
     assert!(
         matches!(
@@ -988,7 +988,7 @@ require_clean_tree = false
     run_git_ok(&fixture.dir, &["commit", "--allow-empty", "-m", "fix: small bug"]);
 
     let cfg = common::load_config(guard.fixture());
-    let err = cutver::bump::run(&cfg, cutver::cli::BumpLevel::Patch, false, &[]).unwrap_err();
+    let err = cutver::bump::run(&cfg, cutver::cli::BumpLevel::Patch, false, &[], None).unwrap_err();
 
     assert!(
         matches!(

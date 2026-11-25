@@ -81,4 +81,6 @@ If it does reopen, the work starts from the CI surface's identity (option b), ne
 - Issue: [#326](https://github.com/cutver/cutver/issues/326), gap 6 and phase 5.
 - Roadmap row: [Evolution Roadmap](../internals/design.md#evolution-roadmap) — `docs/internals/design.md:135`.
 - Surfaces that take their qualifier from this decision: `src/cli/args/commands.rs:13,16`, `docs/reference/cli.md:37`.
-- No pull request number is recorded for the implementation: the work sits on `feat/prerelease-channel`, and the delivery shape — one pull request with a commit-per-slice reading order, or chained ones — is decided when it is published.
+- Delivered as the chained stack #391-#396, one merge commit per slice, all six ancestors of `main`: `12fa98c` (#391), `34417ce` (#392), `fe5dbcd` (#393), `f0a4fc0` (#394), `7bfd241` (#395) and `f243e80` (#396).
+- The six `pr/*` branches were deleted once each was verified an ancestor of `main`; `main` is the only branch on the remote.
+- History: the delivery shape — one pull request with a commit-per-slice reading order, or chained ones — was left undecided when this ADR was written and was settled at publication. Nothing about the delivery is pending.

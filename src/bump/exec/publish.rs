@@ -68,6 +68,8 @@ pub(crate) struct Published {
     /// True when this run stopped before publishing, so the summary can name the command that
     /// finishes it instead of claiming nothing was configured.
     pub deferred: bool,
+    /// The `on_post_release` plugins a resume left alone, named where the phase decision was made.
+    pub post_release_left_alone: Vec<String>,
 }
 
 /// The pushes a publication run made, kept per caller: `planned` is what a dry run reports (the
@@ -87,6 +89,7 @@ impl Published {
             publish_push_command: joined(planned),
             publish_commands: Vec::new(),
             deferred: true,
+            post_release_left_alone: Vec::new(),
         }
     }
 }
@@ -123,6 +126,9 @@ pub struct PublishSummary {
     pub floating_tag: Option<String>,
     pub publish_push_command: Option<String>,
     pub publish_commands: Vec<String>,
+    /// The `on_post_release` plugins this run left alone, so the runner prints what happened instead
+    /// of rebuilding the manager to name them (#326 D2).
+    pub post_release_left_alone: Vec<String>,
     pub dry_run: bool,
 }
 
@@ -198,6 +204,7 @@ fn publish_prepared(
         floating_tag: published.floating_tag,
         publish_push_command: joined(&pushes.performed),
         publish_commands: published.publish_commands,
+        post_release_left_alone: published.post_release_left_alone,
         dry_run: request.dry_run,
     })
 }
@@ -222,13 +229,14 @@ pub(crate) fn finalize(scope: &PublicationScope<'_>, pushes: &mut PushLog) -> Re
     push_release_tag(scope, pushes)?;
     let floating_tag = handle_floating_tag(scope, pushes)?;
     let publish_commands = run_publish_commands(scope)?;
-    post_release::dispatch(scope)?;
+    let post_release_left_alone = post_release::dispatch(scope)?;
     Ok(Published {
         tag_skipped,
         floating_tag,
         publish_push_command: joined(&pushes.planned),
         publish_commands,
         deferred: false,
+        post_release_left_alone,
     })
 }
 

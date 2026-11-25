@@ -177,6 +177,7 @@ fn the_publish_fields_report_what_the_closing_phase_did() {
         floating_tag: Some("v1".to_string()),
         publish_push_command: Some("git push origin refs/tags/v1.3.0".to_string()),
         publish_commands: vec!["cargo publish".to_string()],
+        post_release_left_alone: Vec::new(),
         dry_run: false,
     };
 

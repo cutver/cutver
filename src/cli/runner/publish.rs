@@ -8,10 +8,13 @@ use crate::bump::{self, PublishRequest, PublishSummary};
 use crate::cli::style::Theme;
 use crate::cli::tree;
 use crate::config;
-use crate::plugin::{PluginManager, PluginOperation};
+use crate::plugin::PluginOperation;
 
 use super::dispatch::print_error;
 use crate::cli::machine::FailureCode;
+
+#[cfg(test)]
+mod tests;
 
 pub fn run_publish(config: &config::Config, request: PublishRequest) -> i32 {
     // Refused before the clean-tree guard runs: the guard exempts a declared directory from the
@@ -27,7 +30,9 @@ pub fn run_publish(config: &config::Config, request: PublishRequest) -> i32 {
         Ok(summary) => {
             // A resume dispatches no `on_post_release` plugin, so the tree names the ones it left
             // alone instead of letting the omission pass silently (#326 D2).
-            let left_alone = request.resume.then(|| left_alone_line(config));
+            let left_alone = request
+                .resume
+                .then(|| left_alone_line(&summary.post_release_left_alone));
             print_publish_summary(&summary, left_alone.as_deref());
             crate::cli::ci::on_publish_success(&summary);
             0
@@ -114,21 +119,14 @@ fn publish_sections(summary: &PublishSummary, theme: &Theme, resume: Option<&str
 
 /// The `Resume` line naming the `on_post_release` plugins this run left alone (#326 D2).
 ///
-/// The selection is the manager's own, so the note cannot drift from what `finalize` would have
-/// dispatched: `dispatch_post_release` returns early on a resume. Building the manager a second time
-/// is the price of a `PublishSummary` that carries no field for the list, and a resume is the only
-/// path that asks.
-fn left_alone_line(config: &config::Config) -> String {
+/// The names come from the summary: the dispatch is the one place that knows the phase, so it returns
+/// what it skipped instead of the runner loading a second manager to ask the same question.
+fn left_alone_line(left_alone: &[String]) -> String {
     let event = PluginOperation::OnPostRelease.as_str();
-    let mut names: Vec<String> = match PluginManager::from_config(&config.plugins, &config.root_dir) {
-        Ok(manager) => manager.plugins_for_event(event).map(ToString::to_string).collect(),
-        // A publishing run built this same manager before it wrote anything, so a summary that
-        // exists proves the load; saying so beats naming plugins nobody selected.
-        Err(_) => return format!("`{event}` not dispatched: the plugins could not be loaded to name them"),
-    };
-    if names.is_empty() {
+    if left_alone.is_empty() {
         return format!("`{event}` not dispatched: this workspace declares no plugin for that event");
     }
+    let mut names = left_alone.to_vec();
     names.sort();
     let named: Vec<String> = names.iter().map(|name| format!("`{name}`")).collect();
     format!(

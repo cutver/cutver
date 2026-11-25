@@ -1,9 +1,12 @@
 //! The `on_post_release` half of the closing phase, out of the facade to stay under the source
-//! ceiling. A pure move: the order, the payload and the refusals are unchanged.
+//! ceiling.
 //!
 //! A resume repeats only what is harmless to repeat, and an `on_post_release` plugin is arbitrary
 //! code that may already have run against this release (#326 D2). A rehearsal skips it too, so a
 //! `--dry-run` reports the verdict the real run would.
+//!
+//! The phase check lives here because it is the same decision as the list of names a resume left
+//! alone: returning them is what keeps the runner from loading a manager to ask again (T4).
 
 use crate::bump::Error;
 use crate::git;
@@ -12,9 +15,16 @@ use crate::plugin::dto::PostReleasePayload;
 
 use super::{Phase, PublicationScope};
 
-pub(super) fn dispatch(scope: &PublicationScope<'_>) -> Result<(), Error> {
+pub(super) fn dispatch(scope: &PublicationScope<'_>) -> Result<Vec<String>, Error> {
+    let event = PluginOperation::OnPostRelease.as_str();
     if let Phase::Resuming = scope.phase {
-        return Ok(());
+        let mut left_alone: Vec<String> = scope
+            .plugin_manager
+            .plugins_for_event(event)
+            .map(ToString::to_string)
+            .collect();
+        left_alone.sort();
+        return Ok(left_alone);
     }
     let commit_sha = if scope.dry_run {
         "0000000000000000000000000000000000000000".to_string()
@@ -29,10 +39,7 @@ pub(super) fn dispatch(scope: &PublicationScope<'_>) -> Result<(), Error> {
         dry_run: scope.dry_run,
         notes: scope.notes.map(str::to_string),
     };
-    for plugin_name in scope
-        .plugin_manager
-        .plugins_for_event(PluginOperation::OnPostRelease.as_str())
-    {
+    for plugin_name in scope.plugin_manager.plugins_for_event(event) {
         scope
             .plugin_manager
             .dispatch_post_release(plugin_name, &payload)
@@ -50,5 +57,5 @@ pub(super) fn dispatch(scope: &PublicationScope<'_>) -> Result<(), Error> {
                 }
             })?;
     }
-    Ok(())
+    Ok(Vec::new())
 }

@@ -100,7 +100,7 @@ pub enum ReportError {
 pub fn render_summary_json(summary: &Summary) -> Result<String, ReportError> {
     let version = summary.next.to_string();
     let fields = SummaryJson {
-        released: !summary.dry_run,
+        released: summary.released(),
         deferred: summary.deferred,
         version: &version,
         tag: &summary.tag,

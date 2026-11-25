@@ -158,7 +158,13 @@ pub(crate) fn read_only(
         channel,
         mode: PlanMode::Preview,
     };
-    ReleasePlan::prepare(config, request)?.finish(config, request)
+    let plan = ReleasePlan::prepare(config, request)?;
+    // A no-op settles before stage 2: it has no release scope, no manifest change and no entry, and
+    // computing them would render a changelog entry the run never writes (#326 D1, D1a).
+    if plan.no_op() {
+        return Ok(plan);
+    }
+    plan.finish(config, request)
 }
 
 /// Refuses the configurations a plugin-free plan cannot compute (#326 S1).
@@ -227,6 +233,11 @@ impl ReleasePlan {
             request.channel,
             plugin_manager.as_ref(),
         )?;
+        // #326 D1a: the request can settle on the version the workspace already carries. Stage 2
+        // computes a release scope, manifest changes and a changelog entry, and a no-op has none of
+        // them — so it settles here, with every one of those empty, instead of being computed and
+        // discarded. This is also the only way the plan reports `notes` without a real release.
+        let no_op = next == current && !request.first_release;
         // The level the release cuts, resolved before the guard that reads it. `initial` is reported
         // for `auto` on a first release and for nothing else: an explicitly named level is reported
         // as named, and the guard exempts a first release on its missing previous tag instead.
@@ -240,6 +251,8 @@ impl ReleasePlan {
         // written — a breaking change, or the reviewed-none footer.
         match undeclared_compatibility(repo, &level, prev_tag.as_deref(), auto_commits.as_deref()) {
             Ok(()) => {}
+            // A no-op releases nothing, so there is no compatibility decision it could owe.
+            Err(_) if no_op => {}
             Err(err) if read_only => blockers.push(one_line(&err.to_string())),
             Err(err) => return Err(err),
         }
@@ -264,7 +277,14 @@ impl ReleasePlan {
         );
         let commit_message =
             changelog::interpolate_string(&config.git.commit_message, &interp_ctx).map_err(Error::Changelog)?;
-        match find_tag_collision(repo, &tag, config.publish.push)? {
+        // A no-op creates no tag, so there is nothing to collide with and no remote to ask: the
+        // release tag of the version the workspace is on is exactly the state it reports.
+        let collision = if no_op {
+            None
+        } else {
+            find_tag_collision(repo, &tag, config.publish.push)?
+        };
+        match collision {
             None => {}
             Some(collision) if read_only => blockers.push(collision_blocker(&collision)),
             Some(collision) => return Err(collision.into_error(&tag)),
@@ -278,9 +298,7 @@ impl ReleasePlan {
         } else {
             (String::new(), None)
         };
-        let floating_tag = config
-            .git
-            .floating_major_tag
+        let floating_tag = (config.git.floating_major_tag && !no_op)
             .then(|| git::tag_name(&config.git.tag_prefix, &next.major.to_string()));
 
         Ok(Self {

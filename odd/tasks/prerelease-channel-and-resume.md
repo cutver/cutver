@@ -37,7 +37,9 @@ Decision: `docs/adr/0005-prerelease-channel-supersedes-0004.md` (accepted). Issu
   tests and the reference rows).
 - **T3** Promotion: `--channel stable` on an existing prerelease produces the release version. Must state
   what it does to the tag, the floating major tag and the changelog entry before writing it. D1 answered:
-  any prerelease promotes, with no rung validation.
+  any prerelease promotes, with no rung validation; D1a added during the task: a named level survives
+  `--channel stable` on a stable version. Done — commit `bbaaef0`, gated by `sh scripts/check.sh`
+  (9 of 10 steps; the tenth needs a linux cross compiler this host lacks).
 - **T4** `publish --resume`, driven by the plan that gap 1 already ships. D2 answered: repeat only
   idempotent steps, and refuse when the evidence contradicts the plan.
 - **T5** Docs with the behaviour: the `--channel` reference row and help text (bare "channel" = the
@@ -65,6 +67,12 @@ pins:
 - `stable` on a stable version, or the channel the version already carries with no level: a **reported**
   no-op — not a silent success, and not an error, because erroring would force every caller to branch on
   the current version, which is the inference this tool exists to remove.
+**D1a — the level survives `--channel stable` on a stable version (decided during T3, `L8`).** The fourth
+bullet is narrower than it reads: a named level still cuts the version it names, so `plan minor --channel
+stable` on `1.2.3` reports `1.3.0`. The reported no-op is what happens when the request yields the version
+the repository already carries — never merely because the caller named `stable`. Refusing the level would
+make the flag collide with a normal release and break a `[alpha, beta, rc, stable]` CI matrix, where the
+`stable` entry is the release itself.
 
 **D2 — `--resume` repeats only what is idempotent.** It re-reads the plan and refuses whenever evidence
 disagrees with it: HEAD moved, a manifest's version changed, or a tag that exists pointing elsewhere.
@@ -120,3 +128,26 @@ one PR or chained ones — is decided when it is published, not here.
 then the channel, so `1.2.0-alpha.1 --channel alpha` cuts `1.2.1-alpha.1` where D1 requires `1.2.0-alpha.2`.
 That is T3, together with the other two transitions of D1 and the statements about the tag, the floating
 major tag and the changelog entry it owes before it is written.
+
+**L8. The one thing D1 left under-specified, decided by the maintainer.** The T3 worker stopped before
+writing because D1's `stable`-on-stable bullet carries no level qualifier and its "with no level" clause
+pointed the other way, while T2's landed test asserted the level survives. Asked which rule governs, the
+maintainer chose B — «B — el nivel sobrevive (recomendada)»: a named level still cuts the version it names
+with `--channel stable`, and the no-op is reserved for a request that yields the version the repository
+already carries. `tests/e2e_plan.rs:690` stands unchanged, and D1a records the rule inside D1.
+
+**L9. T3 landed, and the no-op taught the machine surface a word.** Promotion is now decided from the
+current version rather than from the level's base (`semver_bump::next_on_channel`), which is what makes
+`1.2.0-alpha.1` on `alpha` cut `1.2.0-alpha.2` instead of `1.2.1-alpha.1`. The no-op is the narrow case
+D1a left it: a request that yields the version the repository already carries, reported with exit `0` and
+nothing written, skipping both stages so no manifest, no changelog entry and no remote call happens. A
+real no-op used to report `"released":true` with an empty commit in `--json`/`--report` and to feed both CI
+sinks as if it had published; `Summary::released()` is now the one authority, and `tests/ci_output.rs`
+executes it locally on a real `bump --channel stable`. Two defects surfaced that the earlier gate could not
+see: `tests/e2e_bump.rs` had not compiled for the unix target since T2 (six four-argument
+`cutver::bump::run` calls behind `#![cfg(unix)]`, invisible on this host until the linux cross-check ran),
+and the same `released` expression existed in two files. Both are repaired here; the lesson is that a gate
+which stops early is not a gate, and the full one runs before a commit, not after it. Slice boundary: the
+branch is five commits and 1,631 authored lines, past the ~400-line review slice, so the delivery shape —
+one PR with a commit-per-slice reading order, or chained PRs cut at `eb87739`/`9c86966`/`bbaaef0` — is the
+maintainer's decision when the phase is published.

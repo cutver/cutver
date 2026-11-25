@@ -1100,3 +1100,88 @@ fn bump_dry_run_reports_the_channel_it_would_release_on() {
         "the tree names the transition: {stdout}"
     );
 }
+
+/// D1 and D1a: `--channel stable` with no level named, on a version that is already a release, asks
+/// for the version the repository already carries. It is a reported no-op — exit `0`, no file, no
+/// commit, no tag — on the rehearsal and on a real run alike, so the `stable` entry of a channel
+/// matrix can be re-run without cutting a release nobody asked for.
+#[test]
+fn a_promotion_request_on_a_release_reports_a_no_op_and_writes_nothing() {
+    assert!(
+        git_available(),
+        "git CLI is required for e2e tests but was not found in PATH"
+    );
+    let guard = FixtureGuard::new("promotion-noop");
+    write_fixture(&guard, "[preflight]\ncheck = \"true\"");
+    let fixture = guard.fixture();
+
+    let dry = cutver_command(&fixture.dir)
+        .args(["bump", "--dry-run", "--channel", "stable"])
+        .output()
+        .expect("failed to execute cutver bump --dry-run --channel stable");
+    assert!(
+        dry.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&dry.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&dry.stdout);
+    assert!(
+        stdout.contains("Release Plan: 1.2.3 -> 1.2.3"),
+        "the rehearsal reports the version it leaves the workspace on: {stdout}"
+    );
+    assert!(
+        stdout.contains("No-op") && stdout.contains("nothing"),
+        "the tree says nothing would be released: {stdout}"
+    );
+
+    let head_before = head_of(fixture);
+    let real = cutver_command(&fixture.dir)
+        .args(["bump", "--channel", "stable"])
+        .output()
+        .expect("failed to execute cutver bump --channel stable");
+    assert!(
+        real.status.success(),
+        "a no-op is not an error, because that would make every caller branch on the current \
+         version; stderr:\n{}",
+        String::from_utf8_lossy(&real.stderr)
+    );
+    let real_stdout = String::from_utf8_lossy(&real.stdout);
+    assert!(
+        real_stdout.contains("No-op") && real_stdout.contains("nothing"),
+        "the real run says so too: {real_stdout}"
+    );
+    assert!(
+        real_stdout.contains("tag: v1.2.3 [SKIPPED]"),
+        "the tag it did not create is reported as skipped: {real_stdout}"
+    );
+    // The machine surface of the same run: it says it did not release, and reports the version, the
+    // tag and the empty commit it really has (#326 D1a, one authority with the CI channel).
+    let json = cutver_command(&fixture.dir)
+        .args(["bump", "--channel", "stable", "--json"])
+        .output()
+        .expect("failed to execute cutver bump --channel stable --json");
+    assert!(
+        json.status.success(),
+        "stderr:
+{}",
+        String::from_utf8_lossy(&json.stderr)
+    );
+    let report: serde_json::Value =
+        serde_json::from_str(String::from_utf8_lossy(&json.stdout).trim()).expect("one JSON object");
+    assert_eq!(report["released"], false, "a no-op published nothing: {report}");
+    assert_eq!(report["version"], "1.2.3", "the version it already carries: {report}");
+    assert_eq!(report["tag"], "v1.2.3", "{report}");
+    assert_eq!(report["commit"], "", "no commit was created: {report}");
+
+    assert_versions_at_123(fixture);
+    assert_eq!(commit_count(fixture), 1, "no release commit was created");
+    assert_eq!(head_of(fixture), head_before, "HEAD did not move");
+    assert!(!tag_exists(fixture, "v1.2.3"), "no tag was created");
+}
+
+/// The commit `HEAD` names, as `git rev-parse` prints it.
+fn head_of(fixture: &Fixture) -> String {
+    String::from_utf8_lossy(&run_git(&fixture.dir, &["rev-parse", "HEAD"]).stdout)
+        .trim()
+        .to_string()
+}

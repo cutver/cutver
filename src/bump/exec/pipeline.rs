@@ -83,6 +83,16 @@ fn run_staged(
     // commit message, the tag collision and the preflight plan — the same values `cutver plan`
     // reports, so a plan and a bump cannot disagree about the release.
     let prepared = plan::ReleasePlan::prepare(config, request)?;
+    // #326 D1, D1a: a request that settles on the version the workspace already carries releases
+    // nothing — exit 0, no preflight, no hook, no file, no commit and no tag. Erroring instead would
+    // force every caller to branch on the current version, which is the inference the channel exists
+    // to remove. The report says so: `tag_skipped` is the summary's own way of claiming no tag.
+    if prepared.no_op() {
+        let mut summary = prepared.summary();
+        summary.dry_run = dry_run;
+        summary.tag_skipped = true;
+        return Ok(summary);
+    }
     let plugin_manager = prepared
         .plugin_manager()
         .expect("a release run loads its plugin manager before the guards run");

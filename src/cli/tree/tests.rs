@@ -68,6 +68,53 @@ fn test_tree_rendering_structure() {
     assert!(plan.contains("        └── cargo publish"));
 }
 
+/// #326 D1a: a run that released nothing says so, and marks the commit and the tag it did not
+/// create, instead of rendering a release that never happened.
+#[test]
+fn test_a_no_op_release_says_so_and_marks_what_it_skipped() {
+    let theme = Theme::new(false);
+    let mut summary = dummy_summary();
+    summary.current = Version::new(0, 9, 0);
+    summary.touched = Vec::new();
+    summary.changelog = None;
+    summary.commit = String::new();
+    summary.tag_skipped = true;
+    summary.publish_push = false;
+    summary.publish_push_command = None;
+    summary.publish_commands = Vec::new();
+
+    let plan = render_release_plan(&summary, &theme);
+
+    assert!(plan.contains("Release Plan: 0.9.0 -> 0.9.0"), "{plan}");
+    assert!(plan.contains("├── No-op"), "the tree says nothing was released: {plan}");
+    assert!(plan.contains("nothing was written, committed or tagged"), "{plan}");
+    assert!(
+        plan.contains("commit: chore(release): v0.9.0 [skip ci] [SKIPPED]"),
+        "the commit it did not create is marked: {plan}"
+    );
+    assert!(
+        plan.contains("tag: v0.9.0 [SKIPPED]"),
+        "the tag it did not create is marked: {plan}"
+    );
+}
+
+/// A first release tags the version the manifests already declare, so its summary also carries
+/// `current == next` — and it is a release, not a no-op (#326 D1a).
+#[test]
+fn test_a_release_that_does_not_move_the_version_is_not_a_no_op() {
+    let theme = Theme::new(false);
+    let mut summary = dummy_summary();
+    summary.current = summary.next.clone();
+
+    let plan = render_release_plan(&summary, &theme);
+
+    assert!(
+        !plan.contains("No-op"),
+        "a release that only tags the declared version is a release: {plan}"
+    );
+    assert!(plan.contains("tag: v0.9.0"), "{plan}");
+}
+
 #[test]
 fn test_relativize_path_nested() {
     let root = std::path::Path::new("/workspace/project");

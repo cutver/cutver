@@ -16,7 +16,7 @@ pub type Field = (&'static str, Option<String>);
 /// The keys `bump` feeds, in the order the payload documents them.
 pub fn bump(finished: &Summary) -> Vec<Field> {
     vec![
-        ("released", Some((!finished.dry_run).to_string())),
+        ("released", Some(finished.released().to_string())),
         ("deferred", Some(finished.deferred.to_string())),
         ("version", Some(finished.next.to_string())),
         ("tag", Some(finished.tag.clone())),

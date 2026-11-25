@@ -117,7 +117,12 @@ fn render_changelog_node(summary: &Summary, theme: &Theme, is_last: bool) -> Vec
 
 fn render_git_node(summary: &Summary, theme: &Theme, is_last: bool) -> Vec<String> {
     let mut items = Vec::new();
-    items.push(format!("commit: {}", summary.commit_message));
+    let skipped = if summary.no_op() {
+        format!(" {}", theme.muted("[SKIPPED]"))
+    } else {
+        String::new()
+    };
+    items.push(format!("commit: {}{skipped}", summary.commit_message));
     items.push(render_tag_line(summary, theme));
     if let Some(ref ft) = summary.floating_tag {
         items.push(format!("floating tag: {}", theme.accent(ft)));
@@ -221,6 +226,9 @@ fn collect_tree_sections(summary: &Summary, theme: &Theme) -> Vec<Vec<String>> {
         || summary.deferred;
 
     let mut sections = Vec::new();
+    if summary.no_op() {
+        sections.push(render_no_op_node(summary, theme, false));
+    }
     if !summary.touched.is_empty() {
         sections.push(render_manifests_node(summary, theme, false));
     }
@@ -235,6 +243,20 @@ fn collect_tree_sections(summary: &Summary, theme: &Theme) -> Vec<Vec<String>> {
         sections.push(render_publish_node(summary, theme, true));
     }
     sections
+}
+
+fn render_no_op_node(summary: &Summary, theme: &Theme, is_last: bool) -> Vec<String> {
+    if !summary.no_op() {
+        return Vec::new();
+    }
+    render_section_with_items(
+        "No-op",
+        &[format!(
+            "nothing was written, committed or tagged: {} is the version the request yields",
+            theme.accent(&summary.next)
+        )],
+        is_last,
+    )
 }
 
 /// Renders the complete release plan tree string.
@@ -268,7 +290,11 @@ pub fn print_tree_summary(summary: &Summary) {
 /// from describing the same release differently; the blockers are the one thing a dry run cannot
 /// print, because in a dry run they are an abort.
 pub(crate) fn render_plan(plan: &ReleasePlan, theme: &Theme) -> String {
-    let mut out = render_release_plan(&plan.summary(), theme);
+    // The plan reports the tag it would not create, exactly as the run would: one renderer, two
+    // readers, and a no-op is not a release that happens to skip a tag (#326 D1a).
+    let mut summary = plan.summary();
+    summary.tag_skipped = plan.no_op();
+    let mut out = render_release_plan(&summary, theme);
     out.push_str(&format!(
         "\n\n{}",
         theme.muted("Nothing was written, staged, committed, tagged or pushed.")

@@ -313,6 +313,20 @@ pub struct Summary {
     pub root_dir: Option<std::path::PathBuf>,
 }
 
+impl Summary {
+    /// The run releases nothing: it settles on the version the workspace already carries, so the tag
+    /// it would name is one it skipped creating (#326 D1a, and what the tree calls a no-op).
+    pub fn no_op(&self) -> bool {
+        self.current == self.next && self.tag_skipped
+    }
+
+    /// The run published a release, which neither a rehearsal nor a no-op did — the one authority
+    /// `--json`, `--report` and the CI output channel read (#326 D1a).
+    pub fn released(&self) -> bool {
+        !self.dry_run && !self.no_op()
+    }
+}
+
 #[derive(Debug)]
 pub struct Drift {
     pub path: String,

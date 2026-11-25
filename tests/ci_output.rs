@@ -226,6 +226,51 @@ fn bump_fills_both_sinks_with_what_it_released() {
     );
 }
 
+/// #326 D1a: a request that yields the version the fixture already released releases nothing, and the
+/// channel says so on both sinks — `released=false`, no `commit` line because there is no commit, and
+/// a brief that never claims a release. `bump --channel stable` with no level named is the promotion
+/// re-run a channel matrix does, so a workflow keying on `released` must not be told it published.
+#[test]
+fn a_no_op_bump_fills_both_sinks_with_no_release() {
+    let guard = repo("sinks-no-op", TOML);
+    let fixture = guard.fixture();
+    let sinks = Sinks::new("sinks-no-op");
+    let head_before = head_commit(fixture);
+
+    let out = with_ci(&fixture.dir, &["bump", "--channel", "stable"], &sinks);
+
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "stderr:
+{}",
+        stderr_of(&out)
+    );
+    assert_eq!(
+        sinks.summary_text(),
+        "### cutver bump
+
+- released: `false`
+- deferred: `false`
+- version: `1.2.3`
+- tag: `v1.2.3`
+"
+    );
+    assert_eq!(
+        sinks.output_text(),
+        "released=false
+deferred=false
+version=1.2.3
+tag=v1.2.3
+"
+    );
+    assert_eq!(
+        head_commit(fixture),
+        head_before,
+        "the run it reports as not released created no commit"
+    );
+}
+
 /// S2: a value the run does not have is omitted rather than written empty — a `--dry-run` bump
 /// created no commit, so there is no `commit` line at all.
 #[test]

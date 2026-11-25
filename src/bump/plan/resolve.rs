@@ -22,12 +22,23 @@ pub(super) type NextVersionResolution = (
     Option<conventional::BumpRationale>,
 );
 
-/// The version with the channel the caller asked for, if they asked for one (#326 S1). A caller that
-/// named no channel keeps the version the level and the manifests already decided.
-fn on_channel(version: Version, channel: Option<Channel>) -> Version {
+impl super::ReleasePlan {
+    /// Nothing to release: the request settled on the version the workspace already carries (#326
+    /// D1, D1a). Only a `stable` channel with no level named on a stable version settles there, and
+    /// a versioning plugin that answers with the current version is reported the same way. A first
+    /// release is never a no-op: the version it names has no tag yet, which is the whole release.
+    pub(crate) fn no_op(&self) -> bool {
+        !self.first_release && self.next_version == self.current_version
+    }
+}
+
+/// The version the run cuts: the level (or the plugin) decides the base, and a channel the caller
+/// named decides what the workspace is on top of it (#326 S1, D1). A caller that named no channel
+/// keeps the version the level and the manifests already decided.
+fn on_channel(current: &Version, level_version: Version, channel: Option<Channel>) -> Version {
     match channel {
-        Some(channel) => semver_bump::apply_channel(&version, channel),
-        None => version,
+        Some(channel) => semver_bump::next_on_channel(current, &level_version, channel),
+        None => level_version,
     }
 }
 
@@ -35,6 +46,21 @@ fn on_channel(version: Version, channel: Option<Channel>) -> Version {
 ///
 /// Extracted from the pipeline unchanged, so `cutver plan` and `cutver bump` cannot disagree about
 /// which version the workspace is about to cut.
+///
+/// **What a promotion does to the release, stated before it is written (#326 T3).** Promotion is a
+/// channel applied to a version that is already a prerelease, and what it produces is an ordinary
+/// release, not a special case of one:
+///
+/// * the tag is the release tag with no suffix — `1.2.0-rc.1 --channel stable` creates `v1.2.0`;
+/// * the floating major tag moves onto it exactly like any other stable release moves it, because
+///   that is what this is: the move depends on the release, not on the channel that carried it here;
+/// * the changelog entry is the release's own version with no suffix. The configured heading renders
+///   the release *tag*, so the default `tag_prefix = "v"` makes it `## [v<X.Y.Z>]`
+///   (`src/changelog/update.rs:97`, fed from `params.tag` in `src/bump/exec/changelog.rs:303`), and
+///   never the suffix the workspace promoted from. The prerelease entries stay as their own history:
+///   the run prepends one entry and rewrites none, and the already-carried check matches the exact
+///   `[<tag>]` (`src/changelog/update.rs:51`), which `## [v1.2.0-rc.1]` does not — so the promotion
+///   always gets its own entry instead of being suppressed by the candidate it replaces.
 pub(super) fn resolve_next_version(
     config: &Config,
     repo: &std::path::Path,
@@ -45,7 +71,14 @@ pub(super) fn resolve_next_version(
     plugin_manager: Option<&Arc<PluginManager>>,
 ) -> Result<NextVersionResolution, Error> {
     if first_release {
-        return Ok((on_channel(current.clone(), channel), None, None, None));
+        // A first release tags the version the manifests already declare, so a channel is applied to
+        // that version and nothing is promoted: promotion is about a prerelease that already exists
+        // (#326 D1), and this is the one run whose version the operator wrote by hand.
+        let next = match channel {
+            Some(channel) => semver_bump::apply_channel(current, channel),
+            None => current.clone(),
+        };
+        return Ok((next, None, None, None));
     }
     let previous_tag = git::latest_tag(repo, Some(&config.git.tag_prefix))?;
 
@@ -105,7 +138,7 @@ pub(super) fn resolve_next_version(
             breaking_sample: Some(r),
         });
 
-        return Ok((on_channel(next, channel), previous_tag, None, rationale));
+        return Ok((on_channel(current, next, channel), previous_tag, None, rationale));
     }
 
     let mut auto_commits = None;
@@ -123,6 +156,14 @@ pub(super) fn resolve_next_version(
             deduced
         }
     };
-    let next = on_channel(semver_bump::bump(current, bump_semver), channel);
+    // #326 D1a: naming `stable` is never by itself a no-op — a named level still cuts the version it
+    // names — but with *no* level named (`auto`, the CLI default) `stable` on a version that is
+    // already a release asks for the release the workspace already is. Returning it unchanged is what
+    // the caller reports as a no-op, instead of cutting a patch nobody asked for.
+    let no_level_named = matches!(bump_level, BumpLevel::Auto);
+    if channel == Some(Channel::Stable) && no_level_named && current.pre.is_empty() {
+        return Ok((current.clone(), previous_tag, auto_commits, rationale));
+    }
+    let next = on_channel(current, semver_bump::bump(current, bump_semver), channel);
     Ok((next, previous_tag, auto_commits, rationale))
 }

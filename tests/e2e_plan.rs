@@ -76,6 +76,10 @@ fn fixture(name: &str, config: &str) -> FixtureGuard {
     fixture.write("cutver.toml", config);
     init_git_repo(fixture);
     initial_commit(fixture);
+    // Every configuration here names `main` under `[git] require_branch`, and `git init`'s default
+    // branch belongs to the host: CI runners still create `master`. The fixture names it instead of
+    // inheriting it, so a plan reports the release and not its own checkout.
+    run_git_ok(&fixture.dir, &["branch", "-M", "main"]);
     guard
 }
 
@@ -788,6 +792,9 @@ fn released_fixture(name: &str, version: &str, config: &str) -> FixtureGuard {
     fixture.write("cutver.toml", config);
     init_git_repo(fixture);
     initial_commit(fixture);
+    // The configurations below require `main`, and `git init`'s default branch belongs to the host:
+    // CI runners still create `master`, so the fixture names the branch instead of inheriting it.
+    run_git_ok(&fixture.dir, &["branch", "-M", "main"]);
     guard
 }
 

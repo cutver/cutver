@@ -945,3 +945,5 @@ fn test_cli_parsing_external_subcommand() {
         _ => panic!("expected Commands::External variant"),
     }
 }
+#[cfg(unix)]
+mod external_busy;

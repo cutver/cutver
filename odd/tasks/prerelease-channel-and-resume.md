@@ -32,30 +32,51 @@ Decision: `docs/adr/0005-prerelease-channel-supersedes-0004.md` (accepted). Issu
   Done — the issue now names ADR-0005 and links this plan.
 - **T2** `--channel` on `bump` and `plan`. Parse and validate the four values, compute the version
   (`1.2.0-alpha.1` from `1.2.0`), report it in the human tree and in the plan's machine output, and keep
-  `plan` a dry run (`Pillar I.2`). Blocked on **D3**.
+  `plan` a dry run (`Pillar I.2`). D3 answered: no machine-contract change; the human tree names the transition.
 - **T3** Promotion: `--channel stable` on an existing prerelease produces the release version. Must state
-  what it does to the tag, the floating major tag and the changelog entry before writing it. Blocked on
-  **D1**.
-- **T4** `publish --resume`, driven by the plan that gap 1 already ships. Blocked on **D2**.
+  what it does to the tag, the floating major tag and the changelog entry before writing it. D1 answered:
+  any prerelease promotes, with no rung validation.
+- **T4** `publish --resume`, driven by the plan that gap 1 already ships. D2 answered: repeat only
+  idempotent steps, and refuse when the evidence contradicts the plan.
 - **T5** Docs with the behaviour: the `--channel` reference row and help text (bare "channel" = the
   ladder), the guide that explains promotion, `docs/internals/design.md:135` from `Planned` to
   `Implemented`, and the qualifier test of S3 if it does not exist yet.
 - **T6** Measurement: `sh scripts/check.sh` green, the new tests red before their fix, and one documented
   run of the promotion path end to end on a scratch repository.
 
-## Open decisions — the plan does not invent them
+## Decisions
 
-- **D1 (promotion range).** Which suffixes promote. ADR-0005 says "an existing prerelease"; it does not
-  say whether `1.2.0-alpha.3 --channel stable` is allowed (skipping beta and rc) or refused. Recommend:
-  allow it and say so, because refusing invents a state machine the ADR ruled out.
-- **D2 (what `--resume` refuses).** Candidates, and the issue demands the refusal be named rather than
-  softened: a tag that already points somewhere else, a `cargo publish` that already ran, a draft release
-  that already carries assets, a workspace that changed since the plan. Recommend: resume re-reads the
-  plan and refuses on any step whose evidence disagrees with it.
-- **D3 (the machine contract).** Whether `channel` enters `plan --json`. That contract is gap 5, which #326
-  says is "thin and unversioned" and "not re-checked", and phase 1 (`schemaVersion`) is not assumed to
-  have landed. Adding a field may be additive, but the decision belongs to gap 5. It has to be answered
-  before T2 lands, because T2 is the change that would answer it by accident.
+Three decisions were open when this plan was written. They were closed before any code, by the maintainer
+accepting the recommendations below, and they are decisions now: a later change that disagrees argues with
+the reasoning, it does not re-open the bullet.
+
+**D1 — promotion does not validate the rung.** Any prerelease promotes to `stable`; `1.2.0-alpha.3
+--channel stable` produces `1.2.0`, and skipping `beta` and `rc` is allowed. ADR-0005 rules out a separate
+promotion verb and a new state machine, and refusing `alpha → stable` would be exactly that machine — an
+order enforced between suffixes the tool otherwise knows nothing about. The four cases T3 implements and
+pins:
+
+- same channel on a prerelease: increment the counter (`1.2.0-alpha.1` → `1.2.0-alpha.2`);
+- a different channel on the same base version: start that channel at 1 (`1.2.0-alpha.3 --channel beta` →
+  `1.2.0-beta.1`), where the `level` argument is ignored;
+- `stable` on a prerelease: drop the prerelease segment (`1.2.0-rc.1` → `1.2.0`), no increment;
+- `stable` on a stable version, or the channel the version already carries with no level: a **reported**
+  no-op — not a silent success, and not an error, because erroring would force every caller to branch on
+  the current version, which is the inference this tool exists to remove.
+
+**D2 — `--resume` repeats only what is idempotent.** It re-reads the plan and refuses whenever evidence
+disagrees with it: HEAD moved, a manifest's version changed, or a tag that exists pointing elsewhere.
+Within that, a step may be repeated only when repeating it is harmless — creating a tag that already
+matches, pushing it, moving the floating major, verifying a gate (read-only). `[publish] commands` is not
+on that list: it is an arbitrary command, so `--resume` refuses to run it again unless the gate channel
+already holds an attestation naming it as done, and it names the step when it refuses. A retry that
+re-runs `cargo publish` because the tool could not tell is the failure this decision exists to prevent.
+
+**D3 — `plan --json` does not grow a `channel` field.** No machine-contract change, so gap 5 stays
+untouched and T2 cannot alter an unversioned surface by accident. The information is already in
+`touched[]`: `1.2.0-rc.1 → 1.2.0` is the promotion. What the human tree must add is the transition in
+words — the channel the run asked for and the channel the version ends in — so approving a promotion is
+not parsing suffixes by eye.
 
 ## Log
 
@@ -75,3 +96,9 @@ ADR-0005 in all three and keeps the reversal as the record rather than deleting 
 **L4. What #384 did and did not unblock.** It was never a dependency of this phase's code; it was the gate's
 honesty. Phase 5 is a CLI surface verified by many suite runs, so an invented red one run in four was a tax
 on every task here — and on the ADR work that preceded it, which is how #384 was found.
+
+**L5. The three decisions, closed before code.** The maintainer accepted the plan's recommendations:
+promotion does not validate the rung (D1); `--resume` repeats only what is idempotent and refuses when the
+evidence contradicts the plan (D2); and `plan --json` gains no field because `touched[]` already carries
+the transition (D3). D3 was the one that could have reshaped T2 — it removes work instead of adding it and
+leaves gap 5 exactly where #326 says it is.

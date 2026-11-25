@@ -183,3 +183,37 @@ ends with an open question this plan does not answer — "whether #326 closes wi
 scope" — which T6 turns into evidence instead of a question.
 
 **L7.** «continuemos» — D1-D5 accepted as written (order T1 → T2 → T3 → T5 → T4 → T6 → T8, T7 conditional on its own condition), execution started on `chore/phase5-debts` off `cec818e`.
+
+**L8. T6 — gaps 2, 5, 8 and 9 re-checked against the tree, one line each.** Sources: `.git/issue-ci-native.md`
+(gap 2 `:41-47`, gap 5 `:65-71`, gap 8 `:89-95`, gap 9 `:97-103`, sequencing `:114`), still present and
+matching the quotes in S6.
+
+- **Gap 2 — the artifact model — CLOSED.** `src/config/artifact.rs:1` declares `[[artifact]]` (a glob and
+  the name a message uses), and `src/bump/exec/publish/validate.rs:25` (`verify_artifacts`) refuses a
+  declared glob that matches nothing before the first irreversible step. The config can say what a
+  release produces, and the tool checks it.
+- **Gap 5 — the machine contract is versioned — CLOSED.** `src/cli/json.rs:15` is `SCHEMA_VERSION = 1`
+  and `:32-35` wraps a payload with it, so every `--json` surface that goes through the wrapper carries
+  the version; `src/bump/plan/tests.rs:147` pins the object with `"schemaVersion":1` first.
+- **Gap 8 — declared per-phase needs — OPEN.** Nothing declares what a phase needs: `src/cli/args/commands.rs`
+  has no such flag, and every `requires` in the tree means a release gate (`src/config/types.rs:114`),
+  which is a different concept. Sequenced to phase 6 (`.git/issue-ci-native.md:114`).
+- **Gap 9 — the repository root is ambient — OPEN.** `grep '"root"' src/cli/args/*.rs` returns nothing, so
+  the working directory is still the implicit root (`src/config/discovery.rs`). Sequenced to phase 6.
+
+Both open gaps stay phase 6's (D4): recording them here is the deliverable, and the #326 status table is
+`odd/tasks/release-channel-dogfooding.md` T1's write, not this branch's.
+
+**L9. T7 — the ratchet pressure, and which files stay full on purpose.** The condition fired: T4 needed a
+line in `src/bump/exec/publish.rs`, which sat at exactly the 448 T2 had just recorded. Two pure moves gave
+it room — `publish/post_release.rs` (the `on_post_release` dispatch, 54 lines) and `publish/context.rs` (the
+interpolation context, the notes and the previous version, 70) — and the facade is now **356**, inside the
+400-line ceiling, so its `ALLOWLIST` entry is gone and the table is **14 rows**. `git diff -M` reads both as
+moves; the only behaviour change in the tree is T4's.
+
+Left alone deliberately, with the measurement that says so: `src/bump/types.rs` **399/400** (T3 took
+approach A, so nothing in T1-T6 owed it a line), `src/cli/runner/tests.rs` **949/950** (allowlisted and
+cannot grow; no task needed a line there, and a split with no defect behind it is churn), `src/bump/plan.rs`
+**390/400** (10 lines of headroom, untouched). Decision: not split. The next change that lands in any of
+them owes the extraction in its own commit, because a file at its ceiling is a blocking constraint on the
+next person, and "we chose not to split it" is the only honest alternative to splitting it.

@@ -107,6 +107,8 @@ Steps 2 to 6 are the code the single-process pipeline runs inline, in that order
 
 **The residual, stated plainly.** The crate is published by `[publish].commands` (step 5), while the release assets are uploaded and the draft is promoted by CI afterwards. An asset-upload failure therefore leaves a published crate version with a draft nobody can see. Nothing was lost and nothing needs re-cutting: re-run the asset upload and the promotion, which clobbers the assets and treats an already-published release as a no-op. `cutver publish` itself now fails closed on the tag it already created, and a crate version can be yanked but not withdrawn.
 
+`cutver publish --resume --commit <sha>` re-enters the closing phase of a release whose steps were left undone, and it repeats only what is harmless to repeat. `[publish].commands` is not in that set: a resume refuses to run an entry without a `publish-<n>` success attestation covering the release commit, and it names the entry by its 1-based position in `[publish].commands`. Recording that attestation is what authorizes the repeat, so it must not be recorded for a crate that already went out — this residual is finished by the upload and the promotion, never by attesting a resume over it. `tests/release_deferred_publish.rs` pins both the refusal and the attestation that lifts it.
+
 ---
 
 ## Publish Ordering

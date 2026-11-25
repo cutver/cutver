@@ -140,10 +140,23 @@ also in the baseline is how you *pin* it: `env = ["PATH"]` fails the invocation 
 | Reaches | The whole process tree: the plugin and every process it started |
 
 That last row is the one that matters as soon as your plugin starts helpers. The plugin is spawned in
-a process group of its own and the deadline signals that group — `killpg` on unix, `taskkill /F /T`
-on Windows — so a descendant that inherited the pipes is killed with the plugin and cannot extend
-the invocation past the limit (`src/proc.rs`, `spawn_group` and `kill_tree`). Your helpers are
-reachable by that kill: nothing of your own is left running after a timeout.
+a container of its own and the deadline ends that container rather than walking it — `killpg` on
+unix, a job object ended by `TerminateJobObject` on Windows — so a descendant that inherited the
+pipes is killed with the plugin and cannot extend the invocation past the limit (`src/proc.rs`,
+`spawn_group` and `Grouped::kill_tree`). Your helpers are reachable by that kill: nothing of your own
+is left running after a timeout. How much that is worth is what #384 measured: ending the container
+is a single kernel call of about 1 ms, where `taskkill /F /T` was a walk that took 89–397 ms per kill
+— hundreds of milliseconds in which a `cmd.exe` whose child had just been killed resumed its own
+command list and wrote a marker after the deadline (1 of 9 loaded runs; 0 of 9 with the job object).
+
+Two limits are real. The `taskkill /F /T` fallback stays for a host that refuses a Windows job
+object, and it is still a walk over parentage, with the same gap. And a descendant created in the
+moment between its parent's `CreateProcess` and the job assignment is outside the job: the deadline
+ends the members the container holds.
+
+Being inside a job has one consequence on Windows: a plugin that spawns with
+`CREATE_BREAKAWAY_FROM_JOB` is denied. Leaving the container is precisely what the deadline promises
+cannot happen, so the guarantee wins over that escape hatch.
 
 One case is deliberately not a kill: a plugin that exits `0` while a descendant it started still
 holds the pipes. A successful plugin gets no new kill semantics, but the exchange still ends at the

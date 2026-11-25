@@ -115,7 +115,7 @@ File modifications and process execution follow fail-fast atomic guarantees:
 
 - Manifests are modified only after all preflight steps succeed.
 - Updates use same-directory temporary files and atomic filesystem replacement (`rename`), retried a bounded number of times for the transient collisions Windows reports when the destination is held open.
-- Timeouts enforce complete process tree termination (`SIGKILL` to `-pgid` on Unix, `taskkill` on Windows).
+- Timeouts enforce complete process tree termination (`SIGKILL` to `-pgid` on Unix, a job object ended with `TerminateJobObject` on Windows, `taskkill` as the Windows fallback).
 - Failure before commit triggers best-effort RAII rollback and Git index unstaging.
 
 Full implementation details and limitations are specified in [Pipeline Execution & Atomic Guarantees](pipeline.md).

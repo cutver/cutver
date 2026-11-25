@@ -29,7 +29,7 @@ const CEILING: usize = 400;
 /// on that commit. Sorted by path, so a reviewer diffing this table sees one insertion or one deletion
 /// per file.
 const ALLOWLIST: [(&str, usize); 15] = [
-    ("src/bump/exec/publish.rs", 469),
+    ("src/bump/exec/publish.rs", 448),
     ("src/changelog/context/tests.rs", 1308),
     ("src/changelog/extract/tests.rs", 563),
     ("src/changelog/render/tests.rs", 755),

@@ -25,6 +25,7 @@ pub fn run_publish(config: &config::Config, request: PublishRequest) -> i32 {
     match bump::run_publish(config, &request) {
         Ok(summary) => {
             print_publish_summary(&summary);
+            crate::cli::ci::on_publish_success(&summary);
             0
         }
         Err(e) => {

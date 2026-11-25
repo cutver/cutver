@@ -13,6 +13,7 @@ use std::process::Output;
 
 use common::ci::{Sinks, TOML, head_commit, repo, snapshot, with_ci, without_github_actions};
 use common::cutver_command;
+use common::{Fixture, FixtureGuard, run_git_ok};
 use tempfile::TempDir;
 
 /// A `cutver` process with the channel's variables removed and nothing else set.
@@ -264,6 +265,171 @@ fn plan_appends_its_three_keys_and_writes_the_brief() {
             "### cutver plan\n\n- level: `minor`\n- next_version: `1.3.0`\n- tag: `v1.3.0`\n- commit: `{commit}`\n- blockers: `0`\n"
         )
     );
+}
+
+/// The fixture config plus what the closing phase needs to have something to report: a floating
+/// major tag that moves, and one `[publish] command` that runs.
+fn publishing_config(push: bool) -> String {
+    let mut config = TOML.replace(
+        "[git]\ntag_prefix = \"v\"",
+        "[git]\ntag_prefix = \"v\"\nfloating_major_tag = true",
+    );
+    config.push_str(&format!(
+        "\n[publish]\npush = {push}\ncommands = [\"echo published {{version}} > published.txt\"]\n"
+    ));
+    config
+}
+
+/// A repository with a bare `origin`, so a closing phase that `[publish] push` asks to push has
+/// somewhere to push to. The remote owns its own temp directory, so the caller keeps it alive.
+fn publishing_repo(name: &str) -> (FixtureGuard, Fixture) {
+    let remote = Fixture::new(&format!("{name}-remote"));
+    run_git_ok(&remote.dir, &["init", "--bare", "-q"]);
+    let guard = repo(name, &publishing_config(true));
+    run_git_ok(
+        &guard.fixture().dir,
+        &["remote", "add", "origin", remote.dir.to_str().expect("a utf-8 path")],
+    );
+    (guard, remote)
+}
+
+/// The preparing bump, outside the channel: these tests are about the closing phase.
+fn prepare(fixture: &Fixture) {
+    let out = plain(&fixture.dir, &["bump", "minor", "--defer-publish"]);
+    assert_eq!(out.status.code(), Some(0), "stderr:\n{}", stderr_of(&out));
+}
+
+/// S2, S3: `publish` — the irreversible phase — appends what it did to the same file the preparing
+/// `bump` wrote, and adds a block of its own to the summary.
+#[test]
+fn publish_fills_both_sinks_with_what_it_published() {
+    let guard = repo("sinks-publish", &publishing_config(false));
+    let fixture = guard.fixture();
+    let sinks = Sinks::new("sinks-publish");
+
+    let prepared = with_ci(&fixture.dir, &["bump", "minor", "--defer-publish"], &sinks);
+    assert_eq!(prepared.status.code(), Some(0), "stderr:\n{}", stderr_of(&prepared));
+    let out = with_ci(&fixture.dir, &["publish", "--tag", "v1.3.0"], &sinks);
+    assert_eq!(out.status.code(), Some(0), "stderr:\n{}", stderr_of(&out));
+
+    let commit = head_commit(fixture);
+    assert_eq!(
+        sinks.output_text(),
+        format!(
+            "released=true\ndeferred=true\nversion=1.3.0\ntag=v1.3.0\ncommit={commit}\n\
+             tag=v1.3.0\ncommit={commit}\ntag_pushed=false\nfloating_tag_moved=true\npublish_commands_run=1\n"
+        ),
+        "the closing phase appends its own lines after the preparing bump's, never truncating them"
+    );
+    assert_eq!(
+        sinks.summary_text(),
+        format!(
+            "### cutver bump\n\n- released: `true`\n- deferred: `true`\n- version: `1.3.0`\n- tag: `v1.3.0`\n- commit: `{commit}`\n\
+             ### cutver publish\n\n- tag: `v1.3.0`\n- commit: `{commit}`\n- tag_pushed: `false`\n- floating_tag_moved: `true`\n- publish_commands_run: `1`\n"
+        )
+    );
+}
+
+/// S2: a `--dry-run` published nothing, so every field that reports an action says so — even though
+/// the run it printed planned the tag push, the floating tag move and the command. Stdout is
+/// byte-for-byte the same with the channel on and off.
+#[test]
+fn a_dry_run_publishes_nothing_and_reports_nothing_done() {
+    let (guard, _remote) = publishing_repo("publish-dry-run");
+    let fixture = guard.fixture();
+    let sinks = Sinks::new("publish-dry-run");
+    prepare(fixture);
+
+    let off = plain(&fixture.dir, &["publish", "--tag", "v1.3.0", "--dry-run"]);
+    assert_eq!(off.status.code(), Some(0), "stderr:\n{}", stderr_of(&off));
+    let on = with_ci(&fixture.dir, &["publish", "--tag", "v1.3.0", "--dry-run"], &sinks);
+    assert_eq!(on.status.code(), Some(0), "stderr:\n{}", stderr_of(&on));
+    assert!(!off.stdout.is_empty(), "the dry run printed something to compare");
+    assert_eq!(off.stdout, on.stdout, "CI adds no byte to `publish --dry-run`");
+
+    let commit = head_commit(fixture);
+    assert_eq!(
+        sinks.output_text(),
+        format!("tag=v1.3.0\ncommit={commit}\ntag_pushed=false\nfloating_tag_moved=false\npublish_commands_run=0\n"),
+        "a dry run pushed nothing, moved nothing and ran no command, whatever the config declares"
+    );
+}
+
+/// S2: the same fields on the run that really pushed the tag say `true`, so the pair is a fact about
+/// the run and not a constant.
+#[test]
+fn a_real_publish_reports_the_tag_it_pushed() {
+    let (guard, _remote) = publishing_repo("publish-pushed");
+    let fixture = guard.fixture();
+    let sinks = Sinks::new("publish-pushed");
+    prepare(fixture);
+
+    let out = with_ci(&fixture.dir, &["publish", "--tag", "v1.3.0"], &sinks);
+    assert_eq!(out.status.code(), Some(0), "stderr:\n{}", stderr_of(&out));
+
+    let commit = head_commit(fixture);
+    assert_eq!(
+        sinks.output_text(),
+        format!("tag=v1.3.0\ncommit={commit}\ntag_pushed=true\nfloating_tag_moved=true\npublish_commands_run=1\n")
+    );
+}
+
+/// S3: the release has already happened when the channel is written, so a sink that cannot be
+/// opened warns and the run keeps its exit code — and its other sink.
+#[test]
+fn an_unwritable_sink_does_not_fail_a_finished_publish() {
+    let guard = repo("publish-degraded", &publishing_config(false));
+    let fixture = guard.fixture();
+    let sinks = Sinks::new("publish-degraded");
+    prepare(fixture);
+    let unwritable = sinks.output().join("missing");
+
+    let out = cutver_command(&fixture.dir)
+        .env("GITHUB_ACTIONS", "true")
+        .env("GITHUB_OUTPUT", &unwritable)
+        .env("GITHUB_STEP_SUMMARY", sinks.summary())
+        .args(["publish", "--tag", "v1.3.0"])
+        .output()
+        .expect("failed to execute the cutver binary");
+
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "the release finished; a sink is bookkeeping: {}",
+        stderr_of(&out)
+    );
+    assert!(
+        stdout_of(&out).contains("v1.3.0"),
+        "the human summary is still printed: {}",
+        stdout_of(&out)
+    );
+    assert!(
+        stderr_of(&out).contains("could not write"),
+        "the sink degrades to a warning: {}",
+        stderr_of(&out)
+    );
+    assert!(!unwritable.exists(), "the sink that cannot be opened stays absent");
+    assert!(
+        sinks.summary_text().contains("### cutver publish"),
+        "the sink that can be opened is still filled: {}",
+        sinks.summary_text()
+    );
+}
+
+/// S2: only a closing phase that succeeded speaks. A refused publish writes neither sink, so a
+/// consumer never reads a field describing a release that did not happen.
+#[test]
+fn a_refused_publish_writes_no_output_and_no_summary() {
+    let guard = repo("publish-refused", &publishing_config(false));
+    let fixture = guard.fixture();
+    let sinks = Sinks::new("publish-refused");
+    prepare(fixture);
+
+    let out = with_ci(&fixture.dir, &["publish", "--tag", "v9.9.9"], &sinks);
+
+    assert_eq!(out.status.code(), Some(1), "stdout:\n{}", stdout_of(&out));
+    assert!(!sinks.output().exists(), "a refused run writes no output file");
+    assert!(!sinks.summary().exists(), "a refused run writes no summary");
 }
 
 /// S3: the block is bounded and shaped — a heading and one bullet per field, never anything a value

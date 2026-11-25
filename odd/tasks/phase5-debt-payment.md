@@ -217,3 +217,60 @@ cannot grow; no task needed a line there, and a split with no defect behind it i
 **390/400** (10 lines of headroom, untouched). Decision: not split. The next change that lands in any of
 them owes the extraction in its own commit, because a file at its ceiling is a blocking constraint on the
 next person, and "we chose not to split it" is the only honest alternative to splitting it.
+
+**L10. T8 — close: gate, the scratch run, the differential and the commit map.** All six code units were
+observed RED first except T5, which is a characterization test for behaviour that already existed and had
+no test (there is no fix to redden): T2 failed with `["src/bump/exec/publish.rs was 447, is now 448"]`; T3
+failed on both paths with the old sentence (`is not HEAD ('4df0e19...')\n  Where: ...\n  Fix: ... or drop
+`--commit` to publish the current HEAD`); T4 failed to compile with `expected &Config, found &[_; 0]` at the
+quote of the line that still loaded the second manager. T1 is prose, T6 read-only, T7 pure moves.
+
+`sh scripts/check.sh` — **PASS, 9 passed / 0 failed / 1 not run here**: toolchain, lean dependency shape,
+build, test (default), test (plugins), clippy (default), clippy (plugins), clippy (x86_64-unknown-linux-gnu
+default), format. The step that did not run is `clippy (x86_64-unknown-linux-gnu, plugins)`: `zstd-sys` via
+extism compiles C for that target and needs `x86_64-linux-gnu-gcc`, which is not on PATH on this host. A
+skipped step is not a pass and it is not widened here.
+
+The scratch-repository run, verbatim (a 1.2.3 repo with `[publish] push = false`, no commands and no
+plugins, release commit `3230009` while HEAD is `2b81f43`):
+
+```
+== 1. a --commit that is not HEAD: the qualified Fix (T3) ==
+Error: release commit '32300095e50277138bdbefea6775b1ee56376b08' is not HEAD ('2b81f43c1e963de16d2834603e4131f5238d3859')
+  Where: `cutver publish` validation, before the tag, the pushes and the publish commands
+  Fix: check out the commit you meant to publish (`git checkout 32300095e50277138bdbefea6775b1ee56376b08`) and re-run. Dropping `--commit` is not an alternative: a plain `cutver publish` with no `--commit` publishes the current HEAD, and `--resume` requires `--commit`. Nothing was written.
+EXIT=1
+
+== 2. --resume over that release: the Resume section (T4) ==
+✔ Resumed: v1.2.3 at 32300095e50277138bdbefea6775b1ee56376b08
+├── Tag
+│   └── v1.2.3
+├── Floating tag
+│   └── v1
+└── Resume
+    ├── repeated only the steps that are harmless to repeat: the release tag, its push, the floating major tag and the gates
+    ├── a tag, a push or a floating major tag already in place was left as it was, and no `[publish] commands` entry ran without its `publish-<n>` attestation
+    └── `on_post_release` not dispatched: this workspace declares no plugin for that event
+
+== 3. the evidence the run left ==
+v1 -> 48d400a
+v1.2.3 -> fa56489
+3230009
+```
+
+The differential check T4 owes, because the diff changes `post_release::dispatch`, which `bump` also reaches
+and this plan did not touch: one scratch repository, reset to the same commit with `v1` restored between
+runs, a `[publish] commands` entry and a real `on_post_release` plugin, `bump patch` run with the binary of
+`cec818e` and with this branch's. Exit code, stderr, commit subject, tag list, the publish-command run, the
+plugin dispatch count, HEAD and the floating major tag are **identical** (`EXIT_DIFF=0`, exit `0`, stderr
+empty, one `published 1.2.4` line, one dispatch). Fixed commit dates are what make the two commit shas
+comparable; nothing else was normalised.
+
+Commit map on `chore/phase5-debts` off `cec818e`: `ec924ad` this document · `6c99489` T1 · `5ebb30f` T2 ·
+`ddec386` T3 · `34dced2` T5 (tests, `pipeline.md`, and — after an amend folded it — this document's L8/L9) ·
+`62c1468` T7's split of `publish.rs` · `29f4d3f` T4. One boundary is imperfect and is not rewritten: L8/L9
+were meant to be their own commit and ended up inside T5's. The tree is right, the history is readable, and
+rewriting a local branch to move two paragraphs is not worth the risk of a second surgery.
+
+Pending, and not this branch's to do (D5): push, pull request, merge, and the #326 status table — that write
+belongs to `odd/tasks/release-channel-dogfooding.md` T1. Nothing was published to the remote.

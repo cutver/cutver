@@ -2,10 +2,11 @@
 //!
 //! They are the names the machine payload already carries, which is what lets the release workflow
 //! stop parsing the report: `bump` feeds the five keys `.github/workflows/release.yml` extracts with
-//! `jq` today, and `plan` feeds the three a planning step reads.
+//! `jq` today, `plan` feeds the three a planning step reads, and `publish` mirrors `bump`'s `tag` and
+//! `commit` and adds only what the closing phase knows.
 
-use crate::bump::Summary;
 use crate::bump::plan::ReleasePlan;
+use crate::bump::{PublishSummary, Summary};
 
 use super::text::one_line;
 
@@ -29,6 +30,31 @@ pub fn plan(release: &ReleasePlan) -> Vec<Field> {
         ("next_version", Some(release.next_version.to_string())),
         ("tag", Some(release.tag.clone())),
         ("commit", Some(release.commit.clone())),
+    ]
+}
+
+/// The keys `publish` feeds: `bump`'s `tag` and `commit`, where they mean the same thing, plus what
+/// only the closing phase can know.
+///
+/// The three that report an action are read against `dry_run`, because the summary a `--dry-run`
+/// produces still describes the plan it printed: `publish_push_command` and `floating_tag` are filled
+/// from the pushes and the tag move it planned, and `publish_commands` lists commands that did not
+/// run. A dry run published nothing, so all three say exactly that.
+pub fn publish(finished: &PublishSummary) -> Vec<Field> {
+    let published = !finished.dry_run;
+    let ran = if published { finished.publish_commands.len() } else { 0 };
+    vec![
+        ("tag", Some(finished.tag.clone())),
+        ("commit", Some(finished.commit.clone())),
+        (
+            "tag_pushed",
+            Some((published && finished.publish_push_command.is_some()).to_string()),
+        ),
+        (
+            "floating_tag_moved",
+            Some((published && finished.floating_tag.is_some()).to_string()),
+        ),
+        ("publish_commands_run", Some(ran.to_string())),
     ]
 }
 

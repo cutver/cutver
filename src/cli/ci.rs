@@ -21,6 +21,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
+use crate::bump::PublishSummary;
 use crate::bump::Summary;
 use crate::bump::plan::ReleasePlan;
 
@@ -198,6 +199,20 @@ pub(crate) fn on_plan_success(plan: &ReleasePlan) {
     brief.extend(fields);
     brief.push(("blockers", Some(plan.blockers.len().to_string())));
     channel.append_summary(&summary::render("cutver plan", &brief));
+}
+
+/// Everything the channel carries for a finished `publish`: the outputs, then the summary.
+///
+/// The closing phase is the irreversible one, so its fields report what it did and not what it
+/// planned: a `--dry-run` writes `false` for every action and no command as having run.
+pub(crate) fn on_publish_success(finished: &PublishSummary) {
+    let channel = channel();
+    if !channel.detected() {
+        return;
+    }
+    let fields = fields::publish(finished);
+    channel.append_outputs(&fields);
+    channel.append_summary(&summary::render("cutver publish", &fields));
 }
 
 /// Appends `text` to `path`, creating the file when the runner named a path that does not exist yet.

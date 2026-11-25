@@ -7,6 +7,8 @@
 
 use std::collections::BTreeMap;
 
+use crate::bump::PublishSummary;
+
 use super::fields::Field;
 use super::text::{MAX_VALUE_CHARS, code_span, one_line};
 use super::{CiContext, CiMode, escape_command_data, summary};
@@ -160,6 +162,34 @@ fn the_annotation_escaping_is_one_line() {
     assert_eq!(
         escape_command_data("first line\n  Where: x\n  Fix: 100% of it\r\n"),
         "first line%0A  Where: x%0A  Fix: 100%25 of it%0D%0A"
+    );
+}
+
+/// S2: `publish` reuses `bump`'s `tag` and `commit` and adds only what the closing phase alone
+/// knows. Its three action fields read `dry_run`, because the summary of a dry run still carries the
+/// plan it printed — a filled `publish_push_command` on a run that pushed nothing must not read as a
+/// pushed tag.
+#[test]
+fn the_publish_fields_report_what_the_closing_phase_did() {
+    let real = PublishSummary {
+        tag: "v1.3.0".to_string(),
+        commit: "abc1234".to_string(),
+        floating_tag: Some("v1".to_string()),
+        publish_push_command: Some("git push origin refs/tags/v1.3.0".to_string()),
+        publish_commands: vec!["cargo publish".to_string()],
+        dry_run: false,
+    };
+
+    assert_eq!(
+        super::fields::render(&super::fields::publish(&real)),
+        "tag=v1.3.0\ncommit=abc1234\ntag_pushed=true\nfloating_tag_moved=true\npublish_commands_run=1\n"
+    );
+
+    let dry = PublishSummary { dry_run: true, ..real };
+    assert_eq!(
+        super::fields::render(&super::fields::publish(&dry)),
+        "tag=v1.3.0\ncommit=abc1234\ntag_pushed=false\nfloating_tag_moved=false\npublish_commands_run=0\n",
+        "the planned pushes and the listed commands were not performed"
     );
 }
 

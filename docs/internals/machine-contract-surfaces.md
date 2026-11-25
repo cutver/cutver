@@ -1,26 +1,30 @@
 # Machine Contract: Command Surfaces
 
-> Outcome first: three surfaces need more than a table row, so the CI output channel `bump` and `plan`
-> fill on a runner, `doctor --json` and `plan --json` are specified here as data. The protocol they all
-> obey — `schemaVersion` first, the exit codes, the error envelope — is the
+> Outcome first: three surfaces need more than a table row, so the CI output channel `bump`, `plan`
+> and `publish` fill on a runner, `doctor --json` and `plan --json` are specified here as data. The
+> protocol they all obey — `schemaVersion` first, the exit codes, the error envelope — is the
 > [machine contract](machine-contract.md), and its `## Surfaces` table is the index to this page.
 
 ## CI output channel
 
 On GitHub Actions — `GITHUB_ACTIONS` reading `true`, trimmed and case-insensitive, **and**
-`GITHUB_OUTPUT` or `GITHUB_STEP_SUMMARY` naming a file — `bump` and `plan` fill the runner's sinks as
-well. The contract above does not change: **no CI output is written to stdout**, so every `--json`
-surface is byte-for-byte what it was with CI off. `--ci` and `--no-ci` are global, so every
-subcommand accepts them: `--ci` turns the channel on without `GITHUB_ACTIONS`, the annotation
+`GITHUB_OUTPUT` or `GITHUB_STEP_SUMMARY` naming a file — `bump`, `plan` and `publish` fill the
+runner's sinks as well. The contract above does not change: **no CI output is written to stdout**, so
+every `--json` surface is byte-for-byte what it was with CI off. `--ci` and `--no-ci` are global, so
+every subcommand accepts them: `--ci` turns the channel on without `GITHUB_ACTIONS`, the annotation
 included when no sink is named, and `--no-ci` turns it off entirely.
 
 - `$GITHUB_OUTPUT` receives the payload's field names, one `key=value` per line, appended and never
   truncated. `bump`: `released`, `deferred`, `version`, `tag`, `commit`; `plan`: `next_version`, `tag`,
-  `commit`. A value the run lacks is omitted, so a `--dry-run` bump writes no `commit`.
-- `$GITHUB_STEP_SUMMARY` receives one bounded markdown block per run: what was released, or the plan
-  in brief. Every value is condensed to one line and fenced inside a code span long enough for the
-  backticks it carries, so a tag or a prefix cannot inject markdown, and a changelog entry is never
-  copied there.
+  `commit`; `publish`: `tag` and `commit` as `bump` spells them, then `tag_pushed`,
+  `floating_tag_moved` and `publish_commands_run`, the count of `[publish] commands` that ran. A value
+  the run lacks is omitted, so a `--dry-run` bump writes no `commit`. The three `publish` actions are
+  facts about the run, not its plan: a `--dry-run` publish writes `false`, `false` and `0`, because
+  the pushes and the tag move it printed never happened.
+- `$GITHUB_STEP_SUMMARY` receives one bounded markdown block per run: what was released, the plan in
+  brief, or what the closing phase published. Every value is condensed to one line and fenced inside
+  a code span long enough for the backticks it carries, so a tag or a prefix cannot inject markdown,
+  and a changelog entry is never copied there.
 - A failure writes one `::error::` annotation to **stderr** — never stdout — carrying the human
   message with `%`, CR and LF percent-escaped, so it stays one line. It precedes the machine envelope
   when both are emitted; a successful run annotates nothing.
@@ -29,7 +33,7 @@ included when no sink is named, and `--no-ci` turns it off entirely.
   spellings and the release that removes each one are in the
   [configuration reference](../reference/configuration.md#deprecated-keys).
 - A sink that cannot be written degrades to a `warning:` line and the exit code still reports the
-  release. Outside CI nothing is opened, annotated or created.
+  release or the publication. Outside CI nothing is opened, annotated or created.
 
 ## `doctor --json`
 

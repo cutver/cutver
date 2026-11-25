@@ -37,8 +37,8 @@ The surfaces that do not emit JSON are deliberate: `init`, `attest`, `open --pri
 add|update|restore|remove` print human output only. Passing `--json` to them is a usage error, not a
 silent fallback.
 
-Three of these need more than a row, so the CI output channel `bump` and `plan` also fill on a
-runner, `doctor --json` and `plan --json` are specified on the
+Three of these need more than a row, so the CI output channel `bump`, `plan` and `publish` also fill on
+a runner, `doctor --json` and `plan --json` are specified on the
 [command surfaces page](machine-contract-surfaces.md); this table stays the index to them.
 
 ## Exit Codes

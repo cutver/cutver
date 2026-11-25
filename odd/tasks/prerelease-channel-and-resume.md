@@ -1,6 +1,6 @@
 # Phase 5 of #326 — the prerelease channel, promotion, and `publish --resume`
 
-Branch: `feat/prerelease-channel` (first write opens it). Scope: gaps 6 and 7 of #326 only.
+Branch: merged to `main` as the chained stack #391-#396 (`f243e80`). Scope: gaps 6 and 7 of #326 only.
 Decision: `docs/adr/0005-prerelease-channel-supersedes-0004.md` (accepted). Issue: #326.
 
 ## Specs
@@ -231,3 +231,5 @@ moved onto the promotion. The second identical request is the reported no-op: ex
 header of a no-op carries no `channel:` annotation because the version does not move (the `No-op` section
 says it instead), and the no-op's `bump` line still prints the deduced level, which is T3's rationale
 rendering rather than a claim that a release happened.
+
+**L12. Merged, and the chain is gone.** The six slices landed in order with merge commits — `12fa98c` (#391), `34417ce` (#392), `fe5dbcd` (#393), `f0a4fc0` (#394), `7bfd241` (#395), `f243e80` (#396) — because a squash rewrites the base sha and makes every child's diff dirty, while a merge commit keeps the slice shas, which is what lets the next child retarget to `main` and still show only its own unit. `git diff origin/main pr/6-docs` was empty before the branches were deleted, so nothing was lost between merges. Two corrections happened on the way, both worth remembering: the unix-target compile hole T2 left behind (`#![cfg(unix)]` hides it from a Windows host, and a gate that stops at default clippy never reaches the cross-check), and a fixture that inherited `git init`'s default branch instead of naming `main`, which passed here and failed on all four CI platforms. The branches — six `pr/*` on the remote and eight locally — are deleted; ADR-0005 records the merged implementation with the shas that are ancestors of `main`.

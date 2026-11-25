@@ -10,10 +10,10 @@ pub struct Cli {
     /// Path to configuration file (defaults to discovering cutver.toml walking up from current directory)
     #[arg(short, long, global = true, value_name = "PATH")]
     pub config: Option<PathBuf>,
-    /// Turn the CI channel on: write this run's outputs to `$GITHUB_OUTPUT` and its summary to `$GITHUB_STEP_SUMMARY`, and annotate a failure on stderr even when neither file is named and `GITHUB_ACTIONS` is unset. The channel never writes stdout, so `--json` is unaffected
+    /// Turn the CI output channel on: write this run's outputs to `$GITHUB_OUTPUT` and its summary to `$GITHUB_STEP_SUMMARY`, and annotate a failure on stderr even when neither file is named and `GITHUB_ACTIONS` is unset. The CI output channel never writes stdout, so `--json` is unaffected
     #[arg(long, global = true)]
     pub ci: bool,
-    /// Turn the CI channel off: no outputs, no step summary and no failure annotation, even on a detected CI
+    /// Turn the CI output channel off: no outputs, no step summary and no failure annotation, even on a detected CI
     #[arg(long = "no-ci", global = true, conflicts_with = "ci")]
     pub no_ci: bool,
     /// Forward a `runtime = "process"` plugin child's stderr to cutver's own stderr, unchanged, on a call that exits 0. Without it a successful call's stderr is drained and dropped; a failed call's stderr is its error message either way. A WASM plugin has no child and no stderr, so the flag changes nothing for it
@@ -316,5 +316,33 @@ mod verbose_flag {
             "S1 gives the flag no short form, so `-v` is not a second spelling of it"
         );
         assert!(Cli::try_parse_from(["cutver", "doctor", "--verbose"]).is_ok());
+    }
+}
+
+/// ADR-0005: `--channel` names the prerelease ladder, so the bare word "channel" belongs to it and
+/// this surface keeps its qualifier wherever a user reads it. The test is why the qualifier cannot
+/// erode silently in a later edit.
+#[cfg(test)]
+mod ci_output_channel_wording {
+    use super::Cli;
+    use clap::CommandFactory;
+
+    #[test]
+    fn the_ci_flags_name_an_output_channel() {
+        let command = Cli::command();
+
+        for id in ["ci", "no_ci"] {
+            let arg = command
+                .get_arguments()
+                .find(|arg| arg.get_id().as_str() == id)
+                .unwrap_or_else(|| panic!("the `{id}` flag exists"));
+            let help = arg.get_help().map(ToString::to_string).unwrap_or_default();
+
+            assert!(
+                help.contains("CI output channel"),
+                "`--{}` must name the CI output channel, its help reads: {help}",
+                id.replace('_', "-")
+            );
+        }
     }
 }

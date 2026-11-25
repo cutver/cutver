@@ -1,6 +1,6 @@
 # ADR-0004: Name the prerelease ladder a stage, and leave "channel" to the surfaces that already own it
 
-**Status**: accepted
+**Status**: superseded by [ADR-0005](0005-prerelease-channel-supersedes-0004.md)
 **Date**: 2026-11-25
 **Owner**: repository maintainer
 **Review date**: 2027-11-25 (proposal; not yet committed by the maintainer)

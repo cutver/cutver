@@ -56,12 +56,30 @@ record() {
 # and a suite that only passes without them is a lie: that exact lie turned PR #332 red. The
 # assignments apply to the child only, so the caller's shell is untouched and nothing survives the
 # run once the directory above is gone.
+#
+# `CARGO_PROFILE_DEV_DEBUG=0` is here because this gate has no use for debug symbols and the
+# alternative costs disk by the hundred gigabytes. It is not a cure, and it does not claim to be one.
+#
+# Measured on this repository: 1108 `*.pdb` files under `target/debug`, 91 GB in total, the largest
+# ~483 MB each — every feature combination, every clippy variant and every integration-test binary
+# links a fresh `cutver-<hash>.pdb`, and nothing prunes them. Clearing them took the tree from 111 GB
+# to 14 GB.
+#
+# With this set, four gate runs produced 163 `*.pdb` totalling 1.6 GB, the largest 99 MB: about a
+# five-fold reduction per artefact, and no longer the dominant cost of a build. PDBs do **not**
+# disappear, and why they are still emitted is not established — so do not read this as "no more
+# PDBs", and re-measure before claiming a bigger win.
+#
+# It changes no compilation semantics — no optimisation, no output, nothing a test observes — and
+# `panicked at src/…:line` survives because it is compile-time metadata. It is set here rather than in
+# `Cargo.toml` so a contributor's own build stays fully debuggable.
 cargo_with_ci_env() {
 	GATE_STEP_INDEX=$((GATE_STEP_INDEX + 1))
 	for sink in "$GATE_TMP/github-output-$GATE_STEP_INDEX" "$GATE_TMP/github-summary-$GATE_STEP_INDEX"; do
 		: >"$sink" || return 1
 	done
-	GITHUB_ACTIONS=true \
+	CARGO_PROFILE_DEV_DEBUG=0 \
+		GITHUB_ACTIONS=true \
 		GITHUB_OUTPUT="$GATE_TMP/github-output-$GATE_STEP_INDEX" \
 		GITHUB_STEP_SUMMARY="$GATE_TMP/github-summary-$GATE_STEP_INDEX" \
 		"$@"

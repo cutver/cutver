@@ -156,3 +156,30 @@ fn test_relativize_path_backslash_normalization() {
         "src/Cargo.toml"
     );
 }
+
+/// The no-op reaches no push and runs no command, so its tree must not advertise them: a plan that
+/// says `push: true` for a push it never makes is the same lie as a report that says it released.
+#[test]
+fn test_a_no_op_does_not_advertise_a_push_it_never_makes() {
+    let theme = Theme::new(false);
+    let mut summary = dummy_summary();
+    summary.current = Version::new(0, 9, 0);
+    summary.touched = Vec::new();
+    summary.changelog = None;
+    summary.commit = String::new();
+    summary.tag_skipped = true;
+    summary.publish_push = true;
+    summary.publish_push_command = None;
+    summary.publish_commands = vec!["cargo publish".into()];
+
+    let plan = render_release_plan(&summary, &theme);
+
+    assert!(
+        plan.contains("push: true [SKIPPED]"),
+        "the push it did not make is marked: {plan}"
+    );
+    assert!(
+        plan.contains("cargo publish [SKIPPED]"),
+        "and so is every command it did not run: {plan}"
+    );
+}

@@ -10,6 +10,7 @@
 use super::*;
 use crate::plugin::driver::resolve_env_grants;
 use crate::plugin::types::PluginCall;
+use descendants::assert_deadline_reaches_the_descendant;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -182,7 +183,7 @@ fn env_dump_command() -> (String, Vec<String>) {
 /// theirs to name — and naming one is the point (#367 S1): there is no root-less constructor left
 /// for a fixture to reach for, and the behavioural half of the guarantee is
 /// `tests/plugin_process_cwd.rs`.
-fn root() -> PathBuf {
+pub(super) fn root() -> PathBuf {
     std::env::temp_dir()
 }
 
@@ -279,85 +280,6 @@ fn test_stdin_that_is_never_read_fails_closed_with_timeout() {
     );
 }
 
-/// The minimum environment a shell needs to find an external child command (`ping`, `sleep`);
-/// Windows also needs `SystemRoot` to start at all.
-fn descendant_env() -> BTreeMap<String, String> {
-    let keys: Vec<String> = if cfg!(windows) {
-        vec!["SystemRoot".to_string(), "PATH".to_string()]
-    } else {
-        vec!["PATH".to_string()]
-    };
-    let plugin = PluginName::new("orphan-fixture").unwrap();
-    resolve_env_grants(&plugin, &keys).expect("the platform shell needs these keys to start")
-}
-
-/// A plugin that never exits inside the budget, plus one descendant writing `marker` three seconds in.
-fn plugin_with_a_descendant_that_writes(marker: &std::path::Path) -> (String, Vec<String>) {
-    let m = marker.display();
-    let script = if cfg!(windows) {
-        // The carets keep `&` and `>` for the descendant's own command line.
-        format!("start /b cmd /c ping -n 4 127.0.0.1 >NUL ^& type nul ^> {m} & ping -n 25 127.0.0.1")
-    } else {
-        format!("(sleep 3; touch {m}) & sleep 25")
-    };
-    let (shell, flag) = if cfg!(windows) { ("cmd", "/C") } else { ("sh", "-c") };
-    (shell.to_string(), vec![flag.to_string(), script])
-}
-
-/// Runs one invocation of a plugin that starts a marker-writing descendant and asserts the deadline
-/// reached the whole tree: it ended on its own budget, naming plugin, capability and limit (S8), the
-/// caller never waited past it, and the descendant never wrote its marker (S3, S6).
-fn assert_deadline_reaches_the_descendant(plugin: &str, label: &str, payload: serde_json::Value) {
-    let mut caps = HashSet::new();
-    caps.insert(Capability::LifecycleV1);
-    let marker = std::env::temp_dir().join(format!("cutver-descendant-{label}-{}.marker", std::process::id()));
-    let _ = std::fs::remove_file(&marker);
-    let (cmd, args) = plugin_with_a_descendant_that_writes(&marker);
-    let driver = ProcessDriver::new(
-        PluginName::new(plugin).unwrap(),
-        root(),
-        cmd,
-        args,
-        descendant_env(),
-        1,
-        caps,
-    );
-    let invocation = PluginInvocation::new(PluginCall::PreBump, &payload).unwrap();
-    let invoked_at = std::time::SystemTime::now();
-    let start = Instant::now();
-    let err = driver.invoke(&invocation).unwrap_err();
-    let elapsed = start.elapsed();
-    match err {
-        PluginError::Timeout {
-            name,
-            capability,
-            timeout_secs,
-        } => {
-            assert_eq!(&name, driver.name());
-            assert_eq!(capability, "lifecycle.v1");
-            assert_eq!(timeout_secs, 1, "the invocation budget is unchanged");
-        }
-        other => panic!("expected Timeout, got {other:?}"),
-    }
-    let budget = Duration::from_secs(5);
-    assert!(elapsed < budget, "the budget bounds the exchange, took {elapsed:?}");
-    // The descendant was due three seconds in, after the deadline that ended the invocation.
-    std::thread::sleep(Duration::from_secs(4));
-    let survived = marker.exists();
-    let wrote_at = std::fs::metadata(&marker)
-        .and_then(|m| m.modified())
-        .ok()
-        .and_then(|t| t.duration_since(invoked_at).ok())
-        .map(|d| d.as_millis());
-    let _ = std::fs::remove_file(&marker);
-    assert!(
-        !survived,
-        "a descendant outlived the invocation and wrote {} {} into it: the deadline must reach the whole tree",
-        marker.display(),
-        wrote_at.map_or_else(|| "at an unknown time".to_string(), |ms| format!("{ms} ms"))
-    );
-}
-
 /// S2, S6: the descendant pinned as a survivor is killed with the plugin, and a plugin that never
 /// drains its stdin cannot hold the caller past the budget either.
 #[test]
@@ -402,5 +324,7 @@ fn test_child_command_names_the_workspace_root_as_its_working_directory() {
 
 #[cfg(test)]
 mod bounds;
+#[cfg(test)]
+mod descendants;
 #[cfg(test)]
 mod env_grants;

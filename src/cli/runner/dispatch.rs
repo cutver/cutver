@@ -7,7 +7,7 @@ use crate::cli::style::Theme;
 use crate::config;
 use crate::config::gates;
 
-use super::bump::{BumpOutput, run_bump};
+use super::bump::{BumpMode, BumpOutput, run_bump};
 use super::changelog::run_changelog;
 use super::doctor::run_doctor;
 use super::external::run_external;
@@ -96,8 +96,7 @@ pub fn run(args: Cli) -> i32 {
                 dry_run,
                 &skip_preflight,
                 first_release,
-                defer_publish,
-                channel,
+                BumpMode { defer_publish, channel },
                 BumpOutput { json, report },
             )
         }

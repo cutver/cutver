@@ -1009,8 +1009,8 @@ fn a_hook_timeout_kills_the_whole_process_tree() {
     let fixture = guard.fixture();
     install_descendant_hook(fixture);
 
-    let err =
-        bump_run(&cfg, Bump::Minor, false, &[], None).expect_err("the hook outlives its timeout, so the release must fail");
+    let err = bump_run(&cfg, Bump::Minor, false, &[], None)
+        .expect_err("the hook outlives its timeout, so the release must fail");
 
     assert!(err.to_string().contains("timed out"), "expected a timeout, got: {err}");
     // The descendant was mid-wait when the timeout fired. Waiting past its own deadline is the

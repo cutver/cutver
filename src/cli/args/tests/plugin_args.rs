@@ -4,6 +4,7 @@
 
 use super::*;
 
+#[test]
 fn plugin_list_parses_with_and_without_json() {
     let cli = Cli::try_parse_from(["cutver", "plugin", "list"]).unwrap();
     let Commands::Plugin {

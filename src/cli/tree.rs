@@ -176,15 +176,22 @@ fn render_publish_node(summary: &Summary, theme: &Theme, is_last: bool) -> Vec<S
         return lines;
     }
 
+    // A no-op reaches no push and runs no command, so its section must not advertise them: the same
+    // `[SKIPPED]` the commit and the tag carry is what keeps the tree honest about what did not happen.
+    let skipped = if summary.no_op() {
+        format!(" {}", theme.muted("[SKIPPED]"))
+    } else {
+        String::new()
+    };
     let push_leaf = branch_prefix(!has_cmds);
     if let Some(cmd) = &summary.publish_push_command {
-        lines.push(format!("{child_prefix}{push_leaf}push: {cmd}"));
+        lines.push(format!("{child_prefix}{push_leaf}push: {cmd}{skipped}"));
     } else if summary.publish_push {
-        lines.push(format!("{child_prefix}{push_leaf}push: true"));
+        lines.push(format!("{child_prefix}{push_leaf}push: true{skipped}"));
     }
 
     if has_cmds {
-        append_publish_commands(&summary.publish_commands, child_prefix, &mut lines);
+        append_publish_commands(&summary.publish_commands, child_prefix, &skipped, &mut lines);
     }
     lines
 }
@@ -201,13 +208,13 @@ fn append_deferred_publication(summary: &Summary, theme: &Theme, child_prefix: &
     lines.push(format!("{child_prefix}└── deferred: {}", theme.accent(&finish)));
 }
 
-fn append_publish_commands(commands: &[String], parent_prefix: &str, lines: &mut Vec<String>) {
+fn append_publish_commands(commands: &[String], parent_prefix: &str, skipped: &str, lines: &mut Vec<String>) {
     lines.push(format!("{parent_prefix}└── commands:"));
     let sub_indent = format!("{parent_prefix}    ");
     let count = commands.len();
     for (i, cmd) in commands.iter().enumerate() {
         let leaf = branch_prefix(i + 1 == count);
-        lines.push(format!("{sub_indent}{leaf}{cmd}"));
+        lines.push(format!("{sub_indent}{leaf}{cmd}{skipped}"));
     }
 }
 

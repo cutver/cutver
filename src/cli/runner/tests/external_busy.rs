@@ -12,7 +12,9 @@
 use std::fs::{self, File, OpenOptions};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
+use std::time::Duration;
+#[cfg(target_os = "linux")]
+use std::time::Instant;
 
 use super::temp_dir;
 
@@ -57,6 +59,13 @@ fn a_write_handle_released_before_the_last_attempt_still_executes() {
     );
 }
 
+/// Linux refuses the `exec` with `ETXTBSY` (26) while a descriptor still has the file open for
+/// writing. macOS was measured not to: the CI leg that caught this ran this test and got the
+/// child's own exit code instead of `1`, with the handle held across every attempt, so the refusal
+/// is simply not there to bound. That is a property of the host, not of the change — the retry is a
+/// Linux behaviour because the flake was a Linux behaviour (`#375`). The release test above still
+/// runs everywhere, where it proves the dispatch works at all.
+#[cfg(target_os = "linux")]
 #[test]
 fn a_write_handle_held_for_the_whole_call_is_reported_after_a_bounded_wait() {
     let dir = temp_dir("cutver-runner-ext-busy-held");

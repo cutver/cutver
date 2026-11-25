@@ -63,7 +63,9 @@ const BUSY_ATTEMPTS: u32 = 5;
 /// an open write descriptor into an unrelated child, where it outlives the write that created it.
 /// That window is milliseconds and does not belong to the file's writer, which is why the same job
 /// passed on rerun with nothing changed. A file genuinely held for writing still fails, with the
-/// same message, once the attempts run out.
+/// same message, once the attempts run out — on a kernel that enforces the refusal. Linux does.
+/// macOS, measured on this change's own CI, executes the file instead, so the retry is inert there
+/// and costs nothing.
 const BUSY_DELAY: Duration = Duration::from_millis(10);
 
 fn execute_binary(path: &Path, trailing_args: &[String]) -> i32 {

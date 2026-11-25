@@ -152,7 +152,7 @@ fn an_inline_run_creates_the_tag_before_it_pushes_the_branch() {
     // has to survive.
     run_git_ok(&fixture.dir, &["tag", "v1.3.0/blocker"]);
 
-    let err = bump_run(&cfg, Bump::Minor, false, &[]).expect_err("the release tag cannot be created");
+    let err = bump_run(&cfg, Bump::Minor, false, &[], None).expect_err("the release tag cannot be created");
 
     let head = rev(&fixture.dir, "HEAD");
     match &err {
@@ -186,7 +186,7 @@ fn a_deferred_run_publishes_the_branch_and_leaves_the_tag_to_publish() {
     let fixture = guard.fixture();
     let before = rev(&fixture.dir, "HEAD");
 
-    let summary = run_deferred_publish(&cfg, Bump::Minor, false, &[], false).expect("the prepare phase succeeds");
+    let summary = run_deferred_publish(&cfg, Bump::Minor, false, &[], false, None).expect("the prepare phase succeeds");
 
     let head = rev(&fixture.dir, "HEAD");
     assert_ne!(head, before, "the prepare phase must create the release commit");
@@ -219,7 +219,7 @@ fn a_deferred_run_publishes_the_branch_and_leaves_the_tag_to_publish() {
 fn publish_creates_the_tag_pushes_it_and_runs_the_publish_commands() {
     let (guard, remote, cfg) = prepared_repo("deferred-publish-close");
     let fixture = guard.fixture();
-    run_deferred_publish(&cfg, Bump::Minor, false, &[], false).expect("the prepare phase succeeds");
+    run_deferred_publish(&cfg, Bump::Minor, false, &[], false, None).expect("the prepare phase succeeds");
     let head = rev(&fixture.dir, "HEAD");
 
     let summary =
@@ -284,7 +284,7 @@ fn publish_renders_the_previous_version_from_the_previous_tag() {
     // The shared fixture cuts no release tag, so this test cuts the previous release itself: `v1.2.3`
     // is the name of the released 1.2.3 state, and the closing phase has to read it back.
     run_git_ok(&fixture.dir, &["tag", "-a", "v1.2.3", "-m", "v1.2.3"]);
-    run_deferred_publish(&cfg, Bump::Minor, false, &[], false).expect("the prepare phase succeeds");
+    run_deferred_publish(&cfg, Bump::Minor, false, &[], false, None).expect("the prepare phase succeeds");
     let head = rev(&fixture.dir, "HEAD");
 
     run_publish(&cfg, &publish_request("v1.3.0", Some(head))).expect("the closing phase succeeds");
@@ -305,7 +305,7 @@ fn publish_renders_the_previous_version_from_the_previous_tag() {
 fn publish_refuses_a_dirty_working_tree() {
     let (guard, remote, cfg) = prepared_repo("deferred-publish-dirty-tree");
     let fixture = guard.fixture();
-    run_deferred_publish(&cfg, Bump::Minor, false, &[], false).expect("the prepare phase succeeds");
+    run_deferred_publish(&cfg, Bump::Minor, false, &[], false, None).expect("the prepare phase succeeds");
     let head = rev(&fixture.dir, "HEAD");
     // An uncommitted manifest edit: the declared version is read from the working tree, so the tree
     // must be the one the tag names before anything is tagged, pushed or published.
@@ -342,7 +342,7 @@ fn publish_refuses_a_dirty_working_tree() {
 fn publish_accepts_the_notes_file_the_workflow_hands_it() {
     let (guard, remote, cfg) = prepared_repo("deferred-publish-notes-file");
     let fixture = guard.fixture();
-    run_deferred_publish(&cfg, Bump::Minor, false, &[], false).expect("the prepare phase succeeds");
+    run_deferred_publish(&cfg, Bump::Minor, false, &[], false, None).expect("the prepare phase succeeds");
     let head = rev(&fixture.dir, "HEAD");
     // Exactly the state the release workflow leaves: the rendered notes are a new file in the
     // checkout that nothing has committed.
@@ -389,7 +389,7 @@ fn publish_accepts_a_dot_prefixed_and_an_absolute_spelling_of_the_notes_file() {
     for case in ["dot-prefixed", "absolute"] {
         let (guard, _remote, cfg) = prepared_repo(&format!("deferred-publish-notes-spelling-{case}"));
         let fixture = guard.fixture();
-        run_deferred_publish(&cfg, Bump::Minor, false, &[], false).expect("the prepare phase succeeds");
+        run_deferred_publish(&cfg, Bump::Minor, false, &[], false, None).expect("the prepare phase succeeds");
         let head = rev(&fixture.dir, "HEAD");
         fixture.write("RELEASE_NOTES.md", "# v1.3.0\n");
         let notes = if case == "absolute" {
@@ -433,7 +433,7 @@ fn publish_accepts_a_notes_file_reached_through_a_symlinked_directory() {
             "chore: keep the rendered notes in a linked directory",
         ],
     );
-    run_deferred_publish(&cfg, Bump::Minor, false, &[], false).expect("the prepare phase succeeds");
+    run_deferred_publish(&cfg, Bump::Minor, false, &[], false, None).expect("the prepare phase succeeds");
     let head = rev(&fixture.dir, "HEAD");
     fixture.write("release/RELEASE_NOTES.md", "# v1.3.0\n");
     assert_eq!(
@@ -462,7 +462,7 @@ fn publish_accepts_a_notes_file_reached_through_a_symlinked_directory() {
 fn publish_still_refuses_a_second_untracked_file_when_a_notes_file_is_declared() {
     let (guard, remote, cfg) = prepared_repo("deferred-publish-notes-file-plus-one");
     let fixture = guard.fixture();
-    run_deferred_publish(&cfg, Bump::Minor, false, &[], false).expect("the prepare phase succeeds");
+    run_deferred_publish(&cfg, Bump::Minor, false, &[], false, None).expect("the prepare phase succeeds");
     let head = rev(&fixture.dir, "HEAD");
     fixture.write("RELEASE_NOTES.md", "# v1.3.0\n");
     fixture.write("leftover.txt", "scratch\n");
@@ -501,7 +501,7 @@ fn publish_still_refuses_a_second_untracked_file_when_a_notes_file_is_declared()
 fn publish_still_refuses_a_modified_tracked_file_named_as_its_notes_input() {
     let (guard, remote, cfg) = prepared_repo("deferred-publish-notes-file-tracked");
     let fixture = guard.fixture();
-    run_deferred_publish(&cfg, Bump::Minor, false, &[], false).expect("the prepare phase succeeds");
+    run_deferred_publish(&cfg, Bump::Minor, false, &[], false, None).expect("the prepare phase succeeds");
     let head = rev(&fixture.dir, "HEAD");
     fixture.write(
         "CHANGELOG.md",
@@ -542,7 +542,7 @@ fn publish_refuses_a_commit_that_is_not_head() {
     let (guard, remote, cfg) = prepared_repo("deferred-publish-stale-commit");
     let fixture = guard.fixture();
     let verified = rev(&fixture.dir, "HEAD");
-    run_deferred_publish(&cfg, Bump::Minor, false, &[], false).expect("the prepare phase succeeds");
+    run_deferred_publish(&cfg, Bump::Minor, false, &[], false, None).expect("the prepare phase succeeds");
     let head = rev(&fixture.dir, "HEAD");
     assert_ne!(head, verified, "the prepare phase must move HEAD");
 
@@ -578,7 +578,7 @@ fn publish_refuses_a_tag_that_already_exists_locally() {
     let (guard, remote, cfg) = prepared_repo("deferred-publish-local-tag");
     let fixture = guard.fixture();
     let verified = rev(&fixture.dir, "HEAD");
-    run_deferred_publish(&cfg, Bump::Minor, false, &[], false).expect("the prepare phase succeeds");
+    run_deferred_publish(&cfg, Bump::Minor, false, &[], false, None).expect("the prepare phase succeeds");
     // A release tag cut by hand on an earlier commit: the retry must not move it, and must not
     // report a remote collision it never checked.
     run_git_ok(&fixture.dir, &["tag", "-a", "v1.3.0", "-m", "already cut", &verified]);
@@ -607,7 +607,7 @@ fn publish_refuses_a_tag_that_already_exists_locally() {
 fn publish_refuses_a_tag_that_only_exists_remotely() {
     let (guard, remote, cfg) = prepared_repo("deferred-publish-remote-tag");
     let fixture = guard.fixture();
-    run_deferred_publish(&cfg, Bump::Minor, false, &[], false).expect("the prepare phase succeeds");
+    run_deferred_publish(&cfg, Bump::Minor, false, &[], false, None).expect("the prepare phase succeeds");
     let head = rev(&fixture.dir, "HEAD");
     // The tag a previous, half-finished run pushed before it failed: it is not in this clone, so
     // only the remote check can see it, and a local-only check would tag over it. A plain ref
@@ -640,7 +640,7 @@ fn publish_refuses_a_tag_that_only_exists_remotely() {
 fn a_publish_dry_run_writes_nothing() {
     let (guard, remote, cfg) = prepared_repo("deferred-publish-dry-run");
     let fixture = guard.fixture();
-    run_deferred_publish(&cfg, Bump::Minor, false, &[], false).expect("the prepare phase succeeds");
+    run_deferred_publish(&cfg, Bump::Minor, false, &[], false, None).expect("the prepare phase succeeds");
     let head = rev(&fixture.dir, "HEAD");
     let floating_before = rev(&fixture.dir, "v1^{commit}");
 
@@ -677,7 +677,7 @@ fn a_publish_dry_run_writes_nothing() {
 fn publish_refuses_a_tag_the_manifests_do_not_declare() {
     let (guard, remote, cfg) = prepared_repo("deferred-publish-mismatch");
     let fixture = guard.fixture();
-    run_deferred_publish(&cfg, Bump::Minor, false, &[], false).expect("the prepare phase succeeds");
+    run_deferred_publish(&cfg, Bump::Minor, false, &[], false, None).expect("the prepare phase succeeds");
     let head = rev(&fixture.dir, "HEAD");
 
     let err = run_publish(&cfg, &publish_request("v9.9.9", Some(head))).expect_err("the tag is not declared");
@@ -712,7 +712,7 @@ fn publish_refuses_a_tag_the_manifests_do_not_declare() {
 fn publish_takes_its_notes_from_a_stream_and_leaves_no_file_behind() {
     let (guard, remote, cfg) = prepared_repo("deferred-publish-notes-stream");
     let fixture = guard.fixture();
-    run_deferred_publish(&cfg, Bump::Minor, false, &[], false).expect("the prepare phase succeeds");
+    run_deferred_publish(&cfg, Bump::Minor, false, &[], false, None).expect("the prepare phase succeeds");
     let head = rev(&fixture.dir, "HEAD");
     assert_eq!(
         porcelain(fixture),
@@ -755,7 +755,7 @@ fn publish_takes_its_notes_from_a_stream_and_leaves_no_file_behind() {
 fn publish_refuses_an_empty_notes_stream_before_it_writes_anything() {
     let (guard, remote, cfg) = prepared_repo("deferred-publish-notes-stream-empty");
     let fixture = guard.fixture();
-    run_deferred_publish(&cfg, Bump::Minor, false, &[], false).expect("the prepare phase succeeds");
+    run_deferred_publish(&cfg, Bump::Minor, false, &[], false, None).expect("the prepare phase succeeds");
     let head = rev(&fixture.dir, "HEAD");
 
     let out = publish_from_stdin(fixture, "", &head);
@@ -790,7 +790,7 @@ fn publish_refuses_an_empty_notes_stream_before_it_writes_anything() {
 fn publish_refuses_a_whitespace_only_notes_stream() {
     let (guard, _remote, cfg) = prepared_repo("deferred-publish-notes-stream-blank");
     let fixture = guard.fixture();
-    run_deferred_publish(&cfg, Bump::Minor, false, &[], false).expect("the prepare phase succeeds");
+    run_deferred_publish(&cfg, Bump::Minor, false, &[], false, None).expect("the prepare phase succeeds");
     let head = rev(&fixture.dir, "HEAD");
 
     let out = publish_from_stdin(fixture, "   \n\n", &head);
@@ -809,7 +809,7 @@ fn publish_refuses_a_whitespace_only_notes_stream() {
 fn publish_still_refuses_a_stray_untracked_file_when_the_notes_come_from_stdin() {
     let (guard, _remote, cfg) = prepared_repo("deferred-publish-notes-stream-stray");
     let fixture = guard.fixture();
-    run_deferred_publish(&cfg, Bump::Minor, false, &[], false).expect("the prepare phase succeeds");
+    run_deferred_publish(&cfg, Bump::Minor, false, &[], false, None).expect("the prepare phase succeeds");
     let head = rev(&fixture.dir, "HEAD");
     fixture.write("stray.txt", "not this run's input\n");
 
@@ -902,7 +902,7 @@ fn the_descendant_helper_really_spawns_a_descendant() {
     let fixture = guard.fixture();
     install_descendant_hook(fixture);
 
-    bump_run(&cfg, Bump::Minor, false, &[]).expect("a hook with no timeout finishes on its own");
+    bump_run(&cfg, Bump::Minor, false, &[], None).expect("a hook with no timeout finishes on its own");
 
     let marker = std::fs::read_to_string(fixture.dir.join("marker.txt")).ok();
     assert!(
@@ -924,7 +924,7 @@ fn a_hook_is_unbounded_without_the_timeout_key() {
     let fixture = guard.fixture();
     let start = Instant::now();
 
-    bump_run(&cfg, Bump::Minor, false, &[]).expect("no [hooks] default_timeout means no bound");
+    bump_run(&cfg, Bump::Minor, false, &[], None).expect("no [hooks] default_timeout means no bound");
 
     assert!(
         start.elapsed() >= Duration::from_secs(2),
@@ -946,7 +946,7 @@ fn a_pre_bump_hook_that_outlives_its_timeout_is_killed_and_named() {
     let before = rev(&fixture.dir, "HEAD");
     let start = Instant::now();
 
-    let err = bump_run(&cfg, Bump::Minor, false, &[])
+    let err = bump_run(&cfg, Bump::Minor, false, &[], None)
         .expect_err("a pre_bump hook that outlives its timeout must fail the release");
 
     let elapsed = start.elapsed();
@@ -1009,8 +1009,8 @@ fn a_hook_timeout_kills_the_whole_process_tree() {
     let fixture = guard.fixture();
     install_descendant_hook(fixture);
 
-    let err =
-        bump_run(&cfg, Bump::Minor, false, &[]).expect_err("the hook outlives its timeout, so the release must fail");
+    let err = bump_run(&cfg, Bump::Minor, false, &[], None)
+        .expect_err("the hook outlives its timeout, so the release must fail");
 
     assert!(err.to_string().contains("timed out"), "expected a timeout, got: {err}");
     // The descendant was mid-wait when the timeout fired. Waiting past its own deadline is the
@@ -1039,7 +1039,7 @@ fn a_post_bump_hook_that_outlives_its_timeout_reports_what_already_happened() {
     let fixture = guard.fixture();
     let before = rev(&fixture.dir, "HEAD");
 
-    let err = bump_run(&cfg, Bump::Minor, false, &[])
+    let err = bump_run(&cfg, Bump::Minor, false, &[], None)
         .expect_err("a post_bump hook that outlives its timeout must fail the release");
 
     match &err {
@@ -1095,7 +1095,7 @@ fn a_pre_bump_hook_that_exits_non_zero_keeps_its_failure() {
     let fixture = guard.fixture();
     let before = rev(&fixture.dir, "HEAD");
 
-    let err = bump_run(&cfg, Bump::Minor, false, &[]).expect_err("a failing pre_bump must abort the release");
+    let err = bump_run(&cfg, Bump::Minor, false, &[], None).expect_err("a failing pre_bump must abort the release");
 
     match &err {
         cutver::bump::Error::PreBumpHookFailed { command, status } => {
@@ -1121,7 +1121,7 @@ fn a_post_bump_hook_that_exits_non_zero_keeps_its_failure_and_rolls_back() {
     let fixture = guard.fixture();
     let before = rev(&fixture.dir, "HEAD");
 
-    let err = bump_run(&cfg, Bump::Minor, false, &[]).expect_err("a failing post_bump must abort the release");
+    let err = bump_run(&cfg, Bump::Minor, false, &[], None).expect_err("a failing post_bump must abort the release");
 
     match &err {
         cutver::bump::Error::PostBumpHookFailed { command, status } => {
@@ -1150,7 +1150,7 @@ fn a_hook_that_finishes_inside_its_timeout_is_unchanged() {
     let fixture = guard.fixture();
     let before = rev(&fixture.dir, "HEAD");
 
-    let summary = bump_run(&cfg, Bump::Minor, false, &[]).expect("both hooks finish inside their timeout");
+    let summary = bump_run(&cfg, Bump::Minor, false, &[], None).expect("both hooks finish inside their timeout");
 
     assert_eq!(summary.pre_bump.as_deref(), Some("echo pre > pre.txt"));
     assert_eq!(summary.post_bump.as_deref(), Some("echo post > post.txt"));
@@ -1176,7 +1176,7 @@ fn a_publish_command_that_outlives_its_timeout_keeps_its_failure() {
     let fixture = guard.fixture();
     let before = rev(&fixture.dir, "HEAD");
 
-    let err = bump_run(&cfg, Bump::Minor, false, &[])
+    let err = bump_run(&cfg, Bump::Minor, false, &[], None)
         .expect_err("a publish command that outlives its timeout must fail the release");
 
     match &err {

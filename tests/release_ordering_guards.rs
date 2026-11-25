@@ -127,7 +127,7 @@ fn an_invalid_tag_prefix_fails_before_the_workspace_is_touched() {
 
         let cfg = common::load_config(guard.fixture());
 
-        let dry = bump_run(&cfg, Bump::Minor, true, &[]);
+        let dry = bump_run(&cfg, Bump::Minor, true, &[], None);
         let dry_text = dry
             .as_ref()
             .err()
@@ -150,7 +150,7 @@ fn an_invalid_tag_prefix_fails_before_the_workspace_is_touched() {
             "prefix '{prefix}': the error must be actionable, got: {dry_text}"
         );
 
-        let err = bump_run(&cfg, Bump::Minor, false, &[]).expect_err("an invalid tag prefix must fail the run");
+        let err = bump_run(&cfg, Bump::Minor, false, &[], None).expect_err("an invalid tag prefix must fail the run");
         let text = err.to_string();
         assert!(
             matches!(err, cutver::bump::Error::InvalidTagName { .. }),
@@ -211,7 +211,7 @@ fn a_failing_publish_command_names_the_commit_and_the_tag_that_already_landed() 
     run_git_ok(&fixture.dir, &["push", "origin", "refs/heads/main"]);
 
     let cfg = common::load_config(guard.fixture());
-    let err = bump_run(&cfg, Bump::Minor, false, &[]).expect_err("the publish command exits non-zero");
+    let err = bump_run(&cfg, Bump::Minor, false, &[], None).expect_err("the publish command exits non-zero");
     let text = err.to_string();
 
     // The commit and the tag already exist — locally and, because the pushes succeeded, remotely.

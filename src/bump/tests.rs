@@ -216,6 +216,7 @@ fn dry_run_leaves_files_unchanged() {
         Bump::Minor,
         true,
         &[],
+        None,
     )
     .unwrap();
     assert_eq!(summary.next.to_string(), "1.3.0");
@@ -270,7 +271,7 @@ fn dry_run_auto_bump_deduces_from_commits() {
         .unwrap();
 
     let cfg = load(&dir, "package.json", "[git]\nrequire_clean_tree = false\n");
-    let summary = run(&cfg, BumpLevel::Auto, true, &[]).unwrap();
+    let summary = run(&cfg, BumpLevel::Auto, true, &[], None).unwrap();
     assert_eq!(summary.next.to_string(), "1.3.0");
     assert!(summary.dry_run);
 }
@@ -291,7 +292,7 @@ fn compute_failure_aborts_before_any_write() {
         ),
     );
     let cfg = config::load(dir.join("cutver.toml")).unwrap();
-    assert!(run(&cfg, Bump::Minor, false, &[]).is_err());
+    assert!(run(&cfg, Bump::Minor, false, &[], None).is_err());
     assert_eq!(
         fs::read_to_string(dir.join("package.json")).unwrap(),
         r#"{"version": "1.2.3"}"#
@@ -322,7 +323,7 @@ fn write_failure_restores_previously_written_files() {
     perms.set_readonly(true);
     fs::set_permissions(&b, perms).unwrap();
     let cfg = config::load(dir.join("cutver.toml")).unwrap();
-    assert!(run(&cfg, Bump::Minor, false, &[]).is_err());
+    assert!(run(&cfg, Bump::Minor, false, &[], None).is_err());
     assert_eq!(
         fs::read_to_string(a.join("package.json")).unwrap(),
         r#"{"version": "1.2.3"}"#
@@ -356,7 +357,7 @@ fn changelog_write_failure_restores_previously_written_manifests() {
     perms.set_readonly(true);
     fs::set_permissions(&cl_dir, perms).unwrap();
     let cfg = config::load(dir.join("cutver.toml")).unwrap();
-    assert!(run(&cfg, Bump::Minor, false, &[]).is_err());
+    assert!(run(&cfg, Bump::Minor, false, &[], None).is_err());
     assert_eq!(
         fs::read_to_string(a.join("package.json")).unwrap(),
         r#"{"version": "1.2.3"}"#

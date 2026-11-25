@@ -81,7 +81,7 @@ env = ["PATH"]
     initial_commit(fixture);
 
     let cfg = common::load_config(guard.fixture());
-    let res = bump_run(&cfg, BumpLevel::Auto, false, &[]);
+    let res = bump_run(&cfg, BumpLevel::Auto, false, &[], None);
 
     assert!(
         res.is_ok(),
@@ -137,7 +137,7 @@ env = ["PATH"]
     initial_commit(fixture);
 
     let cfg = common::load_config(guard.fixture());
-    let res = bump_run(&cfg, BumpLevel::Auto, false, &[]);
+    let res = bump_run(&cfg, BumpLevel::Auto, false, &[], None);
 
     assert!(
         res.is_ok(),
@@ -206,7 +206,7 @@ env = ["PATH"]
     initial_commit(fixture);
 
     let cfg = common::load_config(guard.fixture());
-    let res = bump_run(&cfg, BumpLevel::Auto, false, &[]);
+    let res = bump_run(&cfg, BumpLevel::Auto, false, &[], None);
 
     assert!(
         res.is_err(),
@@ -273,7 +273,7 @@ env = ["PATH"]
     initial_commit(fixture);
 
     let cfg = common::load_config(guard.fixture());
-    let res = bump_run(&cfg, BumpLevel::Auto, false, &[]);
+    let res = bump_run(&cfg, BumpLevel::Auto, false, &[], None);
 
     assert!(res.is_err(), "bump should fail when versioning plugin exits non-zero");
 

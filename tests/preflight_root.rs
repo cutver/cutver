@@ -42,7 +42,7 @@ fn a_preflight_step_resolves_relative_paths_against_the_repository_root() {
     let cfg = load_config(fixture);
     // A failing step aborts the bump, so this expectation is what separates "the step ran" from
     // "the step was rejected".
-    bump_run(&cfg, Bump::Minor, false, &[]).expect("the preflight step exits zero");
+    bump_run(&cfg, Bump::Minor, false, &[], None).expect("the preflight step exits zero");
 
     // Under the defect the marker landed in the process CWD. Note and remove it on both paths, so a
     // red run does not leave the repository dirty for whatever runs next.

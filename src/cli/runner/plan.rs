@@ -8,6 +8,7 @@
 use crate::bump::BumpLevel;
 use crate::bump::plan::{ReleasePlan, read_only};
 use crate::cli::args::BumpLevel as CliLevel;
+use crate::cli::args::Channel as CliChannel;
 use crate::cli::machine::FailureCode;
 use crate::config;
 
@@ -27,10 +28,11 @@ pub(crate) fn run_plan(
     level: CliLevel,
     skip_preflight: &[String],
     first_release: bool,
+    channel: Option<CliChannel>,
     json: bool,
 ) -> i32 {
     let level: BumpLevel = level.into();
-    match read_only(config, level, skip_preflight, first_release) {
+    match read_only(config, level, skip_preflight, first_release, channel.map(Into::into)) {
         Ok(plan) => {
             if !json {
                 crate::cli::tree::print_plan(&plan);

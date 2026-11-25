@@ -667,3 +667,104 @@ fn a_plan_over_a_dirty_tree_without_assets_never_blocks_on_artifacts() {
         "no blocker may be about artifacts: {blockers:?}"
     );
 }
+
+/// S1: `--channel` on `plan` is the prerelease ladder, and it starts the counter on the version the
+/// level cut — `1.2.0` bumped a minor becomes `1.3.0-alpha.1`, not an increment of the last channel.
+#[test]
+fn a_channel_turns_the_bumped_version_into_a_prerelease() {
+    let guard = fixture("plan-channel-alpha", &armed_config());
+    let fixture = guard.fixture();
+
+    let output = cutver_in(fixture, &["plan", "--json", "minor", "--channel", "alpha"]);
+
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr_of(&output));
+    let plan = parse(&output);
+    assert_eq!(plan["next_version"], "1.3.0-alpha.1", "{plan}");
+    assert_eq!(plan["tag"], "v1.3.0-alpha.1", "{plan}");
+    assert_eq!(plan["level"], "minor", "the level keeps its own meaning: {plan}");
+}
+
+/// S1 and D1: every value of the ladder is a channel, and `stable` is the release itself, so it adds
+/// no prerelease segment to the version the level cut.
+#[test]
+fn the_stable_channel_releases_the_version_it_cuts() {
+    let guard = fixture("plan-channel-stable", &armed_config());
+    let fixture = guard.fixture();
+
+    let plan = parse(&cutver_in(fixture, &["plan", "--json", "minor", "--channel", "stable"]));
+
+    assert_eq!(plan["next_version"], "1.3.0", "{plan}");
+    assert_eq!(plan["tag"], "v1.3.0", "{plan}");
+}
+
+/// D3: the human tree names the transition in words, so approving a release on a channel is not
+/// reading suffixes by eye. `plan --json` gains no field: `next_version` already carries it.
+#[test]
+fn the_plan_tree_names_the_channel_the_release_lands_on() {
+    let guard = fixture("plan-channel-tree", &armed_config());
+    let fixture = guard.fixture();
+
+    let human = stdout_of(&cutver_in(fixture, &["plan", "minor", "--channel", "alpha"]));
+
+    assert!(
+        human.contains("Release Plan: 1.2.3 -> 1.3.0-alpha.1"),
+        "the tree reports the version it would cut: {human}"
+    );
+    assert!(
+        human.contains("channel: stable -> alpha"),
+        "the tree names the channel the run leaves and the one it lands on: {human}"
+    );
+}
+
+/// S1: the ladder is a closed set, refused by the parser before a plan is computed — the same exit `2`
+/// and the same `possible values` line `attest --conclusion` already answers with.
+#[test]
+fn an_unknown_channel_is_refused_before_a_plan_is_computed() {
+    let guard = fixture("plan-channel-unknown", &armed_config());
+    let fixture = guard.fixture();
+
+    let output = cutver_in(fixture, &["plan", "minor", "--channel", "gamma"]);
+
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "a usage error is clap's exit 2; stderr:\n{}",
+        stderr_of(&output)
+    );
+    let message = stderr_of(&output);
+    for expected in ["possible values", "alpha", "beta", "rc", "stable"] {
+        assert!(message.contains(expected), "{message} does not name {expected}");
+    }
+}
+
+/// Pillar I.2 and S1: a channel is a computation, never a mutation. The plan still changes no file,
+/// creates no commit and no tag, even on the tree where every mutating step is armed.
+#[test]
+fn a_channel_plan_still_writes_nothing() {
+    let guard = fixture("plan-channel-dry-tree", &armed_config());
+    let fixture = guard.fixture();
+    fixture.write("wip.txt", "uncommitted work\n");
+    let before = snapshot(&fixture.dir);
+    let head_before = head(fixture);
+
+    let output = cutver_in(fixture, &["plan", "--json", "minor", "--channel", "beta"]);
+
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr_of(&output));
+    assert_eq!(
+        snapshot(&fixture.dir),
+        before,
+        "a plan on a channel changes no file, exactly like a plan on the ladder"
+    );
+    assert_eq!(head(fixture), head_before, "no commit is created");
+    assert!(
+        local_tags(fixture).trim().is_empty(),
+        "no tag is created: {}",
+        local_tags(fixture)
+    );
+    for marker in [PRE_BUMP_MARKER, PREFLIGHT_MARKER, PUBLISH_MARKER] {
+        assert!(
+            !fixture.dir.join(marker).exists(),
+            "{marker} proves a step a plan must not run did run"
+        );
+    }
+}

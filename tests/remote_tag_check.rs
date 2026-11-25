@@ -60,7 +60,7 @@ check = "true""#,
     let before = snapshot(fixture);
 
     let cfg = load_config(fixture);
-    let err = bump_run(&cfg, Bump::Minor, false, &[]).unwrap_err();
+    let err = bump_run(&cfg, Bump::Minor, false, &[], None).unwrap_err();
 
     assert!(
         matches!(err, cutver::bump::Error::RemoteTagCheck { .. }),
@@ -102,7 +102,7 @@ check = "true""#,
     let fixture = guard.fixture();
 
     let cfg = load_config(fixture);
-    bump_run(&cfg, Bump::Minor, false, &[]).expect("a repository without a remote must still bump");
+    bump_run(&cfg, Bump::Minor, false, &[], None).expect("a repository without a remote must still bump");
 
     assert_bumped(fixture);
     assert_eq!(commit_count(fixture), 2, "the release commit must exist");

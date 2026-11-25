@@ -113,7 +113,7 @@ fn a_rejected_release_tag_push_leaves_the_branch_published_and_the_floating_tag_
 
     // The plan names the same three pushes, in the same order, that the real run sends: the branch,
     // the release tag, then the only forced refspec in the pipeline.
-    let dry = bump_run(&cfg, Bump::Minor, true, &[]).unwrap();
+    let dry = bump_run(&cfg, Bump::Minor, true, &[], None).unwrap();
     assert_eq!(
         dry.publish_push_command.as_deref(),
         Some(
@@ -124,7 +124,7 @@ fn a_rejected_release_tag_push_leaves_the_branch_published_and_the_floating_tag_
     assert_eq!(dry.tag, "v1.3.0");
     assert_eq!(dry.floating_tag.as_deref(), Some("v1"));
 
-    let err = bump_run(&cfg, Bump::Minor, false, &[]).expect_err("the tag push is rejected by the remote");
+    let err = bump_run(&cfg, Bump::Minor, false, &[], None).expect_err("the tag push is rejected by the remote");
 
     // The failure names the ref that was rejected, not an opaque `push --tags` command, and names
     // the commit and tag that already exist locally (#265).

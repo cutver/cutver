@@ -26,7 +26,7 @@ check = "true""#,
     );
 
     let cfg = common::load_config(guard.fixture());
-    let summary = bump_run(&cfg, BumpLevel::Auto, true, &[]).unwrap();
+    let summary = bump_run(&cfg, BumpLevel::Auto, true, &[], None).unwrap();
     assert_eq!(summary.next.to_string(), "1.3.0");
     assert!(summary.dry_run);
     assert_eq!(
@@ -56,7 +56,7 @@ check = "true""#,
     );
 
     let cfg = common::load_config(guard.fixture());
-    let summary = bump_run(&cfg, BumpLevel::Auto, false, &[]).unwrap();
+    let summary = bump_run(&cfg, BumpLevel::Auto, false, &[], None).unwrap();
     assert_eq!(summary.next.to_string(), "1.3.0");
     assert!(!summary.dry_run);
     assert_bumped(fixture);
@@ -85,7 +85,7 @@ check = "true""#,
     );
 
     let cfg = common::load_config(guard.fixture());
-    let summary = bump_run(&cfg, BumpLevel::Auto, false, &[]).unwrap();
+    let summary = bump_run(&cfg, BumpLevel::Auto, false, &[], None).unwrap();
     assert_eq!(summary.next.to_string(), "2.0.0");
     assert!(!summary.dry_run);
     assert!(fixture.read("package.json").contains("\"version\": \"2.0.0\""));
@@ -117,7 +117,7 @@ check = "true""#,
     );
 
     let cfg = common::load_config(guard.fixture());
-    let summary = bump_run(&cfg, BumpLevel::Auto, false, &[]).unwrap();
+    let summary = bump_run(&cfg, BumpLevel::Auto, false, &[], None).unwrap();
     assert_eq!(summary.next.to_string(), "2.0.0");
     assert!(!summary.dry_run);
     assert!(fixture.read("package.json").contains("\"version\": \"2.0.0\""));
@@ -146,7 +146,7 @@ check = "true""#,
     );
 
     let cfg = common::load_config(guard.fixture());
-    let summary = bump_run(&cfg, BumpLevel::Auto, false, &[]).unwrap();
+    let summary = bump_run(&cfg, BumpLevel::Auto, false, &[], None).unwrap();
     assert_eq!(summary.next.to_string(), "1.2.4");
     assert!(!summary.dry_run);
     assert!(fixture.read("package.json").contains("\"version\": \"1.2.4\""));
@@ -186,7 +186,7 @@ check = "true""#,
     );
 
     let cfg = common::load_config(guard.fixture());
-    let summary = bump_run(&cfg, BumpLevel::Auto, false, &[]).unwrap();
+    let summary = bump_run(&cfg, BumpLevel::Auto, false, &[], None).unwrap();
     // Because the breaking change occurred before v1.2.3 tag, it only inspects commits since v1.2.3,
     // deducing a patch bump to 1.2.4 instead of major.
     assert_eq!(summary.next.to_string(), "1.2.4");
@@ -220,7 +220,7 @@ check = "true""#,
 
     let cfg = common::load_config(guard.fixture());
     assert_eq!(cfg.changelog.mode, "conventional");
-    let summary = bump_run(&cfg, BumpLevel::Auto, false, &[]).unwrap();
+    let summary = bump_run(&cfg, BumpLevel::Auto, false, &[], None).unwrap();
     assert_eq!(summary.next.to_string(), "1.3.0");
     assert!(!summary.dry_run);
 
@@ -260,7 +260,7 @@ check = "true""#,
     );
 
     let cfg = common::load_config(guard.fixture());
-    let summary = bump_run(&cfg, BumpLevel::Auto, false, &[]).unwrap();
+    let summary = bump_run(&cfg, BumpLevel::Auto, false, &[], None).unwrap();
     assert_eq!(summary.next.to_string(), "2.0.0");
     assert!(!summary.dry_run);
 
@@ -290,7 +290,7 @@ check = "true""#,
     );
 
     let cfg = common::load_config(guard.fixture());
-    let summary = bump_run(&cfg, Bump::Minor, false, &[]).unwrap();
+    let summary = bump_run(&cfg, Bump::Minor, false, &[], None).unwrap();
     assert_eq!(summary.next.to_string(), "1.3.0");
     assert!(!summary.dry_run);
 
@@ -343,7 +343,7 @@ require_clean_tree = true
     run_git_ok(&fixture.dir, &["commit", "--allow-empty", "-m", "feat: some feature"]);
 
     let cfg = common::load_config(guard.fixture());
-    let summary = bump_run(&cfg, BumpLevel::Auto, false, &[]).unwrap();
+    let summary = bump_run(&cfg, BumpLevel::Auto, false, &[], None).unwrap();
     assert_eq!(summary.next.to_string(), "1.3.0");
     let cl = fixture.read("CHANGELOG.md");
     assert!(cl.contains("Static template notes."));
@@ -373,7 +373,7 @@ check = "true""#,
     );
 
     let cfg = common::load_config(guard.fixture());
-    let summary = bump_run(&cfg, BumpLevel::Auto, false, &[]).unwrap();
+    let summary = bump_run(&cfg, BumpLevel::Auto, false, &[], None).unwrap();
     assert_eq!(summary.next.to_string(), "1.3.0");
 
     let cl = fixture.read("CHANGELOG.md");

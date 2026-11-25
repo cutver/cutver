@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use crate::atomic;
 use crate::bump::{self, Summary};
 use crate::cli::args::BumpLevel;
+use crate::cli::args::Channel;
 use crate::config;
 
 use super::dispatch::print_error;
@@ -22,19 +23,28 @@ pub struct BumpOutput {
     pub report: Option<PathBuf>,
 }
 
+/// The two knobs that travel together and do not describe the result: which channel the run publishes
+/// on (#326 gap 6), and whether it stops before publishing at all (#259).
+#[derive(Debug, Default, Clone, Copy)]
+pub struct BumpMode {
+    pub defer_publish: bool,
+    pub channel: Option<Channel>,
+}
+
 pub fn run_bump(
     config: &config::Config,
     level: BumpLevel,
     dry_run: bool,
     skip_preflight: &[String],
     first_release: bool,
-    defer_publish: bool,
+    mode: BumpMode,
     output: BumpOutput,
 ) -> i32 {
-    let outcome = if defer_publish {
-        bump::run_deferred_publish(config, level, dry_run, skip_preflight, first_release)
+    let channel = mode.channel.map(Into::into);
+    let outcome = if mode.defer_publish {
+        bump::run_deferred_publish(config, level, dry_run, skip_preflight, first_release, channel)
     } else {
-        bump::run_with_first_release(config, level, dry_run, skip_preflight, first_release)
+        bump::run_with_first_release(config, level, dry_run, skip_preflight, first_release, channel)
     };
     match outcome {
         Ok(summary) => match emit(&summary, &output) {

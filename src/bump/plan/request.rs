@@ -4,6 +4,7 @@
 //! knob of its own: this is where a run says what it wants, and the plan is what it computed.
 
 use crate::bump::types::BumpLevel;
+use crate::semver_bump::Channel;
 
 /// How the release described by the plan will treat its changelog entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,5 +36,8 @@ pub(crate) struct ComputeRequest<'a> {
     pub(crate) level: BumpLevel,
     pub(crate) skip_preflight: &'a [String],
     pub(crate) first_release: bool,
+    /// The prerelease channel the caller asked for, if any (#326 gap 6). `None` is a caller that named
+    /// no channel, and the version keeps whatever the level and the manifests already say.
+    pub(crate) channel: Option<Channel>,
     pub(crate) mode: PlanMode,
 }

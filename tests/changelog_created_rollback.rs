@@ -71,7 +71,7 @@ fn a_changelog_the_run_created_is_removed_when_a_later_step_fails() {
     );
 
     let cfg = load_config(fixture);
-    let err = bump_run(&cfg, Bump::Minor, false, &[]).unwrap_err();
+    let err = bump_run(&cfg, Bump::Minor, false, &[], None).unwrap_err();
 
     assert!(
         matches!(err, cutver::bump::Error::PostBumpHookFailed { .. }),
@@ -109,7 +109,7 @@ fn an_unreadable_changelog_fails_closed_instead_of_being_backed_up_as_empty() {
     let package_before = fixture.read("package.json");
 
     let cfg = load_config(fixture);
-    let err = bump_run(&cfg, Bump::Minor, false, &[]).unwrap_err();
+    let err = bump_run(&cfg, Bump::Minor, false, &[], None).unwrap_err();
 
     assert!(
         matches!(err, cutver::bump::Error::ReadUnreadable { .. }),
@@ -149,7 +149,7 @@ fn a_rehearsal_neither_creates_nor_records_the_absent_changelog() {
     );
 
     let cfg = load_config(fixture);
-    bump_run(&cfg, Bump::Minor, true, &[]).expect("a rehearsal of an absent changelog must not fail");
+    bump_run(&cfg, Bump::Minor, true, &[], None).expect("a rehearsal of an absent changelog must not fail");
 
     assert!(
         !fixture.dir.join("CHANGELOG.md").exists(),

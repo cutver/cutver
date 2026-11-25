@@ -7,7 +7,7 @@ use crate::cli::style::Theme;
 use crate::config;
 use crate::config::gates;
 
-use super::bump::{BumpOutput, run_bump};
+use super::bump::{BumpMode, BumpOutput, run_bump};
 use super::changelog::run_changelog;
 use super::doctor::run_doctor;
 use super::external::run_external;
@@ -77,6 +77,7 @@ pub fn run(args: Cli) -> i32 {
         }
         Commands::Bump {
             level,
+            channel,
             dry_run,
             skip_preflight,
             first_release,
@@ -95,12 +96,13 @@ pub fn run(args: Cli) -> i32 {
                 dry_run,
                 &skip_preflight,
                 first_release,
-                defer_publish,
+                BumpMode { defer_publish, channel },
                 BumpOutput { json, report },
             )
         }
         Commands::Plan {
             level,
+            channel,
             json,
             skip_preflight,
             first_release,
@@ -110,7 +112,7 @@ pub fn run(args: Cli) -> i32 {
                 Ok(c) => c,
                 Err(code) => return code,
             };
-            run_plan(&config, level, &skip_preflight, first_release, json)
+            run_plan(&config, level, &skip_preflight, first_release, channel, json)
         }
         Commands::Publish {
             tag,

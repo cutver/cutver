@@ -13,7 +13,7 @@ use crate::config::Config;
 use crate::conventional;
 use crate::git;
 use crate::plugin::PluginManager;
-use crate::semver_bump::{self, Bump};
+use crate::semver_bump::{self, Bump, Channel};
 
 pub(super) type NextVersionResolution = (
     Version,
@@ -21,6 +21,15 @@ pub(super) type NextVersionResolution = (
     Option<Vec<conventional::ConventionalCommit>>,
     Option<conventional::BumpRationale>,
 );
+
+/// The version with the channel the caller asked for, if they asked for one (#326 S1). A caller that
+/// named no channel keeps the version the level and the manifests already decided.
+fn on_channel(version: Version, channel: Option<Channel>) -> Version {
+    match channel {
+        Some(channel) => semver_bump::apply_channel(&version, channel),
+        None => version,
+    }
+}
 
 /// The next version, the tag it follows, and the commits the changelog renders from.
 ///
@@ -32,10 +41,11 @@ pub(super) fn resolve_next_version(
     current: &Version,
     bump_level: BumpLevel,
     first_release: bool,
+    channel: Option<Channel>,
     plugin_manager: Option<&Arc<PluginManager>>,
 ) -> Result<NextVersionResolution, Error> {
     if first_release {
-        return Ok((current.clone(), None, None, None));
+        return Ok((on_channel(current.clone(), channel), None, None, None));
     }
     let previous_tag = git::latest_tag(repo, Some(&config.git.tag_prefix))?;
 
@@ -95,7 +105,7 @@ pub(super) fn resolve_next_version(
             breaking_sample: Some(r),
         });
 
-        return Ok((next, previous_tag, None, rationale));
+        return Ok((on_channel(next, channel), previous_tag, None, rationale));
     }
 
     let mut auto_commits = None;
@@ -113,6 +123,6 @@ pub(super) fn resolve_next_version(
             deduced
         }
     };
-    let next = semver_bump::bump(current, bump_semver);
+    let next = on_channel(semver_bump::bump(current, bump_semver), channel);
     Ok((next, previous_tag, auto_commits, rationale))
 }

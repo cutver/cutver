@@ -4,6 +4,8 @@ use super::plugin::PluginCommands;
 use clap::Parser;
 use std::path::PathBuf;
 
+mod plugin_args;
+
 #[test]
 fn bump_patch_defaults() {
     let cli = Cli::try_parse_from(["cutver", "bump", "patch"]).unwrap();
@@ -15,6 +17,7 @@ fn bump_patch_defaults() {
         defer_publish,
         json,
         report,
+        ..
     } = cli.command
     else {
         panic!("expected bump")
@@ -51,6 +54,7 @@ fn bump_minor_dry_run_and_skip_preflight() {
         defer_publish,
         json,
         report,
+        ..
     } = cli.command
     else {
         panic!("expected bump")
@@ -75,6 +79,7 @@ fn bump_auto_cli() {
         defer_publish,
         json,
         report,
+        ..
     } = cli.command
     else {
         panic!("expected bump")
@@ -224,6 +229,7 @@ fn plan_defaults_to_auto_and_the_plan_tree() {
         json,
         skip_preflight,
         first_release,
+        ..
     } = cli.command
     else {
         panic!("expected plan")
@@ -253,6 +259,7 @@ fn plan_takes_a_level_json_and_skipped_preflight_steps() {
         json,
         skip_preflight,
         first_release,
+        ..
     } = cli.command
     else {
         panic!("expected plan")
@@ -566,6 +573,7 @@ fn bump_first_release_flags_and_defaults() {
         defer_publish,
         json,
         report,
+        ..
     } = cli.command
     else {
         panic!("expected bump")
@@ -632,58 +640,6 @@ fn init_with_short_flags() {
     assert!(force);
     assert!(!no_template);
     assert_eq!(path, Some(PathBuf::from("sub/dir")));
-}
-
-#[test]
-fn plugin_list_parses_with_and_without_json() {
-    let cli = Cli::try_parse_from(["cutver", "plugin", "list"]).unwrap();
-    let Commands::Plugin {
-        command: PluginCommands::List { json },
-    } = cli.command
-    else {
-        panic!("expected plugin list");
-    };
-    assert!(!json);
-
-    let cli = Cli::try_parse_from(["cutver", "plugin", "list", "--json"]).unwrap();
-    let Commands::Plugin {
-        command: PluginCommands::List { json },
-    } = cli.command
-    else {
-        panic!("expected plugin list --json");
-    };
-    assert!(json);
-}
-
-#[test]
-fn plugin_remove_parses_name_and_keep_artifact() {
-    let cli = Cli::try_parse_from(["cutver", "plugin", "remove", "demo"]).unwrap();
-    let Commands::Plugin {
-        command: PluginCommands::Remove { name, keep_artifact },
-    } = cli.command
-    else {
-        panic!("expected plugin remove");
-    };
-    assert_eq!(name, "demo");
-    assert!(!keep_artifact);
-
-    let cli = Cli::try_parse_from(["cutver", "plugin", "remove", "demo", "--keep-artifact"]).unwrap();
-    let Commands::Plugin {
-        command: PluginCommands::Remove { keep_artifact, .. },
-    } = cli.command
-    else {
-        panic!("expected plugin remove --keep-artifact");
-    };
-    assert!(keep_artifact);
-}
-
-#[test]
-fn plugin_is_declared_in_every_build_and_hidden_only_without_the_feature() {
-    use clap::CommandFactory;
-
-    let command = Cli::command();
-    let plugin = command.find_subcommand("plugin").expect("plugin must be declared");
-    assert_eq!(plugin.is_hide_set(), !cfg!(feature = "plugins"));
 }
 
 #[test]

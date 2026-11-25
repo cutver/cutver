@@ -33,6 +33,8 @@ Decision: `docs/adr/0005-prerelease-channel-supersedes-0004.md` (accepted). Issu
 - **T2** `--channel` on `bump` and `plan`. Parse and validate the four values, compute the version
   (`1.2.0-alpha.1` from `1.2.0`), report it in the human tree and in the plan's machine output, and keep
   `plan` a dry run (`Pillar I.2`). D3 answered: no machine-contract change; the human tree names the transition.
+  Done — commits `eb87739` (room under the 400-line ceiling) and `9c86966` (the flag, its arithmetic, its
+  tests and the reference rows).
 - **T3** Promotion: `--channel stable` on an existing prerelease produces the release version. Must state
   what it does to the tag, the floating major tag and the changelog entry before writing it. D1 answered:
   any prerelease promotes, with no rung validation.
@@ -102,3 +104,19 @@ promotion does not validate the rung (D1); `--resume` repeats only what is idemp
 evidence contradicts the plan (D2); and `plan --json` gains no field because `touched[]` already carries
 the transition (D3). D3 was the one that could have reshaped T2 — it removes work instead of adding it and
 leaves gap 5 exactly where #326 says it is.
+
+**L6. T2 landed, and the ceiling chose part of its shape.** `src/bump/plan.rs` and `src/cli/tree.rs` were
+both at 399 of the 400-line hard ceiling and neither is allowlisted, so the ratchet's own remedy applied
+before any feature line was written: `PlanMode`/`ComputeRequest` moved to `src/bump/plan/request.rs` and the
+renderer's tests to `src/cli/tree/tests.rs` (`eb87739`, no behaviour change). `src/cli/args/tests.rs` is
+allowlisted at 738 and may not grow, so `plugin`'s three argument tests moved to
+`src/cli/args/tests/plugin_args.rs` inside the feature commit, paying for the six `let Commands::{Bump,Plan}`
+patterns that now bind `channel`. The tree needed no new `Summary` field: it reads the channel of the two
+versions the header already prints, which is why every release without a channel prints exactly what it
+printed before. Slice boundary: T2 is two commits and 968 authored lines, and the phase's delivery shape —
+one PR or chained ones — is decided when it is published, not here.
+
+**L7. What T2 does not do, on purpose.** A version that is *already* a prerelease still takes the level and
+then the channel, so `1.2.0-alpha.1 --channel alpha` cuts `1.2.1-alpha.1` where D1 requires `1.2.0-alpha.2`.
+That is T3, together with the other two transitions of D1 and the statements about the tag, the floating
+major tag and the changelog entry it owes before it is written.

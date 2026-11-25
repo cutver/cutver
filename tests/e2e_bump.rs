@@ -20,7 +20,7 @@ fn bump_minor_happy_path() {
 check = "true""#,
     );
     let cfg = common::load_config(guard.fixture());
-    let summary = bump_run(&cfg, Bump::Minor, false, &[]).unwrap();
+    let summary = bump_run(&cfg, Bump::Minor, false, &[], None).unwrap();
     assert_eq!(summary.next.to_string(), "1.3.0");
     assert!(!summary.dry_run);
     let fixture = guard.fixture();
@@ -53,7 +53,7 @@ check = "true""#,
     let sub = fixture.dir.join("src");
     std::fs::create_dir_all(&sub).unwrap();
     let cfg = config::discover(&sub).unwrap();
-    bump_run(&cfg, Bump::Minor, false, &[]).unwrap();
+    bump_run(&cfg, Bump::Minor, false, &[], None).unwrap();
     assert!(fixture.read("package.json").contains("\"version\": \"1.3.0\""));
     assert!(fixture.read("Cargo.toml").contains("version = \"1.3.0\""));
     assert!(cutver::bump::doctor(&cfg).unwrap().is_empty());
@@ -72,7 +72,7 @@ fn bump_aborts_when_preflight_fails() {
 check = "false""#,
     );
     let cfg = common::load_config(guard.fixture());
-    assert!(bump_run(&cfg, Bump::Minor, false, &[]).is_err());
+    assert!(bump_run(&cfg, Bump::Minor, false, &[], None).is_err());
     assert_versions_at_123(guard.fixture());
     assert_eq!(commit_count(guard.fixture()), 1);
     assert!(!tag_exists(guard.fixture(), "v1.3.0"));
@@ -91,7 +91,7 @@ fn bump_dry_run_performs_no_mutation() {
 check = "true""#,
     );
     let cfg = common::load_config(guard.fixture());
-    let summary = bump_run(&cfg, Bump::Minor, true, &[]).unwrap();
+    let summary = bump_run(&cfg, Bump::Minor, true, &[], None).unwrap();
     assert!(summary.dry_run);
     assert_versions_at_123(guard.fixture());
     assert_eq!(commit_count(guard.fixture()), 1);
@@ -134,7 +134,7 @@ check = "true""#,
         .to_string();
     run_git_ok(&fixture.dir, &["tag", "v1.3.0", &first]);
     let cfg = common::load_config(guard.fixture());
-    let err = bump_run(&cfg, Bump::Minor, false, &[]).unwrap_err();
+    let err = bump_run(&cfg, Bump::Minor, false, &[], None).unwrap_err();
     assert!(err.to_string().contains("v1.3.0"));
     assert_versions_at_123(fixture);
     assert_eq!(commit_count(fixture), 2);
@@ -154,7 +154,7 @@ fn bump_aborts_when_preflight_times_out() {
 check = { command = "sleep 30", timeout = 2 }"#,
     );
     let cfg = common::load_config(guard.fixture());
-    let err = bump_run(&cfg, Bump::Minor, false, &[]).unwrap_err();
+    let err = bump_run(&cfg, Bump::Minor, false, &[], None).unwrap_err();
     assert!(
         err.to_string().contains("timed out"),
         "expected timeout error, got {err}"
@@ -179,7 +179,7 @@ check = "true""#,
     let fixture = guard.fixture();
     run_git_ok(&fixture.dir, &["tag", "v1.3.0", "HEAD"]);
     let cfg = common::load_config(guard.fixture());
-    let err = bump_run(&cfg, Bump::Minor, true, &[]).unwrap_err();
+    let err = bump_run(&cfg, Bump::Minor, true, &[], None).unwrap_err();
     assert!(
         matches!(err, cutver::bump::Error::TagExists { .. }),
         "expected TagExists error, got {err:?}"
@@ -225,7 +225,7 @@ push = true
     assert!(!tag_exists(fixture, "v1.3.0"));
 
     let cfg = common::load_config(guard.fixture());
-    let err = bump_run(&cfg, Bump::Minor, false, &[]).unwrap_err();
+    let err = bump_run(&cfg, Bump::Minor, false, &[], None).unwrap_err();
 
     assert!(
         matches!(err, cutver::bump::Error::RemoteTagExists { .. }),
@@ -271,7 +271,7 @@ check = "true""#,
     std::fs::set_permissions(&hook_path, std::fs::Permissions::from_mode(0o755)).unwrap();
 
     let cfg = common::load_config(guard.fixture());
-    let err = bump_run(&cfg, Bump::Minor, false, &[]).unwrap_err();
+    let err = bump_run(&cfg, Bump::Minor, false, &[], None).unwrap_err();
     assert!(
         matches!(err, cutver::bump::Error::Commit(_)),
         "expected Commit error, got {err:?}"
@@ -306,7 +306,7 @@ fn bump_rolls_back_manifests_when_stage_fails() {
         &format!("[preflight]\ncheck = \"touch '{}'\"", index_lock.display()),
     );
     let cfg = common::load_config(fixture);
-    let err = bump_run(&cfg, Bump::Minor, false, &[]).unwrap_err();
+    let err = bump_run(&cfg, Bump::Minor, false, &[], None).unwrap_err();
     assert!(
         matches!(err, cutver::bump::Error::Stage(_)),
         "expected Stage error, got {err:?}"
@@ -417,7 +417,7 @@ require_clean_tree = true
 
     let cfg = config::discover(&fixture.dir).unwrap();
     assert!(cfg.version.current_source.ends_with("package.json"));
-    let summary = bump_run(&cfg, Bump::Minor, false, &[]).unwrap();
+    let summary = bump_run(&cfg, Bump::Minor, false, &[], None).unwrap();
     assert_eq!(summary.next.to_string(), "1.3.0");
     assert_bumped(fixture);
 }
@@ -567,7 +567,7 @@ kind = "pyproject"
     initial_commit(fixture);
 
     let cfg = common::load_config(guard.fixture());
-    let summary = bump_run(&cfg, Bump::Minor, false, &[]).unwrap();
+    let summary = bump_run(&cfg, Bump::Minor, false, &[], None).unwrap();
     assert_eq!(summary.next.to_string(), "1.1.0");
     assert!(
         fixture
@@ -600,7 +600,7 @@ kind = "pyproject"
     initial_commit(fixture);
 
     let cfg = common::load_config(guard.fixture());
-    let summary = bump_run(&cfg, Bump::Patch, false, &[]).unwrap();
+    let summary = bump_run(&cfg, Bump::Patch, false, &[], None).unwrap();
     assert_eq!(summary.next.to_string(), "2.0.1");
     assert!(
         fixture
@@ -660,7 +660,8 @@ require_clean_tree = true
     );
 
     let cfg = common::load_config(guard.fixture());
-    let summary = cutver::bump::run_with_first_release(&cfg, cutver::cli::BumpLevel::Auto, false, &[], true).unwrap();
+    let summary =
+        cutver::bump::run_with_first_release(&cfg, cutver::cli::BumpLevel::Auto, false, &[], true, None).unwrap();
 
     // Resulting version is still 0.1.0
     assert_eq!(summary.current.to_string(), "0.1.0");
@@ -734,7 +735,7 @@ require_clean_tree = true
     );
 
     let cfg = common::load_config(guard.fixture());
-    let summary = cutver::bump::run(&cfg, cutver::cli::BumpLevel::Auto, false, &[]).unwrap();
+    let summary = cutver::bump::run(&cfg, cutver::cli::BumpLevel::Auto, false, &[], None).unwrap();
 
     assert_eq!(summary.next.to_string(), "1.1.0");
     assert_eq!(summary.floating_tag, Some("v1".to_string()));
@@ -781,7 +782,7 @@ require_clean_tree = false
     initial_commit(fixture);
 
     let cfg = common::load_config(guard.fixture());
-    let summary = cutver::bump::run(&cfg, cutver::cli::BumpLevel::Minor, false, &[]).unwrap();
+    let summary = cutver::bump::run(&cfg, cutver::cli::BumpLevel::Minor, false, &[], None).unwrap();
     assert_eq!(summary.next.to_string(), "1.1.0");
     assert_eq!(summary.commit_message, "chore(release): v1.1.0 [bump: minor]");
     assert_eq!(head_commit_message(fixture), "chore(release): v1.1.0 [bump: minor]");
@@ -815,7 +816,7 @@ require_clean_tree = false
     initial_commit(fixture);
 
     let cfg = common::load_config(guard.fixture());
-    let summary = cutver::bump::run(&cfg, cutver::cli::BumpLevel::Patch, false, &[]).unwrap();
+    let summary = cutver::bump::run(&cfg, cutver::cli::BumpLevel::Patch, false, &[], None).unwrap();
     assert_eq!(summary.next.to_string(), "1.0.1");
     assert_eq!(summary.commit_message, "chore(release): v1.0.1 [skip ci]");
     assert_eq!(head_commit_message(fixture), "chore(release): v1.0.1 [skip ci]");
@@ -860,7 +861,7 @@ require_clean_tree = false
     run_git_ok(&fixture.dir, &["commit", "--allow-empty", "-m", "fix: small bug"]);
 
     let cfg = common::load_config(guard.fixture());
-    let err = cutver::bump::run(&cfg, cutver::cli::BumpLevel::Patch, false, &[]).unwrap_err();
+    let err = cutver::bump::run(&cfg, cutver::cli::BumpLevel::Patch, false, &[], None).unwrap_err();
 
     assert!(
         matches!(
@@ -924,7 +925,7 @@ require_clean_tree = false
     run_git_ok(&fixture.dir, &["commit", "--allow-empty", "-m", "fix: small bug"]);
 
     let cfg = common::load_config(guard.fixture());
-    let err = cutver::bump::run(&cfg, cutver::cli::BumpLevel::Patch, false, &[]).unwrap_err();
+    let err = cutver::bump::run(&cfg, cutver::cli::BumpLevel::Patch, false, &[], None).unwrap_err();
 
     assert!(
         matches!(
@@ -987,7 +988,7 @@ require_clean_tree = false
     run_git_ok(&fixture.dir, &["commit", "--allow-empty", "-m", "fix: small bug"]);
 
     let cfg = common::load_config(guard.fixture());
-    let err = cutver::bump::run(&cfg, cutver::cli::BumpLevel::Patch, false, &[]).unwrap_err();
+    let err = cutver::bump::run(&cfg, cutver::cli::BumpLevel::Patch, false, &[], None).unwrap_err();
 
     assert!(
         matches!(
@@ -1041,7 +1042,7 @@ check = "true""#,
     std::fs::set_permissions(&hook_path, std::fs::Permissions::from_mode(0o755)).unwrap();
 
     let cfg = common::load_config(fixture);
-    let err = bump_run(&cfg, Bump::Minor, false, &[]).unwrap_err();
+    let err = bump_run(&cfg, Bump::Minor, false, &[], None).unwrap_err();
     let message = err.to_string();
 
     assert!(
@@ -1055,5 +1056,47 @@ check = "true""#,
     assert!(
         message.contains("Rollback failed"),
         "the message must say the rollback failed: {message}"
+    );
+}
+
+/// S1: `--channel` reaches the release a `bump` cuts, not only the plan, and the dry run reports the
+/// version a real run would tag — the same transition, said in words, as `cutver plan` renders.
+#[test]
+fn bump_dry_run_reports_the_channel_it_would_release_on() {
+    assert!(
+        git_available(),
+        "git CLI is required for e2e tests but was not found in PATH"
+    );
+    let guard = FixtureGuard::new("dry-run-channel");
+    write_fixture(&guard, "[preflight]\ncheck = \"true\"");
+    let fixture = guard.fixture();
+
+    let output = cutver_command(&fixture.dir)
+        .args(["bump", "minor", "--dry-run", "--json", "--channel", "alpha"])
+        .output()
+        .expect("failed to execute cutver bump --dry-run --json");
+    assert!(
+        output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value =
+        serde_json::from_str(String::from_utf8_lossy(&output.stdout).trim()).expect("one JSON object");
+    assert_eq!(report["version"], "1.3.0-alpha.1", "{report}");
+    assert_eq!(report["tag"], "v1.3.0-alpha.1", "{report}");
+    assert_eq!(report["released"], false, "a dry run publishes nothing: {report}");
+
+    let tree = cutver_command(&fixture.dir)
+        .args(["bump", "minor", "--dry-run", "--channel", "alpha"])
+        .output()
+        .expect("failed to execute cutver bump --dry-run");
+    let stdout = String::from_utf8_lossy(&tree.stdout);
+    assert!(
+        stdout.contains("Release Plan: 1.2.3 -> 1.3.0-alpha.1"),
+        "the tree reports the version it would cut: {stdout}"
+    );
+    assert!(
+        stdout.contains("channel: stable -> alpha"),
+        "the tree names the transition: {stdout}"
     );
 }

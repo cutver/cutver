@@ -2,6 +2,7 @@ use crate::bump::Summary;
 use crate::bump::plan::ReleasePlan;
 use crate::cli::path::relativize_path;
 use crate::cli::style::Theme;
+use crate::semver_bump;
 
 /// Renders the simulation mode banner box for `--dry-run`.
 pub fn render_simulation_banner(theme: &Theme) -> String {
@@ -32,8 +33,26 @@ fn format_plan_header(summary: &Summary, theme: &Theme) -> String {
         None => "bump".to_string(),
     };
     let transition = format!("{} {} {}", summary.current, theme.arrow(), theme.accent(&summary.next));
-    let title = format!("Release Plan: {transition} ({bump_desc})");
+    let title = format!(
+        "Release Plan: {transition} ({bump_desc}{})",
+        channel_transition(summary)
+    );
     format!("{icon} {title}")
+}
+
+/// The channel the transition leaves and the one it lands on, in words, or nothing at all when they
+/// are the same: approving a release on a channel is not reading suffixes by eye (#326 D3).
+///
+/// It reads the two versions the header already prints, so a report about a version the tool did not
+/// cut is never relabelled by it.
+fn channel_transition(summary: &Summary) -> String {
+    let from = semver_bump::channel_of(&summary.current);
+    let to = semver_bump::channel_of(&summary.next);
+    if from == to {
+        String::new()
+    } else {
+        format!(", channel: {from} -> {to}")
+    }
 }
 
 fn render_manifests_node(summary: &Summary, theme: &Theme, is_last: bool) -> Vec<String> {

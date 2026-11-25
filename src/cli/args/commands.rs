@@ -45,6 +45,9 @@ pub enum Commands {
         /// SemVer level to increment
         #[arg(value_enum, default_value = "auto")]
         level: BumpLevel,
+        /// Publish the version the level cuts on this channel: `alpha`, `beta` and `rc` append the channel and start its counter (`1.3.0` becomes `1.3.0-alpha.1`), and `stable` is the release itself. The bare word "channel" always means this ladder, never the CI output channel or the gate channel
+        #[arg(long, value_enum, value_name = "CHANNEL")]
+        channel: Option<Channel>,
         /// Simulate the release pipeline without modifying files or creating Git commits/tags
         #[arg(long)]
         dry_run: bool,
@@ -69,6 +72,9 @@ pub enum Commands {
         /// SemVer level to increment
         #[arg(value_enum, default_value = "auto")]
         level: BumpLevel,
+        /// Report the version the run would cut on this channel: `alpha`, `beta` and `rc` append the channel and start its counter (`1.3.0` becomes `1.3.0-alpha.1`), and `stable` is the release itself. A plan computes it and writes nothing, exactly like a plan on the ladder without the flag
+        #[arg(long, value_enum, value_name = "CHANNEL")]
+        channel: Option<Channel>,
         /// Print the plan as one JSON object on stdout instead of the plan tree
         #[arg(long)]
         json: bool,
@@ -229,6 +235,29 @@ pub enum BumpLevel {
     Major,
     /// Automatically deduce bump level from Conventional Commits since the latest tag
     Auto,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum Channel {
+    /// Publish on the alpha channel: `1.3.0` becomes `1.3.0-alpha.1`
+    Alpha,
+    /// Publish on the beta channel: `1.3.0` becomes `1.3.0-beta.1`
+    Beta,
+    /// Publish on the rc channel: `1.3.0` becomes `1.3.0-rc.1`
+    Rc,
+    /// Publish the release itself, with no prerelease segment
+    Stable,
+}
+
+impl From<Channel> for crate::semver_bump::Channel {
+    fn from(channel: Channel) -> Self {
+        match channel {
+            Channel::Alpha => Self::Alpha,
+            Channel::Beta => Self::Beta,
+            Channel::Rc => Self::Rc,
+            Channel::Stable => Self::Stable,
+        }
+    }
 }
 
 impl From<crate::semver_bump::Bump> for BumpLevel {

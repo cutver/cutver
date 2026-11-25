@@ -174,6 +174,7 @@ mod tests {
             skip_preflight: Vec::new(),
             first_release: false,
             defer_publish: false,
+            channel: None,
             json,
             report: report.map(std::path::PathBuf::from),
         }
@@ -185,6 +186,7 @@ mod tests {
             json,
             skip_preflight: Vec::new(),
             first_release: false,
+            channel: None,
         }
     }
 

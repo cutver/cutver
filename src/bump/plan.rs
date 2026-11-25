@@ -34,6 +34,7 @@ use crate::conventional;
 use crate::git;
 use crate::plugin::PluginManager;
 use crate::preflight;
+use crate::semver_bump::Channel;
 
 mod finish;
 mod guards;
@@ -147,12 +148,14 @@ pub(crate) fn read_only(
     level: BumpLevel,
     skip_preflight: &[String],
     first_release: bool,
+    channel: Option<Channel>,
 ) -> Result<ReleasePlan, Error> {
     reject_plugin_dependencies(config)?;
     let request = ComputeRequest {
         level,
         skip_preflight,
         first_release,
+        channel,
         mode: PlanMode::Preview,
     };
     ReleasePlan::prepare(config, request)?.finish(config, request)
@@ -221,6 +224,7 @@ impl ReleasePlan {
             &current,
             request.level,
             request.first_release,
+            request.channel,
             plugin_manager.as_ref(),
         )?;
         // The level the release cuts, resolved before the guard that reads it. `initial` is reported

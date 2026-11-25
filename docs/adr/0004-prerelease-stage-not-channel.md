@@ -1,6 +1,6 @@
 # ADR-0004: Name the prerelease ladder a stage, and leave "channel" to the surfaces that already own it
 
-**Status**: proposed
+**Status**: accepted
 **Date**: 2026-11-25
 **Owner**: repository maintainer
 **Review date**: 2027-11-25 (proposal; not yet committed by the maintainer)
@@ -69,7 +69,7 @@ question (what a forge release state means) with its own reopen condition below.
 ## Consequences
 
 - Easier: the ladder rides the version, so `bump`, `plan` and the changelog context agree by construction, and `--stage stable` is the version move #326 gap 6 describes rather than a second mechanism beside it.
-- Easier: `design.md:135` stops citing a flag that will never exist, and `docs/reference/cli.md` gains a row that does not repeat the word "channel" three rows apart.
+- Easier: the roadmap row stops citing a flag that will never exist — `docs/internals/design.md:135` now reads `Pre-release stages (--stage, promotion)` — and `docs/reference/cli.md` will gain a row that does not repeat the word "channel" three rows apart.
 - Harder: `--stage` and the four existing `channel` uses sit in the same `--help` output, so the reference must name both senses explicitly rather than relying on the reader to infer it.
 - Downside: `bump --stage stable` is a version move, not a publication, so promoting still cannot flip a forge draft. A consumer that wants "publish the release I already built" keeps doing it by hand until (c) reopens.
 - Downside: `--stage` on `plan` is a second place to keep the ladder honest; a plan that predicts a stage the bump then refuses would be a new class of disagreement between the two commands.
@@ -90,6 +90,6 @@ The null case reopens if a consumer demonstrates that `--stage` duplicates an ex
 
 - Issue: [#326](https://github.com/cutver/cutver/issues/326), gap 6, and phase 5 of its sequencing.
 - Sibling decision: [ADR-0002](0002-shared-version-with-path-filtered-changelogs.md) — one shared version per repository, which is what makes a release channel a state rather than a train.
-- Roadmap row this decision corrects: [Evolution Roadmap](../internals/design.md#evolution-roadmap), `Pre-release channels (--channel, bump release)` at `docs/internals/design.md:135`.
+- Roadmap row this decision corrects: [Evolution Roadmap](../internals/design.md#evolution-roadmap) — `docs/internals/design.md:135` was `Pre-release channels (--channel, bump release)` and reads `Pre-release stages (--stage, promotion)` as of this ADR's acceptance.
 - Surfaces that already own the word: `src/cli/ci.rs`, `src/bump/exec/guard.rs:105-115`, `src/bump/plan/finish.rs:207`, `CONTRACT.md:213,222,232`, `docs/reference/cli.md:37`.
 - No issue or pull request number is recorded for the implementation of this decision, because there is none yet.

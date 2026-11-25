@@ -27,8 +27,21 @@ authority) plus the docs that describe it. Issue: #384.
 - **T4** Say what the code now does in the docs that described a walk. Done — plugin-process-runtime,
   pipeline, references, configuration-tables.
 - **T5** After measurement, same method as T1. Done — see L5.
+- **T7** Respect the 400-line ceiling `tests/source_line_budget.rs` enforces (CONTRACT.md:174): the
+  spawn/kill half of `src/proc.rs` is now `src/proc/capture.rs`, and the descendant fixtures move out
+  of `src/plugin/driver/process/tests.rs` into `src/plugin/driver/process/tests/descendants.rs`.
+  Done — no test changes behavior.
 - **T6** Independent verification: `src/proc.rs` is shared with `preflight`, so this change reaches
   behavior the issue did not name (Risk item 3).
+- **T8** Fold in what independent verification left: no page or doc comment claims an atomicity the
+  Windows API does not provide. The runtime guide, the module doc and `Win32Job::terminate` say what
+  was measured — one kernel call, about 1 ms, against an 89–397 ms walk that let a shell between a
+  killed leaf and its root run its next command — and the guide and the configuration tables name
+  the `taskkill` fallback and the assign window. Done — plugin-process-runtime, configuration-tables,
+  `src/proc.rs`, `src/plugin/driver/process.rs`.
+- **T9** Add the two probes independent verification wrote, pinning the container itself rather than
+  the symptoms it prevents: the deadline ends a job object (a refused one would put the walk back)
+  and closing the container does not kill what the child left running. Done — `src/proc/tests.rs`.
 
 ## Log
 
@@ -62,3 +75,12 @@ Cost of a wrong conclusion at the measured 40%: 0.6^12 ≈ 0.2%.
 **L6. Known cost of the guarantee.** Inside cutver's job, a plugin that spawns with
 `CREATE_BREAKAWAY_FROM_JOB` is denied by Windows. That is the price of a kill that cannot be escaped,
 and it is stated in the runtime guide.
+
+**L7. Independent verification, folded in.** An independent verifier judged S1–S5 kept and left
+advisories, now T8 and T9. It reproduced RED on the old mechanism — `taskkill` wrote the marker in
+**1 of 9** loaded runs, at **89–333 ms** per kill — and GREEN on the new one: **0 of 9**, kill
+**<= 1 ms**. The honest limit is *one kernel call over the members*, not atomicity: the assign window
+between `CreateProcess` and `AssignProcessToJobObject`, and the `taskkill /F /T` fallback for a host
+that refuses a job, both remain, and the docs now say so. Also recorded: `5736024` and `7844dce`
+replaced the earlier commit whose message claimed "no behavior change" while the test-only failure
+message also changed.

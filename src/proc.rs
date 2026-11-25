@@ -26,8 +26,11 @@
 //! same tree, but it reaches it one process at a time and from the leaves up, so a shell between a
 //! killed leaf and the root resumes its own command list in that gap. Measured: a plugin whose
 //! descendant was due three seconds in wrote its marker 1.4 s into a one-second invocation, and the
-//! kill itself took 100–592 ms of the caller's time. A container ended in one act has no gap to run
-//! in.
+//! kill itself took 89–397 ms of the caller's time. Ending the container instead is one kernel call —
+//! `TerminateJobObject` on Windows, `killpg` on unix — measured at about 1 ms, so a descendant never
+//! gets the window the walk left it. One call over the members, not atomicity: a descendant created
+//! between `CreateProcess` and the job assignment is outside the container ([`spawn_group`]), and a
+//! host that refused a job is back on the `taskkill` walk.
 
 use std::io;
 use std::process::{Child, Command, ExitStatus};
@@ -242,8 +245,13 @@ impl Win32Job {
         }
     }
 
-    /// Ends every process in the job in one kernel act: nothing in the tree is left between the
-    /// deaths of two of its members, so nothing in it runs a command after the deadline.
+    /// Ends every process the job holds in one kernel call, measured at about 1 ms against the 89–397
+    /// ms a `taskkill /F /T` walk took — the window in which a shell between a killed leaf and its
+    /// root ran its next command after the deadline.
+    ///
+    /// One call over the members, not atomicity: the deaths are not simultaneous, and a descendant
+    /// created before the assignment reached this job is not one of its members, as [`spawn_group`]
+    /// says.
     fn terminate(&self) {
         unsafe {
             let _ = win32::TerminateJobObject(self.0, 1);
@@ -284,3 +292,6 @@ unsafe extern "C" {
     fn setpgid(pid: i32, pgid: i32) -> i32;
     fn killpg(pgrp: i32, sig: i32) -> i32;
 }
+
+#[cfg(test)]
+mod tests;

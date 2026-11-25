@@ -110,8 +110,9 @@ impl ProcessDriver {
     /// The declared grants are applied last, so a `permissions.env` key is the author's answer for
     /// that key and replaces the baseline value instead of colliding with it.
     ///
-    /// The stdio pipes, the process group and the deadline are not set here: they belong to the
-    /// shared supervision in [`crate::proc`], which is the one copy of that machinery (S5).
+    /// The stdio pipes, the container (a process group on unix, a job object on Windows) and the
+    /// deadline are not set here: they belong to the shared supervision in [`crate::proc`], which is
+    /// the one copy of that machinery (S5).
     fn child_command(&self) -> Result<Command, PluginError> {
         let granted = self.grants.resolve(&self.name)?;
         let mut cmd = Command::new(&self.command);
@@ -195,8 +196,8 @@ impl PluginDriver for ProcessDriver {
 
         // The plugin is spawned directly -- no shell, so its argv means what it says -- and its
         // whole exchange (the envelope write, the wait and the output drain) runs under the one
-        // `timeout_seconds` budget (S8). The process group, the deadline poll and the tree kill all
-        // come from `crate::proc`, which is why a process the plugin starts cannot outlive it (S6).
+        // `timeout_seconds` budget (S8). The container, the deadline poll and the tree kill all come
+        // from `crate::proc`, which is why a process the plugin starts cannot outlive it (S6).
         let timeout = Duration::from_secs(self.timeout_seconds);
         let mut command = self.child_command()?;
         match proc::run_capture(&mut command, &envelope, timeout, capture_limits()) {

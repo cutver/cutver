@@ -562,6 +562,12 @@ fn publish_refuses_a_commit_that_is_not_head() {
         text.contains("Where:") && text.contains("Fix:") && text.contains("Nothing was written"),
         "the mismatch must be actionable: {text}"
     );
+    assert!(
+        text.contains("a plain `cutver publish` with no `--commit` publishes the current HEAD")
+            && text.contains("`--resume` requires `--commit`"),
+        "the fix must be true on both paths, so it says what dropping `--commit` would publish and \
+         what a resume needs: {text}"
+    );
     assert!(!tag_exists(fixture, "v1.3.0"), "no tag may be created");
     assert!(
         !remote_refs(&remote.dir).contains("refs/tags/"),
@@ -1436,6 +1442,14 @@ fn a_resume_refuses_when_head_moved_away_from_the_commit_it_continues() {
     assert!(
         stderr.contains(&verified) && stderr.contains(&head),
         "the refusal must name both commits:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("Dropping `--commit` is not an alternative"),
+        "the fix must not offer a resume an option it refuses next: a resume requires `--commit`\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("re-run, or drop `--commit`"),
+        "the bare drop advice must be gone: `ResumeNeedsCommit` refuses exactly that\n{stderr}"
     );
     assert_nothing_was_published(fixture, &remote);
 }

@@ -80,7 +80,7 @@ pub enum Error {
     )]
     PublishTagMismatch { tag: String, declared: String },
     #[error(
-        "release commit '{expected}' is not HEAD ('{actual}')\n  Where: `cutver publish` validation, before the tag, the pushes and the publish commands\n  Fix: check out the commit you meant to publish (`git checkout {expected}`) and re-run, or drop `--commit` to publish the current HEAD. Nothing was written."
+        "release commit '{expected}' is not HEAD ('{actual}')\n  Where: `cutver publish` validation, before the tag, the pushes and the publish commands\n  Fix: check out the commit you meant to publish (`git checkout {expected}`) and re-run. Dropping `--commit` is not an alternative: a plain `cutver publish` with no `--commit` publishes the current HEAD, and `--resume` requires `--commit`. Nothing was written."
     )]
     PublishCommitMismatch { expected: String, actual: String },
     #[error(

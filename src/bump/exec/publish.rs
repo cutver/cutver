@@ -5,6 +5,9 @@
 //! `on_post_release` plugins. `cutver publish` runs this same code from a separate process, after
 //! the built artifacts were smoked, which is why the sequence lives here instead of inline in the
 //! pipeline: one authority, two entry points.
+//!
+//! A facade, per Contract Pillar V.4: the checks that run before the first write live in
+//! [`validate`], and the evidence `cutver publish --resume` accepts lives in [`resume`] (#326 S4).
 
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
@@ -15,16 +18,17 @@ use semver::Version;
 use crate::bump::Error;
 use crate::bump::exec::command::{format_command, read, run_publish_command};
 use crate::bump::exec::guard;
-use crate::bump::exec::manifest::current_source;
 use crate::bump::types::BumpLevel;
 use crate::changelog;
 use crate::config::Config;
-use crate::config::artifact::matched_counts;
 use crate::config::gates::{self, GateName};
 use crate::git;
 use crate::git::ops::{tag_force_push_args, tag_push_args};
 use crate::plugin::PluginManager;
 use crate::plugin::dto::PostReleasePayload;
+
+mod resume;
+mod validate;
 
 /// Everything the publication half reads. One struct instead of ten positional arguments.
 pub(crate) struct PublicationScope<'a> {
@@ -43,13 +47,17 @@ pub(crate) struct PublicationScope<'a> {
     pub phase: Phase,
 }
 
-/// The two entry points. `Inline` is `cutver bump`, which owns the branch push and creates the tag
+/// The entry points. `Inline` is `cutver bump`, which owns the branch push and creates the tag
 /// before it pushes anything; `Closing` is `cutver publish`, which starts after an earlier run
 /// already pushed the branch, so it pushes no branch and cannot claim nothing was pushed.
+/// `Resuming` is the closing phase entered through `--resume`: it repeats the closing steps but
+/// dispatches no `on_post_release` plugin, because a plugin is arbitrary code that may already have
+/// run in the attempt being continued, which is what a resume refuses to do on a guess (#326 D2).
 #[derive(Clone, Copy)]
 pub(crate) enum Phase {
     Inline,
     Closing,
+    Resuming,
 }
 
 /// What the publication half did, for the run summary.
@@ -94,6 +102,8 @@ pub struct PublishRequest {
     /// Gates this release must have an attestation for, in the order the caller asked (#326 S9).
     pub require_gate: Vec<GateName>,
     pub dry_run: bool,
+    /// Continue a release an earlier run left unfinished, driven by repository evidence (#326 S4).
+    pub resume: bool,
 }
 
 /// `--notes-file -` names standard input, not a file called `-`: the notes never have to exist in the
@@ -124,6 +134,12 @@ pub struct PublishSummary {
 /// manifests at HEAD, a commit that is not HEAD, or an existing tag fails closed with the workspace
 /// untouched.
 pub fn run_publish(config: &Config, request: &PublishRequest) -> Result<PublishSummary, Error> {
+    // D5, and before anything is read: a resume continues a named release, and `--commit` is what
+    // names it. Nothing persists a run record, so without the commit the invocation could only be a
+    // plain publish wearing a flag that promises the opposite.
+    if request.resume && request.commit.is_none() {
+        return Err(Error::ResumeNeedsCommit);
+    }
     // Runs before any other validation: the declared version is read from the working tree below, so
     // the tree must be the one the tag names — an uncommitted manifest would validate one version
     // and publish another (#259 findings R1-002 and R3-001).
@@ -143,60 +159,10 @@ pub fn run_publish(config: &Config, request: &PublishRequest) -> Result<PublishS
     declared_inputs.extend(gates::declared_input(config));
     git::status::require_clean_tree_except(&config.root_dir, config.git.require_clean_tree, &declared_inputs)?;
     let plugin_manager = Arc::new(PluginManager::from_config(&config.plugins, &config.root_dir)?);
-    let (version, head) = validate(config, request, &plugin_manager)?;
-    verify_artifacts(config)?;
+    let (version, head) = validate::validate(config, request, &plugin_manager)?;
+    validate::verify_artifacts(config)?;
     guard::verify_gates(config, &request.require_gate, &head)?;
     publish_prepared(config, request, &version, &head, &plugin_manager)
-}
-
-/// Verifies that every declared `[[artifact]]` exists before the first irreversible step (#326 S2).
-///
-/// Runs after `validate` and before `publish_prepared`, whose first write is the tag. A dry run
-/// verifies too: it promises the verdict the real run would report.
-fn verify_artifacts(config: &Config) -> Result<(), Error> {
-    for (artifact, found) in config.artifact.iter().zip(matched_counts(config)?) {
-        if found < artifact.at_least {
-            return Err(Error::ArtifactMissing {
-                label: artifact.label().to_string(),
-                glob: artifact.glob.clone(),
-                found,
-                required: artifact.at_least,
-            });
-        }
-    }
-    Ok(())
-}
-
-/// Phase 1 of the closing phase: the same three checks a full run performs, plus the tag/commit
-/// match that only a two-phase release needs. Returns the declared version and HEAD.
-fn validate(
-    config: &Config,
-    request: &PublishRequest,
-    plugin_manager: &Arc<PluginManager>,
-) -> Result<(Version, String), Error> {
-    let repo = &config.root_dir;
-    guard::validate_tag_name(&config.git.tag_prefix, &request.tag)?;
-    // The manifests checked out at HEAD are the ones the release commit bumped: the tag is derived
-    // from what they declare instead of trusted from the command line.
-    let (_source, _editor, version) = current_source(config, Some(plugin_manager))?;
-    let declared = git::tag_name(&config.git.tag_prefix, &version.to_string());
-    if declared != request.tag {
-        return Err(Error::PublishTagMismatch {
-            tag: request.tag.clone(),
-            declared,
-        });
-    }
-    let head = git::rev_parse(repo, "HEAD")?;
-    if let Some(expected) = &request.commit
-        && !expected.eq_ignore_ascii_case(&head)
-    {
-        return Err(Error::PublishCommitMismatch {
-            expected: expected.clone(),
-            actual: head,
-        });
-    }
-    guard::check_tag_collisions(repo, &request.tag, true)?;
-    Ok((version, head))
 }
 
 /// Phase 2: build the release context the publish commands interpolate against, then publish.
@@ -220,7 +186,11 @@ fn publish_prepared(
         notes: notes.as_deref(),
         dry_run: request.dry_run,
         defer_publish: false,
-        phase: Phase::Closing,
+        phase: if request.resume {
+            Phase::Resuming
+        } else {
+            Phase::Closing
+        },
     };
     let published = finalize(&scope, &mut pushes)?;
     Ok(PublishSummary {
@@ -338,13 +308,13 @@ fn create_tag(scope: &PublicationScope<'_>) -> Result<bool, Error> {
     Ok(report.is_some() && !scope.dry_run)
 }
 
-/// The tag failure each phase can report honestly: the inline phase is still before every push, the
-/// closing phase is not.
+/// The tag failure each phase can report honestly: the inline phase is still before every push, and
+/// both closing phases are not.
 fn tag_error(scope: &PublicationScope<'_>, source: crate::git::Error) -> Error {
     let (tag, commit, source) = (scope.tag.to_string(), scope.commit.to_string(), Box::new(source));
     match scope.phase {
         Phase::Inline => Error::Tag { tag, commit, source },
-        Phase::Closing => Error::TagInClosingPhase { tag, commit, source },
+        Phase::Closing | Phase::Resuming => Error::TagInClosingPhase { tag, commit, source },
     }
 }
 
@@ -434,6 +404,12 @@ fn run_publish_commands(scope: &PublicationScope<'_>) -> Result<Vec<String>, Err
 }
 
 fn dispatch_post_release(scope: &PublicationScope<'_>) -> Result<(), Error> {
+    // A resume repeats only what is harmless to repeat, and an `on_post_release` plugin is arbitrary
+    // code that may already have run against this release (#326 D2). A rehearsal skips it too, so a
+    // `--dry-run --resume` reports the verdict the real resume would.
+    if let Phase::Resuming = scope.phase {
+        return Ok(());
+    }
     let commit_sha = if scope.dry_run {
         "0000000000000000000000000000000000000000".to_string()
     } else {
@@ -447,7 +423,10 @@ fn dispatch_post_release(scope: &PublicationScope<'_>) -> Result<(), Error> {
         dry_run: scope.dry_run,
         notes: scope.notes.map(str::to_string),
     };
-    for plugin_name in scope.plugin_manager.plugins_for_event("on_post_release") {
+    for plugin_name in scope
+        .plugin_manager
+        .plugins_for_event(crate::plugin::PluginOperation::OnPostRelease.as_str())
+    {
         scope
             .plugin_manager
             .dispatch_post_release(plugin_name, &payload)

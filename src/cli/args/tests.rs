@@ -136,6 +136,7 @@ fn publish_parses_its_arguments_and_requires_the_tag() {
         notes_file,
         require_gate,
         dry_run,
+        ..
     } = cli.command
     else {
         panic!("expected publish")
@@ -168,6 +169,7 @@ fn publish_parses_its_arguments_and_requires_the_tag() {
         notes_file,
         require_gate,
         dry_run,
+        ..
     } = cli.command
     else {
         panic!("expected publish")

@@ -41,7 +41,8 @@ Decision: `docs/adr/0005-prerelease-channel-supersedes-0004.md` (accepted). Issu
   `--channel stable` on a stable version. Done — commit `bbaaef0`, gated by `sh scripts/check.sh`
   (9 of 10 steps; the tenth needs a linux cross compiler this host lacks).
 - **T4** `publish --resume`, driven by the plan that gap 1 already ships. D2 answered: repeat only
-  idempotent steps, and refuse when the evidence contradicts the plan.
+  idempotent steps, and refuse when the evidence contradicts the plan. Done — commit `e1ec884`, with
+  D4/D5/D6 and the `publish/{validate,resume}` decomposition the ceiling forced.
 - **T5** Docs with the behaviour: the `--channel` reference row and help text (bare "channel" = the
   ladder), the guide that explains promotion, `docs/internals/design.md:135` from `Planned` to
   `Implemented`, and the qualifier test of S3 if it does not exist yet.
@@ -67,6 +68,25 @@ pins:
 - `stable` on a stable version, or the channel the version already carries with no level: a **reported**
   no-op — not a silent success, and not an error, because erroring would force every caller to branch on
   the current version, which is the inference this tool exists to remove.
+**D4 — a `[publish] commands` step is named by its position (implementation decision, `L10`).** D2 lets
+`--resume` repeat such a step only when the gate channel already holds an attestation naming it as done,
+but a gate name becomes an attestation *file name* (`src/config/gates/store.rs`), so a command line cannot
+be one. The identity is the entry's 1-based position in declaration order: `publish-1`, `publish-2`. So
+`cutver attest publish-1 --commit <sha> --conclusion success` is what makes a resume willing to repeat that
+step, and a missing attestation refuses, naming the position and the command verbatim. The index is stable
+because the list lives in `cutver.toml` and a reordering is a config change a reviewer sees.
+
+**D6 — a resume dispatches no `on_post_release` plugin (decided while T4 closed, `L10`).** D2's list of
+steps that are harmless to repeat does not include `[publish] commands`, and a plugin is the same thing
+with a different entry point: arbitrary third-party code whose previous run cannot be proven. So
+`--resume` runs the closing phase as `Phase::Resuming`, which returns before a payload is built, and the
+tree's `Resume` section names the plugins it left alone. The remedy is stated where the refusal is: run
+`cutver publish` without `--resume` once the release has been inspected, if the plugin still has to run.
+
+**D5 — `--resume` requires `--commit` (implementation decision, `L10`).** "HEAD moved" is only observable
+against something the caller states; the alternative is the run ledger D2 refused to invent. A resume
+without `--commit` refuses and says it cannot re-identify the release it continues.
+
 **D1a — the level survives `--channel stable` on a stable version (decided during T3, `L8`).** The fourth
 bullet is narrower than it reads: a named level still cuts the version it names, so `plan minor --channel
 stable` on `1.2.3` reports `1.3.0`. The reported no-op is what happens when the request yields the version
@@ -148,6 +168,22 @@ see: `tests/e2e_bump.rs` had not compiled for the unix target since T2 (six four
 `cutver::bump::run` calls behind `#![cfg(unix)]`, invisible on this host until the linux cross-check ran),
 and the same `released` expression existed in two files. Both are repaired here; the lesson is that a gate
 which stops early is not a gate, and the full one runs before a commit, not after it. Slice boundary: the
-branch is five commits and 1,631 authored lines, past the ~400-line review slice, so the delivery shape —
+branch is past the ~400-line review slice (7 commits, 2,587 authored lines after T4), so the delivery shape —
 one PR with a commit-per-slice reading order, or chained PRs cut at `eb87739`/`9c86966`/`bbaaef0` — is the
 maintainer's decision when the phase is published.
+
+**L10. T4 landed with two decisions the plan did not carry.** `publish --resume` reads repository evidence
+only — the local and remote release tag, the gate channel, and one `publish-<i>` attestation per
+`[publish] commands` entry (D4) — and refuses on contradiction, naming the step: HEAD is not `--commit`
+(D5), the manifests do not produce `--tag`, a tag points elsewhere, or a command has no `success`
+attestation for that commit. Repeating is limited to what is provably harmless: creating a tag that is
+absent, noting one that already sits on the release commit, the three pushes, the floating major move, and
+the read-only gate verification. The worker found the hole D2 left open — `on_post_release` is arbitrary
+plugin code too — and D6 closes it: a resume does not dispatch it, says which plugins it left alone, and
+the test pins the double dispatch in one direction and the single dispatch of a plain `publish` in the
+other. `src/bump/exec/publish.rs` could not grow a single line (allowlisted at 469 and sitting on 469), so
+the ratchet's remedy was applied once more: validation moved to `publish/validate.rs` and the resume
+evidence to `publish/resume.rs`, leaving the facade at 448. Accepted debt, unchanged: `PublishCommitMismatch`
+still offers "drop `--commit`", advice a resume would refuse, because a resume-specific hint would push
+`src/bump/types.rs` (399 of 400) over the ceiling; and the new `Resume` line builds a second
+`PluginManager` because `PublishSummary` cannot gain a field without touching `src/cli/ci/tests.rs`.

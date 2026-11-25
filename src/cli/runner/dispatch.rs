@@ -120,6 +120,7 @@ pub fn run(args: Cli) -> i32 {
             notes_file,
             require_gate,
             dry_run,
+            resume,
         } => {
             let config = match load_config(args.config) {
                 Ok(c) => c,
@@ -140,6 +141,7 @@ pub fn run(args: Cli) -> i32 {
                     notes_file,
                     require_gate: required,
                     dry_run,
+                    resume,
                 },
             )
         }

@@ -106,6 +106,9 @@ pub enum Commands {
         /// Validate and print the plan without creating a tag, pushing anything or running a command
         #[arg(long)]
         dry_run: bool,
+        /// Continue a release an earlier `cutver publish` left unfinished, driven by repository evidence instead of a run record: steps that are harmless to repeat are repeated, and anything the evidence contradicts is refused. Requires `--commit`, and a `[publish] commands` entry runs only when `publish-<i>` (its 1-based position) is attested with conclusion `success` for that commit
+        #[arg(long)]
+        resume: bool,
     },
     /// Record a gate's verdict for a commit, so `publish --require-gate` can read it
     Attest {

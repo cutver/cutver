@@ -562,6 +562,12 @@ fn publish_refuses_a_commit_that_is_not_head() {
         text.contains("Where:") && text.contains("Fix:") && text.contains("Nothing was written"),
         "the mismatch must be actionable: {text}"
     );
+    assert!(
+        text.contains("a plain `cutver publish` with no `--commit` publishes the current HEAD")
+            && text.contains("`--resume` requires `--commit`"),
+        "the fix must be true on both paths, so it says what dropping `--commit` would publish and \
+         what a resume needs: {text}"
+    );
     assert!(!tag_exists(fixture, "v1.3.0"), "no tag may be created");
     assert!(
         !remote_refs(&remote.dir).contains("refs/tags/"),
@@ -1437,6 +1443,14 @@ fn a_resume_refuses_when_head_moved_away_from_the_commit_it_continues() {
         stderr.contains(&verified) && stderr.contains(&head),
         "the refusal must name both commits:\n{stderr}"
     );
+    assert!(
+        stderr.contains("Dropping `--commit` is not an alternative"),
+        "the fix must not offer a resume an option it refuses next: a resume requires `--commit`\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("re-run, or drop `--commit`"),
+        "the bare drop advice must be gone: `ResumeNeedsCommit` refuses exactly that\n{stderr}"
+    );
     assert_nothing_was_published(fixture, &remote);
 }
 
@@ -1570,6 +1584,108 @@ fn a_resume_refuses_an_unattested_publish_command_then_runs_it_once_attested() {
         rev(&remote.dir, "refs/tags/v1.3.0^{commit}"),
         head,
         "the resume must push the tag"
+    );
+}
+
+/// The gap-7 residual `docs/internals/pipeline.md` states: the crate went out (step 5) while the draft
+/// stayed invisible, because the asset upload and the promotion are CI's work (step 6). Nothing persists
+/// a run record, so the tag is the only evidence a resume can read — and a tag at the release commit does
+/// not mean `[publish].commands` is safe to repeat. Without a `publish-<n>` attestation the resume
+/// refuses and leaves the evidence it read untouched; the attestation is what authorizes the repeat,
+/// which is why the recovery for a crate that already went out is the upload and the promotion.
+#[test]
+fn a_resume_refuses_a_crate_publish_the_draft_residual_left_unattested() {
+    let toml = TOML.replace(
+        "echo published {version} > published.txt",
+        "echo published {version} >> publish-runs.txt",
+    );
+    let (guard, remote, cfg) = prepared_repo_with("residual-crate-published-draft-invisible", &toml);
+    let fixture = guard.fixture();
+    fixture.write(".gitignore", "publish-runs.txt\n");
+    run_git_ok(&fixture.dir, &["add", "-A"]);
+    run_git_ok(
+        &fixture.dir,
+        &["commit", "-q", "-m", "chore: ignore the publish marker"],
+    );
+
+    run_deferred_publish(&cfg, Bump::Minor, false, &[], false, None).expect("the prepare phase succeeds");
+    let head = rev(&fixture.dir, "HEAD");
+
+    // The first attempt is the residual: the crate publish runs, both tags reach the remote, and the
+    // draft is never promoted, so nothing on the release page is visible to a reader.
+    let first = publish_cli(fixture, &["--tag", "v1.3.0", "--commit", &head]);
+    assert!(
+        first.status.success(),
+        "the first attempt must publish; stderr:\n{}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+    assert_eq!(
+        fixture.read("publish-runs.txt").lines().count(),
+        1,
+        "the crate publish must have run once"
+    );
+    let tag = rev(&fixture.dir, "v1.3.0^{commit}");
+    let remote_tag = rev(&remote.dir, "refs/tags/v1.3.0^{commit}");
+    let floating = rev(&remote.dir, "refs/tags/v1^{commit}");
+    assert_eq!(tag, head, "the first attempt must create the release tag");
+    assert_eq!(remote_tag, head, "the first attempt must push the release tag");
+
+    let refused = publish_cli(fixture, &["--tag", "v1.3.0", "--commit", &head, "--resume"]);
+
+    let stderr = String::from_utf8_lossy(&refused.stderr);
+    assert!(
+        !refused.status.success(),
+        "a tag at the release commit is not evidence that the crate publish may be repeated:\n{stderr}"
+    );
+    for expected in [
+        "publish-1",
+        "echo published {version} >> publish-runs.txt",
+        head.as_str(),
+    ] {
+        assert!(
+            stderr.contains(expected),
+            "the refusal must name '{expected}':\n{stderr}"
+        );
+    }
+    assert_eq!(
+        fixture.read("publish-runs.txt").lines().count(),
+        1,
+        "the refusal must not run the command a second time"
+    );
+    assert_eq!(
+        rev(&fixture.dir, "v1.3.0^{commit}"),
+        tag,
+        "the refusal must leave the local tag alone"
+    );
+    assert_eq!(
+        rev(&remote.dir, "refs/tags/v1.3.0^{commit}"),
+        remote_tag,
+        "the refusal must leave the remote tag alone"
+    );
+    assert_eq!(
+        rev(&remote.dir, "refs/tags/v1^{commit}"),
+        floating,
+        "the refusal must leave the floating major tag alone"
+    );
+
+    // With the attestation the resume completes, and the command runs again: that is what the
+    // attestation means, so it is the thing to withhold for a crate that already went out.
+    attest_step(fixture, "publish-1", &head);
+    let again = publish_cli(fixture, &["--tag", "v1.3.0", "--commit", &head, "--resume"]);
+    assert!(
+        again.status.success(),
+        "the attested resume must close the release; stderr:\n{}",
+        String::from_utf8_lossy(&again.stderr)
+    );
+    assert_eq!(
+        fixture.read("publish-runs.txt").lines().count(),
+        2,
+        "an attested resume repeats the publish command; a crate already published must not be attested"
+    );
+    assert_eq!(
+        rev(&fixture.dir, "v1.3.0^{commit}"),
+        tag,
+        "a resume over an existing release tag leaves it where it is"
     );
 }
 
@@ -1723,8 +1839,13 @@ fn a_resume_dispatches_no_post_release_plugin_but_a_plain_publish_does() {
          line the plain run wrote; stdout:\n{stdout}"
     );
     assert!(
-        stdout.contains("`on_post_release` not dispatched") && stdout.contains("`release`"),
-        "the resume must name the plugin it left alone instead of omitting it silently: {stdout}"
+        stdout.contains(
+            "`on_post_release` not dispatched: `release` left alone, because a plugin may already \
+             have run in the attempt this resume continues (`cutver publish` without `--resume` \
+             dispatches it)"
+        ),
+        "the rendered Resume line must stay byte-identical now that the names come from \
+         PublishSummary: {stdout}"
     );
     assert_eq!(
         rev(&remote.dir, "refs/tags/v1.3.0^{commit}"),

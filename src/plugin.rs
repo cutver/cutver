@@ -1,4 +1,5 @@
 pub mod cache;
+pub mod diag;
 pub mod driver;
 pub mod dto;
 pub mod error;

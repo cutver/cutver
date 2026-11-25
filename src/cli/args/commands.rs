@@ -16,6 +16,9 @@ pub struct Cli {
     /// Turn the CI channel off: no outputs, no step summary and no failure annotation, even on a detected CI
     #[arg(long = "no-ci", global = true, conflicts_with = "ci")]
     pub no_ci: bool,
+    /// Forward a `runtime = "process"` plugin child's stderr to cutver's own stderr, unchanged, on a call that exits 0. Without it a successful call's stderr is drained and dropped; a failed call's stderr is its error message either way. A WASM plugin has no child and no stderr, so the flag changes nothing for it
+    #[arg(long, global = true)]
+    pub verbose: bool,
     #[command(subcommand)]
     pub command: Commands,
 }
@@ -257,5 +260,61 @@ impl From<crate::bump::BumpLevel> for BumpLevel {
             crate::bump::BumpLevel::Major => BumpLevel::Major,
             crate::bump::BumpLevel::Auto => BumpLevel::Auto,
         }
+    }
+}
+
+/// S1's parse half (#377). The flag's behaviour is `tests/plugin_process_stderr_verbose.rs`; what a
+/// parser test can state is that it is one global switch — accepted on either side of the subcommand
+/// name, so a command never decides whether the diagnostics are reachable — that defaults to off and
+/// has no short form to collide with one.
+///
+/// It lives here rather than in `args/tests.rs`, which sits at its recorded line cap (S7).
+#[cfg(test)]
+mod verbose_flag {
+    use super::Cli;
+    use clap::Parser;
+
+    /// The subcommands the flag is exercised on, chosen across families: a release command, a
+    /// configuration check, a plugin command and a command whose required arguments make `--verbose`
+    /// compete with a parser that has already rejected the invocation.
+    fn accepted() -> Vec<Vec<&'static str>> {
+        vec![
+            vec!["cutver", "doctor", "--verbose"],
+            vec!["cutver", "--verbose", "plan"],
+            vec!["cutver", "bump", "patch", "--verbose"],
+            vec!["cutver", "changelog", "latest", "--verbose"],
+            vec!["cutver", "plugin", "list", "--verbose"],
+            vec![
+                "cutver",
+                "attest",
+                "gate",
+                "--commit",
+                "abc",
+                "--conclusion",
+                "success",
+                "--verbose",
+            ],
+        ]
+    }
+
+    #[test]
+    fn the_flag_is_global_and_defaults_to_off() {
+        for args in accepted() {
+            let cli =
+                Cli::try_parse_from(args.clone()).unwrap_or_else(|err| panic!("{args:?} must accept --verbose: {err}"));
+            assert!(cli.verbose, "{args:?} must set the one switch");
+        }
+
+        assert!(!Cli::try_parse_from(["cutver", "doctor"]).unwrap().verbose);
+        assert!(!Cli::try_parse_from(["cutver", "doctor", "--no-ci"]).unwrap().verbose);
+    }
+
+    #[test]
+    fn the_flag_has_no_short_form() {
+        assert!(
+            Cli::try_parse_from(["cutver", "doctor", "-v"]).is_err(),
+            "S1 gives the flag no short form, so `-v` is not a second spelling of it"
+        );
+        assert!(Cli::try_parse_from(["cutver", "doctor", "--verbose"]).is_ok());
     }
 }

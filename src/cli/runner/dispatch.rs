@@ -49,6 +49,11 @@ pub fn print_error_prefixed(code: FailureCode, prefix: &str, msg: impl std::fmt:
 pub fn run(args: Cli) -> i32 {
     machine::select(&args.command);
     ci::select(ci::CiMode::from_flags(args.ci, args.no_ci));
+    // The same seam `--ci` uses (S1): one global flag resolved before dispatch picks a command, so
+    // no command can be the reason a plugin's diagnostics are unreachable. It is written to the
+    // plugin layer's own state rather than threaded through the manager or the driver constructor,
+    // which are public and wide-fanout, and which must not learn about the command line.
+    crate::plugin::diag::select(args.verbose);
     match args.command {
         Commands::Init {
             update,

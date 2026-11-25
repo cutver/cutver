@@ -15,12 +15,19 @@
 //!
 //! ## Why a descendant cannot outlive what started it (S6)
 //!
-//! [`spawn_group`] puts the child in a process group of its own, and [`kill_tree`] signals that
-//! group rather than the one handle `spawn` returned: `killpg` on unix, `taskkill /F /T` on
-//! Windows, which walks the same tree by parentage. A descendant is created inside the group it
-//! inherits, so every process the child started is inside the thing the deadline reaches. That is a
-//! property of how the child is started and how the deadline ends it — enforced in those two
-//! functions, not a comment excusing a survivor.
+//! [`spawn_group`] puts the child in a container of its own, and [`Grouped::kill_tree`] ends that
+//! container in one act rather than visiting what is inside it: `killpg` on unix, and a Windows job
+//! object ended by `TerminateJobObject`. A descendant is created inside the container it inherits, so
+//! every process the child started is inside the thing the deadline reaches. That is a property of
+//! how the child is started and how the deadline ends it — enforced in those two places, not a
+//! comment excusing a survivor.
+//!
+//! The container is the point, and #384 is what a walk costs instead: `taskkill /F /T` reaches the
+//! same tree, but it reaches it one process at a time and from the leaves up, so a shell between a
+//! killed leaf and the root resumes its own command list in that gap. Measured: a plugin whose
+//! descendant was due three seconds in wrote its marker 1.4 s into a one-second invocation, and the
+//! kill itself took 100–592 ms of the caller's time. A container ended in one act has no gap to run
+//! in.
 
 use std::io::{self, Read, Write};
 use std::process::{Child, ChildStdin, Command, ExitStatus, Stdio};
@@ -100,13 +107,26 @@ pub(crate) fn shell() -> (&'static str, &'static str) {
     }
 }
 
-/// Spawns `cmd` inside a process group of its own.
+/// A spawned child inside the container a deadline can end in one act.
 ///
-/// The group is the reason no descendant survives the deadline (S6): every process the child
-/// starts inherits it, and [`kill_tree`] signals the group instead of the single handle returned
-/// here. A spawn that skipped this step would leave the caller holding one `Child` and nothing to
-/// aim a tree kill at — which is exactly how a plugin's own helpers used to outlive it.
-pub(crate) fn spawn_group(cmd: &mut Command) -> io::Result<Child> {
+/// On unix the container is the process group [`spawn_group`] created; on Windows it is a job object
+/// the child is assigned to as soon as it exists. Both are inherited by everything the child starts,
+/// so [`Grouped::kill_tree`] ends the whole tree without enumerating it.
+pub(crate) struct Grouped {
+    pub(crate) child: Child,
+    /// The job holding the child and everything it starts. `None` when Windows refused to make or
+    /// assign one, which leaves [`Grouped::kill_tree`] on its `taskkill` fallback.
+    #[cfg(windows)]
+    job: Option<Win32Job>,
+}
+
+/// Spawns `cmd` inside a container of its own.
+///
+/// The container is the reason no descendant survives the deadline (S6): every process the child
+/// starts inherits it, and [`Grouped::kill_tree`] ends the container instead of the single handle
+/// returned here. A spawn that skipped this step would leave the caller holding one `Child` and
+/// nothing to aim a tree kill at — which is exactly how a plugin's own helpers used to outlive it.
+pub(crate) fn spawn_group(cmd: &mut Command) -> io::Result<Grouped> {
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
@@ -117,7 +137,16 @@ pub(crate) fn spawn_group(cmd: &mut Command) -> io::Result<Child> {
             });
         }
     }
-    cmd.spawn()
+    let child = cmd.spawn()?;
+    // Assigned before this function returns, so the child cannot start a descendant outside the job
+    // unless it does so in the microseconds between `CreateProcess` and this call.
+    #[cfg(windows)]
+    let job = Win32Job::new_for(&child);
+    Ok(Grouped {
+        child,
+        #[cfg(windows)]
+        job,
+    })
 }
 
 /// Waits for `child` to exit, killing its tree once `timeout` has elapsed since `start`.
@@ -125,15 +154,15 @@ pub(crate) fn spawn_group(cmd: &mut Command) -> io::Result<Child> {
 /// The one deadline poll in the crate, so a timeout means the same thing to a preflight step, a
 /// hook, a publish command and a plugin. `timeout: None` means no bound at all, which those callers
 /// spell as an absent `timeout` / `default_timeout` key.
-pub(crate) fn supervise(child: &mut Child, start: Instant, timeout: Option<Duration>) -> io::Result<Ended> {
+pub(crate) fn supervise(child: &mut Grouped, start: Instant, timeout: Option<Duration>) -> io::Result<Ended> {
     loop {
-        match child.try_wait() {
+        match child.child.try_wait() {
             Ok(Some(status)) => return Ok(Ended::Exited(status)),
             Ok(None) => {
                 let elapsed = start.elapsed();
                 if let Some(limit) = timeout {
                     if elapsed >= limit {
-                        kill_tree(child);
+                        child.kill_tree();
                         return Ok(Ended::TimedOut {
                             timeout: limit,
                             elapsed,
@@ -145,7 +174,7 @@ pub(crate) fn supervise(child: &mut Child, start: Instant, timeout: Option<Durat
                 }
             }
             Err(e) => {
-                kill_tree(child);
+                child.kill_tree();
                 return Err(e);
             }
         }
@@ -196,9 +225,9 @@ pub(crate) fn run_capture(
     let start = Instant::now();
     cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
     let mut child = spawn_group(cmd).map_err(SupervisionError::Spawn)?;
-    let writer = spawn_writer_thread(child.stdin.take(), payload.to_vec());
-    let stdout_drain = spawn_drain_thread(child.stdout.take(), limits.stdout);
-    let stderr_drain = spawn_drain_thread(child.stderr.take(), limits.stderr);
+    let writer = spawn_writer_thread(child.child.stdin.take(), payload.to_vec());
+    let stdout_drain = spawn_drain_thread(child.child.stdout.take(), limits.stdout);
+    let stderr_drain = spawn_drain_thread(child.child.stderr.take(), limits.stderr);
 
     let status = match supervise(&mut child, start, Some(timeout)).map_err(SupervisionError::Wait)? {
         Ended::Exited(status) => status,
@@ -335,31 +364,107 @@ fn read_capped<R: Read>(reader: &mut R, limit: usize, drained: &mut Drained) -> 
     Ok(())
 }
 
-/// Kills the child and every process it started, then reaps it.
+impl Grouped {
+    /// Ends the child and every process it started, then reaps the child.
+    ///
+    /// The kill is one act over a container, not a walk over a tree: `TerminateJobObject` on Windows
+    /// and `killpg` on unix end every member of it at once. The difference is what #384 measured: a
+    /// walk reaches the leaves first, and the shell between a killed leaf and the root runs the next
+    /// command in its list in the gap before the walk returns for it — so a descendant acted after
+    /// the deadline even though every one of them was eventually killed. `taskkill` stays here as the
+    /// fallback for a host that refused a job object at spawn, where a walk is all there is.
+    ///
+    /// The direct `kill` and `wait` stay as the fallback for a host with neither container and to
+    /// reap the child on every path.
+    pub(crate) fn kill_tree(&mut self) {
+        #[cfg(unix)]
+        unsafe {
+            let _ = killpg(self.child.id() as i32, SIGKILL);
+        }
+        #[cfg(windows)]
+        {
+            match &self.job {
+                Some(job) => job.terminate(),
+                None => {
+                    let pid = self.child.id().to_string();
+                    let _ = Command::new("taskkill")
+                        .args(["/F", "/T", "/PID", pid.as_str()])
+                        .output();
+                }
+            }
+            let _ = self.child.kill();
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            let _ = self.child.kill();
+        }
+        let _ = self.child.wait();
+    }
+}
+
+/// A Windows job object holding one supervised child and everything it starts.
 ///
-/// The group `spawn_group` created is what makes this a tree kill: `killpg` signals every member
-/// on unix, and `taskkill /F /T` walks the same tree by parentage on Windows. Signalling only the
-/// single handle — `Child::kill`, which this replaces — is what let a plugin's descendant hold the
-/// inherited pipes after the plugin itself was gone (#316). The direct `kill` and `wait` below stay
-/// as the fallback for a host with neither, and to reap the child on every path.
-pub(crate) fn kill_tree(child: &mut Child) {
-    #[cfg(unix)]
-    unsafe {
-        let _ = killpg(child.id() as i32, SIGKILL);
+/// Created without `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` on purpose: closing the handle when the
+/// invocation ends must not turn a plugin that exited inside its budget into a kill of the
+/// descendants it deliberately left running, which `run_capture` documents as preserved. Only
+/// [`Win32Job::terminate`] ends the tree; `Drop` just closes the handle.
+#[cfg(windows)]
+struct Win32Job(win32::Handle);
+
+#[cfg(windows)]
+impl Win32Job {
+    /// Puts `child` in a fresh job, or reports that Windows refused.
+    ///
+    /// `None` is not an error: a host that will not nest a job under the one it already runs us in
+    /// still gets a supervised spawn, with `taskkill` as its tree kill.
+    fn new_for(child: &Child) -> Option<Self> {
+        use std::os::windows::io::AsRawHandle;
+        unsafe {
+            let job = win32::CreateJobObjectW(std::ptr::null_mut(), std::ptr::null());
+            if job.is_null() {
+                return None;
+            }
+            if win32::AssignProcessToJobObject(job, child.as_raw_handle() as win32::Handle) == 0 {
+                win32::CloseHandle(job);
+                return None;
+            }
+            Some(Self(job))
+        }
     }
-    #[cfg(windows)]
-    {
-        let pid = child.id().to_string();
-        let _ = Command::new("taskkill")
-            .args(["/F", "/T", "/PID", pid.as_str()])
-            .output();
-        let _ = child.kill();
+
+    /// Ends every process in the job in one kernel act: nothing in the tree is left between the
+    /// deaths of two of its members, so nothing in it runs a command after the deadline.
+    fn terminate(&self) {
+        unsafe {
+            let _ = win32::TerminateJobObject(self.0, 1);
+        }
     }
-    #[cfg(not(any(unix, windows)))]
-    {
-        let _ = child.kill();
+}
+
+#[cfg(windows)]
+impl Drop for Win32Job {
+    fn drop(&mut self) {
+        unsafe {
+            let _ = win32::CloseHandle(self.0);
+        }
     }
-    let _ = child.wait();
+}
+
+#[cfg(windows)]
+mod win32 {
+    use std::ffi::c_void;
+
+    pub(super) type Handle = *mut c_void;
+
+    // Declared here rather than pulled from a crate: `kernel32` is the only dependency this needs,
+    // and the crate already declares the unix calls it needs the same way.
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        pub(super) fn CreateJobObjectW(attrs: *mut c_void, name: *const u16) -> Handle;
+        pub(super) fn AssignProcessToJobObject(job: Handle, process: Handle) -> i32;
+        pub(super) fn TerminateJobObject(job: Handle, exit_code: u32) -> i32;
+        pub(super) fn CloseHandle(handle: Handle) -> i32;
+    }
 }
 
 #[cfg(unix)]

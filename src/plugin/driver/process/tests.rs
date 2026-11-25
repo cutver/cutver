@@ -323,6 +323,7 @@ fn assert_deadline_reaches_the_descendant(plugin: &str, label: &str, payload: se
         caps,
     );
     let invocation = PluginInvocation::new(PluginCall::PreBump, &payload).unwrap();
+    let invoked_at = std::time::SystemTime::now();
     let start = Instant::now();
     let err = driver.invoke(&invocation).unwrap_err();
     let elapsed = start.elapsed();
@@ -343,11 +344,17 @@ fn assert_deadline_reaches_the_descendant(plugin: &str, label: &str, payload: se
     // The descendant was due three seconds in, after the deadline that ended the invocation.
     std::thread::sleep(Duration::from_secs(4));
     let survived = marker.exists();
+    let wrote_at = std::fs::metadata(&marker)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(invoked_at).ok())
+        .map(|d| d.as_millis());
     let _ = std::fs::remove_file(&marker);
     assert!(
         !survived,
-        "a descendant outlived the invocation and wrote {}: the deadline must reach the whole tree",
-        marker.display()
+        "a descendant outlived the invocation and wrote {} {} into it: the deadline must reach the whole tree",
+        marker.display(),
+        wrote_at.map_or_else(|| "at an unknown time".to_string(), |ms| format!("{ms} ms"))
     );
 }
 

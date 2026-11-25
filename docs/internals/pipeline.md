@@ -59,7 +59,7 @@ Preflight verification steps enforce fail-fast execution and strict process tree
 
 - **Declaration Order**: Commands execute sequentially; any non-zero exit status aborts the release before disk modification.
 - **Unix Process Groups (Linux & macOS)**: Commands spawn inside a distinct process group (`setpgid`). Upon reaching the configured timeout, `SIGKILL` is sent to `-pgid`, terminating the command and any spawned descendant processes to eliminate orphaned runners.
-- **Windows Process Trees**: Commands execute under `taskkill /F /T /PID <pid>` to forcefully terminate the complete process hierarchy upon timeout.
+- **Windows Process Trees**: Commands are assigned to a job object at spawn, and reaching the timeout ends that job in one act with `TerminateJobObject`, which terminates the complete process hierarchy. A host that refuses the job object falls back to `taskkill /F /T /PID <pid>`.
 
 ---
 

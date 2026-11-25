@@ -113,7 +113,7 @@ A section left with no entries is omitted, so a loop never renders an empty head
 | `[publish]` | `commands` | `list<string>` | `[]` | Shell commands executed after the release tag exists: in the closing phase (`cutver publish`) for a release cut in two phases, in the same run for a single-phase `cutver bump`. |
 | `[publish]` | `default_timeout` | `integer` | `None` | Optional timeout in seconds applied to each publish command. |
 
-A hook runs in its own process group on unix, which is what lets the timeout kill its whole tree. An interactive Ctrl-C therefore reaches `cutver`, not the running hook: a hook that reads the terminal may end up in the background until the timeout or the release kills it, and a hook that prompts needs a terminal of its own.
+A hook runs in its own container — a process group on unix, a job object on Windows — which is what lets the timeout kill its whole tree in one act. An interactive Ctrl-C therefore reaches `cutver`, not the running hook: a hook that reads the terminal may end up in the background until the timeout or the release kills it, and a hook that prompts needs a terminal of its own.
 
 ---
 

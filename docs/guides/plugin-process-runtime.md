@@ -140,10 +140,21 @@ also in the baseline is how you *pin* it: `env = ["PATH"]` fails the invocation 
 | Reaches | The whole process tree: the plugin and every process it started |
 
 That last row is the one that matters as soon as your plugin starts helpers. The plugin is spawned in
-a process group of its own and the deadline signals that group — `killpg` on unix, `taskkill /F /T`
-on Windows — so a descendant that inherited the pipes is killed with the plugin and cannot extend
-the invocation past the limit (`src/proc.rs`, `spawn_group` and `kill_tree`). Your helpers are
-reachable by that kill: nothing of your own is left running after a timeout.
+a container of its own and the deadline ends that container in one act — `killpg` on unix, a job
+object ended by `TerminateJobObject` on Windows — so a descendant that inherited the pipes is killed
+with the plugin and cannot extend the invocation past the limit (`src/proc.rs`, `spawn_group` and
+`Grouped::kill_tree`). Your helpers are reachable by that kill: nothing of your own is left running
+after a timeout, and nothing of your own gets to run a further command once the limit is reached.
+That second half is why the container is ended in one act rather than walked process by process
+(#384): a walk reaches the leaves first, and a shell between a killed leaf and the rest of the tree
+can run its next command in the gap before the walk returns for it.
+
+A host that refuses a Windows job object still gets the container's fallback, `taskkill /F /T`,
+which reaches the same tree by parentage — a walk, with the gap above.
+
+Being inside a job has one consequence on Windows: a plugin that spawns with
+`CREATE_BREAKAWAY_FROM_JOB` is denied. Leaving the container is precisely what the deadline promises
+cannot happen, so the guarantee wins over that escape hatch.
 
 One case is deliberately not a kill: a plugin that exits `0` while a descendant it started still
 holds the pipes. A successful plugin gets no new kill semantics, but the exchange still ends at the

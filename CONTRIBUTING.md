@@ -118,19 +118,6 @@ gh pr create --label type:fix --title "fix(git): unstage the index on error" --b
 Label it, then read the green run and not the red one. If it fails again after the label, the message says
 which count it objects to.
 
-## The working record
-
-Every feature has a file in `odd/tasks/<feature>.md`, written before the code and edited as it lands:
-
-- `## Specs` — `S1`, `S2`, … the requirements, as claims a reader can hold you to.
-- `## Tasks` — `T1`, `T2`, … checkboxes, each naming the specs it closes.
-- `## Log` — `L1`, `L2`, … numbered entries: the requester's words **verbatim**, then decisions and
-  evidence, each tagged with its author or source.
-
-The distinction is load-bearing: a verbatim quote is evidence of what was asked, and a decision is evidence
-of what was chosen. Collapsing the two is how a summary starts standing in for the requirement. This
-repository's own entry point was written from `odd/tasks/cutver-entry-point.md`; read it for the shape.
-
 ## Tests
 
 A behaviour change starts with a test that fails for the intended reason, and you watch it fail before you

@@ -34,7 +34,7 @@ These flags are accepted by every subcommand, before or after its name.
 
 | Flag | Long Option | Description |
 | :--- | :--- | :--- |
-| | `--ci` / `--no-ci` | `--ci` turns the CI channel on — `$GITHUB_OUTPUT`, `$GITHUB_STEP_SUMMARY` and a stderr failure annotation — without `GITHUB_ACTIONS` and without a named sink; `--no-ci` turns it off even on a detected CI. Without either, the channel follows `GITHUB_ACTIONS` reading `true` (trimmed, case-insensitive) plus a named file. It never writes stdout, so `--json` is unaffected: [CI output channel](../internals/machine-contract-surfaces.md#ci-output-channel). |
+| | `--ci` / `--no-ci` | `--ci` turns the CI output channel on — `$GITHUB_OUTPUT`, `$GITHUB_STEP_SUMMARY` and a stderr failure annotation — without `GITHUB_ACTIONS` and without a named sink; `--no-ci` turns it off even on a detected CI. Without either, the CI output channel follows `GITHUB_ACTIONS` reading `true` (trimmed, case-insensitive) plus a named file. It never writes stdout, so `--json` is unaffected: [CI output channel](../internals/machine-contract-surfaces.md#ci-output-channel). |
 | | `--verbose` | Forwards a `runtime = "process"` plugin child's stderr to cutver's own stderr, unchanged, on a call that exits `0`, so a plugin that logs while it works can be read at last. Without it the stderr of a successful call is drained and dropped, and a failed call's stderr is its error message either way, byte for byte. Nothing else in `cutver` becomes verbose today: this is the flag's one effect. Under `runtime = "wasm"` it changes nothing, because a WASM plugin has no child and no stderr. |
 | `-c <PATH>` | `--config <PATH>` | Explicit path to `cutver.toml`; without it, discovery walks up from the current directory. |
 

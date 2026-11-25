@@ -46,24 +46,26 @@ valid UTF-8 and exited 0. The interpreter default moved once already — Python 
 unless disabled (PEP 686), which is why reproducing that needed `-X utf8=0` — so name the encoding in
 the plugin rather than trust the interpreter.
 
-## stderr survives only when the call fails
+## stderr reaches a human when you ask for it
 
-The host drains the child's stderr into memory and hands it to `finish_outcome` as `stderr_bytes`, and
-the success path never reads that parameter: it is not printed, not logged and not returned
-(`src/plugin/driver/process.rs:201-208,247-268`). The bytes reach a human in exactly one place, the
-non-zero exit, trimmed into `invocation failed with exit status <n>: <your text>` (`:255-260`).
+The host drains the child's stderr into memory and hands it to `finish_outcome` as `stderr_bytes`
+(`src/plugin/driver/process.rs:253`). Two paths read it. A non-zero exit trims it into
+`invocation failed with exit status <n>: <your text>` (`:260-267`). A successful call forwards it to
+`cutver`'s own stderr only when that invocation runs with the global `--verbose` flag (`:269`,
+`src/plugin/diag.rs`); without the flag the bytes are drained and dropped, because a plugin that logs
+a line per commit would otherwise turn every release into pages of output.
 
-So a child that writes to stderr and returns `0` writes into the void. The drain still runs, so the
-bytes cost part of the `timeout_seconds` budget either way. There is no way to ask for them: `cutver`
-has no `--verbose`, no `-v` and no log level — its own diagnostics are `eprintln!` at the call site, and
-nothing in `src/**` reads `RUST_LOG`. Two ways out while you debug:
+So a child that writes to stderr and returns `0` is silent by default and visible under
+`cutver --verbose …`. The drain runs either way, so the bytes cost part of the `timeout_seconds`
+budget regardless. Two fallbacks remain for a run you cannot add a flag to:
 
 - **Write a file.** The workspace root is the child's working directory, so a path under
   `payload["root_dir"]` lands beside the release notes and needs no grant. Remove it before you ship.
 - **Exit non-zero on purpose.** During a debugging session, end the plugin non-zero and your diagnostics
   travel in the error message the user sees.
 
-Nothing in the suite pins the success-path drop; the only stderr assertion is the failure case
+Both paths are pinned: `tests/plugin_process_stderr_verbose.rs` asserts the forward, the silence
+without the flag and the failure path unchanged, and the failure case also has its unit test
 (`src/plugin/driver/process/tests.rs:83-98`).
 
 ## `command` is looked up on the host's `PATH`, not in the workspace

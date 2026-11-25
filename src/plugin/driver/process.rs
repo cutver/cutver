@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus};
 use std::time::Duration;
 
+use crate::plugin::diag;
 use crate::plugin::driver::baseline::system_env_baseline;
 use crate::plugin::driver::{DeclaredEnvGrants, PluginDriver};
 use crate::plugin::dto::PluginInvocation;
@@ -244,6 +245,11 @@ impl PluginDriver for ProcessDriver {
 
 /// Applies the exit-status-over-write-error precedence: the child's own stderr is the better
 /// diagnosis, so it wins over a broken stdin pipe.
+///
+/// With `--verbose` the same buffer is forwarded on the success path (#377 S2): the bytes are already
+/// drained and capped by [`crate::proc`], so this carries them rather than reading anything again
+/// (S4). The forward sits after the exit-status branch, so a failed call's stderr is still the error
+/// message and only the error message — the failure path is byte identical either way (S3).
 fn finish_outcome(
     status: ExitStatus,
     stderr_bytes: &[u8],
@@ -259,6 +265,8 @@ fn finish_outcome(
             stderr: String::from_utf8_lossy(stderr_bytes).trim().to_string(),
         });
     }
+
+    diag::forward_child_stderr(stderr_bytes);
 
     written.map_err(|source| PluginError::StdinWriteFailed {
         name: name.clone(),

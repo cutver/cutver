@@ -4,7 +4,7 @@
 **Date**: 2026-11-25
 **Owner**: repository maintainer
 **Review date**: 2027-11-25 (proposal; not yet committed by the maintainer)
-**Implementation**: on `feat/prerelease-channel` and not yet on `main` — `9c86966` (`--channel` on `bump` and `plan`, its arithmetic, its tests and its reference rows) and `bbaaef0` (promotion). Awaiting merge.
+**Implementation**: merged to `main` as the chained stack #391-#396. `9c86966` is `--channel` on `bump` and `plan` with its arithmetic, its tests and its reference rows (#392); `0a7a3ac` is promotion and the reported no-op, with `Summary::released()` behind `--json`, `--report` and the CI sinks (#393); `661ce19` is `publish --resume` (#394); `cef59a5` is the reference and the guide that describe the shipped behaviour (#396).
 **Supersedes**: [ADR-0004](0004-prerelease-stage-not-channel.md)
 
 ## Context

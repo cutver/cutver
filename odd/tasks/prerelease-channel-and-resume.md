@@ -45,9 +45,16 @@ Decision: `docs/adr/0005-prerelease-channel-supersedes-0004.md` (accepted). Issu
   D4/D5/D6 and the `publish/{validate,resume}` decomposition the ceiling forced.
 - **T5** Docs with the behaviour: the `--channel` reference row and help text (bare "channel" = the
   ladder), the guide that explains promotion, `docs/internals/design.md:135` from `Planned` to
-  `Implemented`, and the qualifier test of S3 if it does not exist yet.
+  `Implemented`, and the qualifier test of S3 if it does not exist yet. Done — the rows and the help
+  text landed with T2, the qualifier test already existed, and the rest is in the T5 commit: the four
+  transitions and D1a in `docs/reference/cli.md`, a `#### No-op` section, `released` corrected in the two
+  places that state it, the promotion guide in `docs/guides/getting-started.md` with a transcript captured
+  from a scratch repository, the `Implemented` row, ADR-0005's honest "awaiting merge", and the two
+  pre-existing bare "channel" uses S2 forbids.
 - **T6** Measurement: `sh scripts/check.sh` green, the new tests red before their fix, and one documented
-  run of the promotion path end to end on a scratch repository.
+  run of the promotion path end to end on a scratch repository. Done — the gate passes its 9 runnable
+  steps (the tenth needs `x86_64-linux-gnu-gcc`, absent here), every unit observed its RED, and `L11` holds
+  the promotion run verbatim.
 
 ## Decisions
 
@@ -187,3 +194,40 @@ evidence to `publish/resume.rs`, leaving the facade at 448. Accepted debt, uncha
 still offers "drop `--commit`", advice a resume would refuse, because a resume-specific hint would push
 `src/bump/types.rs` (399 of 400) over the ceiling; and the new `Resume` line builds a second
 `PluginManager` because `PublishSummary` cannot gain a field without touching `src/cli/ci/tests.rs`.
+
+**L11. The promotion path, run end to end on a scratch repository.** A fresh `git init` at `1.2.0` with a
+`package.json` manifest, a changelog and `floating_major_tag = true`, driven by the built binary:
+
+```
+$ cutver bump minor --channel alpha
+✔ Release Plan: 1.2.0 -> 1.3.0-alpha.1 (bump, channel: stable -> alpha)
+│   ├── tag: v1.3.0-alpha.1
+│   └── floating tag: v1
+exit=0   tags: v1 v1.3.0-alpha.1   package.json: 1.3.0-alpha.1
+
+$ cutver bump --channel stable
+Updated tag 'v1' (was 8fdb717)
+✔ Release Plan: 1.3.0-alpha.1 -> 1.3.0 (patch (default - no breaking changes or features), channel: alpha -> stable)
+│   ├── commit: chore(release): v1.3.0
+│   ├── tag: v1.3.0
+│   └── floating tag: v1
+exit=0   tags: v1 v1.3.0 v1.3.0-alpha.1   package.json: 1.3.0
+
+$ cutver bump --channel stable        # the same request again
+exit=0
+✔ Release Plan: 1.3.0 -> 1.3.0 (patch (default - no breaking changes or features))
+├── No-op
+│   └── nothing was written, committed or tagged: 1.3.0 is the version the request yields
+└── Git
+    ├── commit: chore(release): v1.3.0 [SKIPPED]
+    └── tag: v1.3.0 [SKIPPED]
+HEAD unchanged at 3 commits; no new tag
+```
+
+The changelog after the promotion reads `## [v1.3.0]` above `## [v1.3.0-alpha.1]`, so the prerelease entry
+survives as its own history exactly as `resolve_next_version`'s statement claims, and the floating major
+moved onto the promotion. The second identical request is the reported no-op: exit `0`, `No-op` section,
+`[SKIPPED]` on both the commit and the tag, nothing written. Two honest observations from the run: the
+header of a no-op carries no `channel:` annotation because the version does not move (the `No-op` section
+says it instead), and the no-op's `bump` line still prints the deduced level, which is T3's rationale
+rendering rather than a claim that a release happened.

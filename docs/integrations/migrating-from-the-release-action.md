@@ -70,7 +70,7 @@ The outputs become one file: `cutver bump --report <path>` writes `released`, `d
 
 | Action output | Replaced by |
 | :--- | :--- |
-| `released` | the `released` field of the report; `false` on a `--dry-run` |
+| `released` | the `released` field of the report; `false` on a `--dry-run` and on a [no-op](../reference/cli.md#no-op) |
 | `version` | the `version` field, stated by the bump instead of recovered with `git describe` |
 | `tag` | the `tag` field, same |
 | `notes-path` | the file you redirected `changelog latest` into |

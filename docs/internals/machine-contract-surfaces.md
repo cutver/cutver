@@ -18,9 +18,10 @@ included when no sink is named, and `--no-ci` turns it off entirely.
   truncated. `bump`: `released`, `deferred`, `version`, `tag`, `commit`; `plan`: `next_version`, `tag`,
   `commit`; `publish`: `tag` and `commit` as `bump` spells them, then `tag_pushed`,
   `floating_tag_moved` and `publish_commands_run`, the count of `[publish] commands` that ran. A value
-  the run lacks is omitted, so a `--dry-run` bump writes no `commit`. The three `publish` actions are
-  facts about the run, not its plan: a `--dry-run` publish writes `false`, `false` and `0`, because
-  the pushes and the tag move it printed never happened.
+  the run lacks is omitted, so a `--dry-run` bump writes no `commit`; `released` is `false` on a
+  `--dry-run` and on a no-op ([No-op](../reference/cli.md#no-op)). The three `publish` actions are facts
+  about the run, not its plan: a `--dry-run` publish writes `false`, `false` and `0`, because the pushes
+  and the tag move it printed never happened.
 - `$GITHUB_STEP_SUMMARY` receives one bounded markdown block per run: what was released, the plan in
   brief, or what the closing phase published. Every value is condensed to one line and fenced inside
   a code span long enough for the backticks it carries, so a tag or a prefix cannot inject markdown,

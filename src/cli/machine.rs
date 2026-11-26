@@ -34,6 +34,7 @@ pub fn wants_machine(command: &Commands) -> bool {
     match command {
         Commands::Bump { json, report, .. } => *json || report.is_some(),
         Commands::Plan { json, .. } => *json,
+        Commands::Publish { json, .. } => *json,
         Commands::Doctor { json, .. } => *json,
         Commands::Changelog { command } => matches!(
             command,
@@ -50,7 +51,7 @@ pub fn wants_machine(command: &Commands) -> bool {
             | PluginCommands::Update(_)
             | PluginCommands::Remove { .. } => false,
         },
-        Commands::Init { .. } | Commands::Publish { .. } | Commands::Open { .. } | Commands::External(_) => false,
+        Commands::Init { .. } | Commands::Open { .. } | Commands::External(_) => false,
         // `attest` prints one human line and has no `--json` surface of its own, so its failure
         // keeps the human path.
         Commands::Attest { .. } => false,
@@ -194,6 +195,18 @@ mod tests {
         Commands::Plugin { command }
     }
 
+    fn publish(json: bool) -> Commands {
+        Commands::Publish {
+            tag: "v1.3.0".into(),
+            commit: None,
+            notes_file: None,
+            require_gate: Vec::new(),
+            dry_run: false,
+            resume: false,
+            json,
+        }
+    }
+
     #[test]
     fn the_envelope_is_one_compact_object_with_the_version_first_and_a_pinned_key_order() {
         let json = render_failure(FailureCode::Config, "no cutver.toml found").expect("the envelope renders");
@@ -277,6 +290,7 @@ mod tests {
         assert!(wants_machine(&bump(true, None)), "`bump --json`");
         assert!(wants_machine(&bump(false, Some("release.json"))), "`bump --report`");
         assert!(wants_machine(&plan(true)), "`plan --json`");
+        assert!(wants_machine(&publish(true)), "`publish --json`");
         assert!(wants_machine(&Commands::Doctor {
             check_changelog: false,
             json: true
@@ -315,6 +329,7 @@ mod tests {
     fn a_command_that_asks_for_human_output_keeps_the_human_line() {
         assert!(!wants_machine(&bump(false, None)), "`bump`");
         assert!(!wants_machine(&plan(false)), "`plan`");
+        assert!(!wants_machine(&publish(false)), "`publish`");
         assert!(!wants_machine(&Commands::Doctor {
             check_changelog: false,
             json: false

@@ -15,7 +15,18 @@ use crate::plugin::dto::PostReleasePayload;
 
 use super::{Phase, PublicationScope};
 
-pub(super) fn dispatch(scope: &PublicationScope<'_>) -> Result<Vec<String>, Error> {
+/// What the phase did: the plugins it dispatched, and the ones it left alone.
+///
+/// A machine reads the dispatch outcome (#404 S1), and both halves are reported because an empty
+/// `dispatched` list means something different from a skipped one — a resume refuses to repeat a
+/// plugin, a plain run that finds no plugin has nothing to repeat.
+#[derive(Debug, Default)]
+pub struct Dispatch {
+    pub dispatched: Vec<String>,
+    pub left_alone: Vec<String>,
+}
+
+pub(super) fn dispatch(scope: &PublicationScope<'_>) -> Result<Dispatch, Error> {
     let event = PluginOperation::OnPostRelease.as_str();
     if let Phase::Resuming = scope.phase {
         let mut left_alone: Vec<String> = scope
@@ -24,7 +35,10 @@ pub(super) fn dispatch(scope: &PublicationScope<'_>) -> Result<Vec<String>, Erro
             .map(ToString::to_string)
             .collect();
         left_alone.sort();
-        return Ok(left_alone);
+        return Ok(Dispatch {
+            dispatched: Vec::new(),
+            left_alone,
+        });
     }
     let commit_sha = if scope.dry_run {
         "0000000000000000000000000000000000000000".to_string()
@@ -39,6 +53,7 @@ pub(super) fn dispatch(scope: &PublicationScope<'_>) -> Result<Vec<String>, Erro
         dry_run: scope.dry_run,
         notes: scope.notes.map(str::to_string),
     };
+    let mut dispatched = Vec::new();
     for plugin_name in scope.plugin_manager.plugins_for_event(event) {
         scope
             .plugin_manager
@@ -56,6 +71,10 @@ pub(super) fn dispatch(scope: &PublicationScope<'_>) -> Result<Vec<String>, Erro
                     }
                 }
             })?;
+        dispatched.push(plugin_name.to_string());
     }
-    Ok(Vec::new())
+    Ok(Dispatch {
+        dispatched,
+        left_alone: Vec::new(),
+    })
 }

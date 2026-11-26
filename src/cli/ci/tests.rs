@@ -174,10 +174,16 @@ fn the_publish_fields_report_what_the_closing_phase_did() {
     let real = PublishSummary {
         tag: "v1.3.0".to_string(),
         commit: "abc1234".to_string(),
+        // The two machine-only lists stay empty: this test is about the fields the sink writes, and
+        // an empty list is the state a run with no refspec recorded and no plugin dispatched has.
+        push_refs: Vec::new(),
         floating_tag: Some("v1".to_string()),
         publish_push_command: Some("git push origin refs/tags/v1.3.0".to_string()),
         publish_commands: vec!["cargo publish".to_string()],
+        publish_command_results: Vec::new(),
         post_release_left_alone: Vec::new(),
+        post_release_dispatched: Vec::new(),
+        tag_skipped: false,
         dry_run: false,
     };
 

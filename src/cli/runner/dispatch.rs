@@ -121,6 +121,7 @@ pub fn run(args: Cli) -> i32 {
             require_gate,
             dry_run,
             resume,
+            json,
         } => {
             let config = match load_config(args.config) {
                 Ok(c) => c,
@@ -143,6 +144,7 @@ pub fn run(args: Cli) -> i32 {
                     dry_run,
                     resume,
                 },
+                json,
             )
         }
         Commands::Attest {

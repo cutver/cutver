@@ -6,6 +6,9 @@ use std::time::Duration;
 use crate::bump::Error;
 use crate::preflight::{Ended, run_supervised};
 
+/// What a publication run reports about the commands it ran and the pushes it made (#404 S1).
+pub mod publish;
+
 pub fn read(path: impl AsRef<Path>) -> Result<String, Error> {
     let path = path.as_ref();
     fs::read_to_string(path).map_err(|e| Error::Read {
@@ -62,10 +65,13 @@ pub fn format_command(template: &str, context: &crate::changelog::InterpolationC
 
 /// Runs one `[publish]` command through the shared bounded spawn, so a command that outlives
 /// `timeout_secs` is killed with its whole process tree instead of holding the release open.
-pub fn run_publish_command(command: &str, current_dir: &Path, timeout_secs: Option<u64>) -> Result<(), Error> {
+///
+/// A successful command answers with the code its child exited with, because a run reports it: a
+/// signal-terminated child on a platform that has them has no code, and `None` says exactly that.
+pub fn run_publish_command(command: &str, current_dir: &Path, timeout_secs: Option<u64>) -> Result<Option<i32>, Error> {
     let timeout = timeout_secs.map(Duration::from_secs);
     match run_supervised(command, current_dir, timeout) {
-        Ok(Ended::Exited(status)) if status.success() => Ok(()),
+        Ok(Ended::Exited(status)) if status.success() => Ok(status.code()),
         Ok(Ended::Exited(status)) => Err(Error::PublishCommandFailed {
             command: command.to_string(),
             status,

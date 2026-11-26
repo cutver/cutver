@@ -109,6 +109,9 @@ pub enum Commands {
         /// Continue a release an earlier `cutver publish` left unfinished, driven by repository evidence instead of a run record: steps that are harmless to repeat are repeated, and anything the evidence contradicts is refused. Requires `--commit`, and a `[publish] commands` entry runs only when `publish-<i>` (its 1-based position) is attested with conclusion `success` for that commit
         #[arg(long)]
         resume: bool,
+        /// Print the closing phase as one JSON object on stdout instead of the plan tree: the tag published, the commit, the refs pushed, whether the floating major tag moved, each `[publish] commands` result with its exit code, and which `on_post_release` plugins ran. A `--dry-run` reports the same keys with the values of a run that published nothing
+        #[arg(long)]
+        json: bool,
     },
     /// Record a gate's verdict for a commit, so `publish --require-gate` can read it
     Attest {

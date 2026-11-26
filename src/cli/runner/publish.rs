@@ -1,4 +1,7 @@
 //! `cutver publish`: the closing phase of a release prepared by `bump --defer-publish` (#259).
+//!
+//! `--json` prints that phase as one compact object on stdout; without it the run prints the plan
+//! tree, byte for byte the tree it always printed (S6).
 
 use std::path::Path;
 
@@ -16,7 +19,7 @@ use crate::cli::machine::FailureCode;
 #[cfg(test)]
 mod tests;
 
-pub fn run_publish(config: &config::Config, request: PublishRequest) -> i32 {
+pub fn run_publish(config: &config::Config, request: PublishRequest, json: bool) -> i32 {
     // Refused before the clean-tree guard runs: the guard exempts a declared directory from the
     // tree, because an input is not a change in the tree, and only the request can say whether the
     // path was meant to be notes. A directory can never be.
@@ -28,16 +31,26 @@ pub fn run_publish(config: &config::Config, request: PublishRequest) -> i32 {
     }
     match bump::run_publish(config, &request) {
         Ok(summary) => {
-            // A resume dispatches no `on_post_release` plugin, so the tree names the ones it left
-            // alone instead of letting the omission pass silently (#326 D2).
-            let left_alone = request
-                .resume
-                .then(|| left_alone_line(&summary.post_release_left_alone));
-            // The floating major tag this release deliberately left alone, named where a reader looks for
-            // it. A skip that renders as a missing line is what phase 5's resume line exists to prevent
-            // (#326 D2, T6).
-            let floating_skipped = summary.floating_tag_skipped(config);
-            print_publish_summary(&summary, left_alone.as_deref(), floating_skipped.as_deref());
+            if json {
+                match render_publish_json(&summary) {
+                    Ok(object) => println!("{object}"),
+                    Err(source) => {
+                        print_error(FailureCode::Report, super::bump::ReportError::Serialize { source });
+                        return 1;
+                    }
+                }
+            } else {
+                // A resume dispatches no `on_post_release` plugin, so the tree names the ones it left
+                // alone instead of letting the omission pass silently (#326 D2).
+                let left_alone = request
+                    .resume
+                    .then(|| left_alone_line(&summary.post_release_left_alone));
+                // The floating major tag this release deliberately left alone, named where a reader looks for
+                // it. A skip that renders as a missing line is what phase 5's resume line exists to prevent
+                // (#326 D2, T6).
+                let floating_skipped = summary.floating_tag_skipped(config);
+                print_publish_summary(&summary, left_alone.as_deref(), floating_skipped.as_deref());
+            }
             crate::cli::ci::on_publish_success(&summary);
             0
         }
@@ -175,4 +188,72 @@ pub fn print_publish_summary(summary: &PublishSummary, resume: Option<&str>, flo
         println!("{}\n", tree::render_simulation_banner(&theme));
     }
     println!("{}", render_publish_plan(summary, &theme, resume, floating_skipped));
+}
+
+/// The machine-readable result of a closing phase (#404 S1).
+///
+/// Field order is part of the contract, so the shape is a struct rather than a map; `src/cli/json.rs`
+/// owns the `schemaVersion` this object opens with. Payload keys are snake_case, like `ReleasePlan`
+/// and the release result.
+///
+/// A `--dry-run` changes the values and never the keys (S5): every field that reports an action says
+/// the run did not do it, which is how `src/cli/ci/fields.rs` already words the same facts for the CI
+/// channel. The push list, the floating-tag move and the command exit codes are the three that read
+/// `dry_run`, because a rehearsal fills them from the plan it printed.
+#[derive(serde::Serialize)]
+struct PublishJson<'a> {
+    tag: &'a str,
+    commit: &'a str,
+    dry_run: bool,
+    tag_skipped: bool,
+    pushed_refs: &'a [String],
+    floating_tag: Option<&'a str>,
+    floating_tag_moved: bool,
+    publish_commands: Vec<CommandJson<'a>>,
+    post_release: PostReleaseJson<'a>,
+}
+
+/// One `[publish] commands` result: its 1-based position, the command as it was rendered, and the
+/// code its child exited with. `exit_code` is `null` for a dry run, which ran none.
+#[derive(serde::Serialize)]
+struct CommandJson<'a> {
+    position: usize,
+    command: &'a str,
+    exit_code: Option<i32>,
+}
+
+/// The `on_post_release` outcome: the plugins the phase dispatched, and the ones a resume left alone
+/// because a plugin is arbitrary code that may already have run in the attempt it continues.
+#[derive(serde::Serialize)]
+struct PostReleaseJson<'a> {
+    dispatched: &'a [String],
+    left_alone: &'a [String],
+}
+
+/// Renders the closing phase as the compact object `--json` prints: one line, `schemaVersion` first.
+fn render_publish_json(summary: &PublishSummary) -> Result<String, serde_json::Error> {
+    let published = !summary.dry_run;
+    let fields = PublishJson {
+        tag: &summary.tag,
+        commit: &summary.commit,
+        dry_run: summary.dry_run,
+        tag_skipped: summary.tag_skipped,
+        pushed_refs: if published { summary.push_refs.as_slice() } else { &[] },
+        floating_tag: summary.floating_tag.as_deref(),
+        floating_tag_moved: published && summary.floating_tag.is_some(),
+        publish_commands: summary
+            .publish_command_results
+            .iter()
+            .map(|result| CommandJson {
+                position: result.position,
+                command: &result.command,
+                exit_code: if published { result.exit_code } else { None },
+            })
+            .collect(),
+        post_release: PostReleaseJson {
+            dispatched: &summary.post_release_dispatched,
+            left_alone: &summary.post_release_left_alone,
+        },
+    };
+    serde_json::to_string(&crate::cli::json::Versioned::new(&fields))
 }

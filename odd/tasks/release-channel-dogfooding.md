@@ -36,6 +36,13 @@ prerelease end to end, so `0.22.0-alpha.1` is the first non-stable version cutve
   stdio/exit codes/files only. Nothing here adds a dependency, and nothing here implements gaps 2, 5, 8 or
   9 beyond what a real prerelease forces.
 
+- **S8.** «Otra cosa, de los gestores de paquete, scoop, homebrew y winget que tenemos que planificar el
+  lanzamiento de cutver allá, creo que hace más sentido solo tener la versión con plugins habilitado» — and
+  the follow-up answer «`cutver` = plugins, con shim deprecado una release». One build per package manager
+  (the plugins one), under the name `cutver`; `cutver-plugins` stays one release as a deprecated shim and
+  then goes; the lean build keeps shipping as a release asset and keeps its smoke; winget is a new surface
+  and inherits the same rule.
+
 ## Tasks
 
 Order is deliberate: the decisions gate the code, the tool-level rules come before the workflow consumes
@@ -91,11 +98,23 @@ them, and the first real prerelease is observed before anything downstream is si
   release's prerelease flag, and pin it in whatever contract test covers `container.yml` (check
   `tests/ci_workflow_contract.rs:24-25` before assuming there is one — it currently pins the three CI legs,
   not the container tags).
-- **T8 — Homebrew and Scoop wait for stable.** (S6) `release.yml:802-808` builds formula URLs from
+- **T8 — Homebrew and Scoop wait for stable, and publish one package.** (S6, S8) `release.yml:802-808` builds formula URLs from
   `${TAG#v}` and `:957` does the same for Scoop, both gated only on a token being present. An alpha would
   be published as the tap/bucket version. Gate both on the channel, and resolve the unknown first: how the
   tap derives `version` from `cutver-0.22.0-alpha.1-macos-arm64.tar.gz` (not observable from this repo;
-  `odd/tasks/cutver-homebrew-tap-automation.md:19-21` records the steps as tag-driven).
+  `odd/tasks/cutver-homebrew-tap-automation.md:19-21` records the steps as tag-driven). Then, per D8 and S8:
+  the plain `cutver` formula and the Scoop manifest install the **plugins** asset, `cutver-plugins` becomes a
+  deprecated shim for exactly one release and is removed in the next, and the four pages that describe the
+  two builds (`docs/guides/installation.md` and the three others that name `cutver-plugins`) say one name
+  and how to get the lean binary if that is what you want.
+
+- **T12 — winget, from nothing.** (S8) No file in this repository mentions winget: it is a new delivery
+  surface, not a modification. Ship a single `cutver` package built from the plugins asset (portable zip),
+  stable-only by D3, with the version, installer URL and SHA-256 taken from the same `SHA256SUMS` the tap
+  reads. The manifest lives in `microsoft/winget-pkgs`, so the update is a pull request with its own
+  validation pipeline and is **not** synchronous with a release: decide and record whether it is a workflow
+  job with a token (the same shape as the tap) or a documented per-release command, and pin the manifest
+  fields with a test the way `tests/release_pipeline_contract.rs` pins the workflow.
 - **T9 — crates.io: decide, then execute.** (S6) `cutver.toml:57` runs `cargo publish` inside
   `cutver publish`, so **every** prerelease run burns a version permanently. The two honest options are in
   D4. Whichever wins, `publish-crate.yml:38` needs no change (it seds any version string and lets the API
@@ -308,3 +327,21 @@ dispatch by dispatch). One thing to keep honest in T10's record: the **counter-o
 same channel, `alpha.1 → alpha.2` — is not part of a ladder that visits each channel once, so it stays
 unproven on the real pipeline unless a rung is deliberately re-cut. The unit tests cover it; the pipeline
 record should say so rather than imply four transitions were watched.
+
+**L11. One build per package manager.** Maintainer: «de los gestores de paquete, scoop, homebrew y winget …
+creo que hace más sentido solo tener la versión con plugins habilitado», and on the naming question chose the
+deprecation shim over a hard switch. Measured state before the decision: the tap carries **two** formulas
+(`Formula/cutver.rb` at `release.yml:827`, `Formula/cutver-plugins.rb` at `:904`) with Scoop mirroring them,
+the release publishes both assets per target (`cutver-*` and `cutver-plugins-*` in `SHA256SUMS`), and
+**nothing anywhere mentions winget** — `grep -rn winget` over `*.yml`, `*.toml` and `*.md` returns no match.
+
+Why the single build is right: a package manager is the "just make it work" channel, and asking a user to
+know what a WASM plugin is before choosing a formula is a support question we invented. The plugin build is
+a functional superset; the lean build keeps shipping as a release asset for the people who need it, and its
+smoke stays exactly as it is — Pillar VI.4 is about the build existing and staying small, not about what a
+formula installs.
+
+What the decision costs, named: a package-manager install grows by the WASM runtime (unmeasured here —
+measure at T8, do not guess), a deprecated formula is one more file for one release, and winget is a new
+review-gated surface whose manifests reach users a release behind, because `microsoft/winget-pkgs` validates
+by pull request.

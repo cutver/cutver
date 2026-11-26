@@ -59,8 +59,9 @@ docker pull ghcr.io/cutver/cutver:latest
 docker pull ghcr.io/cutver/cutver:plugins
 ```
 
-The `:latest` tag follows `main` as well as release tags, so it can be ahead of the latest stable
-release; pin an explicit version tag when that matters. Mount your workspace and run any command
+The `:latest` tag follows `main` and stable release tags, so it can be ahead of the latest stable
+release; a prerelease image carries only its own version and moves neither `latest` nor a major tag, so
+pin an explicit version tag when that matters. Mount your workspace and run any command
 inside the image — for example:
 
 ```bash

@@ -6,7 +6,10 @@
 **Review date**: 2027-11-26 (proposal; not yet committed by the maintainer)
 **Implementation**: not started. This record revises the draft circulated on 2026-11-26: it keeps
 progressive disclosure, moves the CI-file work out of the core, and puts the missing machine surface
-([#404](https://github.com/cutver/cutver/issues/404)) before the new subcommands.
+([#404](https://github.com/cutver/cutver/issues/404)) before the new subcommands. The order is fixed by
+rule 4: #404 first, then the honesty pass, then rule 1's scaffold, then rule 2's mutators, then the
+adapter. `init` gains `--dry-run` and `--json` as part of rule 1 — it has neither today — so a user can
+see the plan before a file is written.
 
 ## Context
 
@@ -61,8 +64,8 @@ Progressive disclosure is adopted, and it is split along the boundary above. Fou
    `cutver.toml`: `[project]`, the detected `[[manifest]]` entries, `[changelog]`, and `[git]`'s
    release guards. Nothing else is emitted until asked for. An existing `cutver.toml` is refused rather
    than overwritten (`src/init/scaffold/runner.rs:16,137` already names `--update` and `--force`), and
-   `--dry-run` — which `init` does not have today — prints what would be written. This resolves the
-   direction that
+   the command gains `--dry-run` and `--json` — neither exists today — so the plan is readable before a
+   file is written and the result is readable after. This resolves the direction that
    [#360](https://github.com/cutver/cutver/issues/360) raised: the generator covers the shipped surface
    through the mutators rather than through one maximal file, and the mutators read the same schema the
    loader does.

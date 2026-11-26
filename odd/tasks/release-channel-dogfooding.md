@@ -539,3 +539,32 @@ and a redundant clause) — final 199/200.
   holds survives — if it says "lean build" there, this repository cannot see or fix it from here.
 - Still unmeasured, as L11 asked: the size a package-manager install grows by. The numbers live in a release
   run's job summary, so T10 is where they get read.
+
+**L18. T9 done, and its answer is "nothing to change, and here is the pin that says so".** D4 accepted
+publishing the crate on every channel, and `cutver.toml`'s `[publish].commands = ["cargo publish"]` already
+does exactly that: the config runs it on every `cutver publish`, prerelease included. So T9's deliverable is
+not code. It is:
+
+- **A pin that makes a silent reversal loud.** `the_publish_commands_publish_the_crate_on_every_channel`
+  reads the repository's own `cutver.toml` and fails if `cargo publish` is gone, with the reason in the
+  message: a stable gate here would not protect the registry, it would reverse an accepted decision and leave
+  the registry path unexercised on the channel the ladder exists to prove. Teeth proven by emptying the
+  command — the test panicked with that exact sentence — and the file restored byte-identically
+  (`git diff --stat cutver.toml` empty, 37/37 green after).
+- **One clause in `docs/reference/cli.md`**, inside the `--channel` paragraph's own line, so the page stays at
+  199 of 200: a prerelease publishes the crate, and no default requirement selects a prerelease, so a consumer
+  opts in by naming the version.
+- **One clause in `docs/guides/plugin-authoring.md`** beside `cutver-pdk = "0.2.0"`: a prerelease needs the
+  exact version, because `"0.3"` never matches `0.3.0-alpha.1`.
+- **The ADR's exception made explicit**: `docs/adr/0005`'s stable-only bullet now ends by naming the crate as
+  the one surface that goes out on every channel, with the reason instead of the exception alone.
+
+`publish-crate.yml` needs no change, as the plan predicted: it reads `version = "…"` from `Cargo.toml` and
+confirms it, which a prerelease string satisfies as well as a stable one.
+
+**The one thing T9 could not observe, and why that is fine.** The plan asked for the refusal path to be seen
+once — publishing a version that already exists. That needs a real crates.io publish, which is the
+maintainer's to run, not this branch's (D5). What protects the ladder until then is already tested: a resume
+will not repeat `[publish].commands` without a `publish-<n>` attestation (T5's residual test), and a doomed
+`cargo publish` inside a plain publish surfaces as `PublishAfterCommit`, which carries the tag and the commit
+so the failure cannot read as "nothing landed".

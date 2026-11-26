@@ -345,3 +345,31 @@ What the decision costs, named: a package-manager install grows by the WASM runt
 measure at T8, do not guess), a deprecated formula is one more file for one release, and winget is a new
 review-gated surface whose manifests reach users a release behind, because `microsoft/winget-pkgs` validates
 by pull request.
+
+**L12. T4 done: the run reports its channel.** `ab2a44e`. `bump` writes `released, deferred, version,
+channel, tag, commit` and `plan` writes `next_version, channel, tag, commit`, both with
+`semver_bump::channel_of` applied to the version the run produced — **not** to the flag, so `1.3.0-rc.1`
+reports `rc` whether or not `--channel rc` was the request, and a stable cut reports `stable`. No new field
+on `Summary` or `ReleasePlan`: `src/bump/types.rs` is still 399 of 400, so T7's extraction is not on the path
+after all. `--json` and `--report` are untouched because `fields.rs` feeds only the CI channel (two call
+sites, `src/cli/ci.rs:182,196`), which is phase 5's D3 intact.
+
+RED at both ends before the fix: the unit failed with the five-key rendering
+(`version=1.3.0\ntag=v1.3.0` where `channel=stable` belonged), and `ci_output` failed on three sink
+assertions including the end-to-end `--channel alpha` case. Six exact comparisons were **widened, never
+relaxed to `contains`**; both sinks (file and step summary) are pinned for `stable` and for `alpha`.
+`docs/internals/machine-contract-surfaces.md` held its 200-line ceiling at 199 with no trim, because the
+CI-output bullet re-wrapped inside its 8 lines — the estimate was checked by the ceiling test, not asserted.
+
+Two judgment calls worth keeping:
+- **The worker left `docs/integrations/migrating-from-the-release-action.md:67` alone on purpose**: it lists
+  the `--report` keys, which are JSON and gain no `channel`, so the one-word "fix" there would have
+  documented a key the report never writes. That is the difference between a doc that is stale and a doc
+  that is wrong.
+- **The parent had to finish the formatting**: the worker is not authorized to run `cargo fmt`, so its own
+  test and T3's contract helper were not rustfmt-canonical. `cargo fmt --all` ran before the commit, so
+  `ab2a44e` is fmt-clean; the deltas fell inside files T4 already owned.
+
+My handoff carried a defect worth naming: the continue prompt contained two `## Allowed edit surfaces`
+blocks, a stale 4-path copy trailing the 8-path replacement. The worker read the replacement (correctly) and
+reported the ambiguity instead of guessing quietly. One list, one block, next time.

@@ -57,7 +57,9 @@ Two senses of the word coexist, and both carry their qualifier **every time they
   caller remembered to pass. The other three follow from the same hazard: `uses: cutver/setup@v0`
   resolves to `version: latest` by default, so a surface that follows a prerelease hands an alpha to a
   consumer who asked for the default. Promotion produces a stable release, so `0.22.0` still moves all
-  four.
+  four. The crate is the exception and goes out on every channel: `[publish].commands` publishes it on
+  each run, because the registry path is what the ladder exists to exercise, and no default requirement
+  selects a prerelease — a consumer opts in by naming the version.
 
 The bare word "channel", with no qualifier, means the prerelease ladder from now on.
 

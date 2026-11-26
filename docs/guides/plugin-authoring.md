@@ -21,7 +21,7 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-cutver-pdk = "0.2.0"
+cutver-pdk = "0.2.0"   # a prerelease needs the exact version: "0.3" never matches 0.3.0-alpha.1
 extism-pdk = { version = "1.4.1", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

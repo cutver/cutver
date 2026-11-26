@@ -346,6 +346,28 @@ fn bump_arguments(step: &str, dispatch: &[(&str, &str)]) -> Vec<String> {
     arguments
 }
 
+/// D4: a prerelease publishes the crate too, on the same run that publishes everything else.
+///
+/// The cost is permanent — a crates.io version can be yanked and never deleted — and the maintainer
+/// accepted it, because the crate is the surface under test and `cargo publish` is where
+/// `publish --resume`'s `publish-<n>` attestation lives. Gating this entry on `stable` would not
+/// protect the registry; it would silently reverse the decision and leave that path unexercised on
+/// exactly the channel the ladder exists to prove.
+#[test]
+fn the_publish_commands_publish_the_crate_on_every_channel() {
+    let config_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("cutver.toml");
+    let cfg = config::load(config_path).expect("the repository cutver.toml must load");
+    assert!(
+        cfg.publish
+            .commands
+            .iter()
+            .any(|command| command.trim() == "cargo publish"),
+        "`[publish].commands` must publish the crate on every channel, prereleases included (D4, \
+         ADR-0005): the ladder proves the registry path, and a stable gate here is a decision to \
+         revisit out loud rather than in a diff"
+    );
+}
+
 fn declared_plugin() -> PluginConfig {
     let config_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("cutver.toml");
     let cfg = config::load(config_path).expect("the repository cutver.toml must load");

@@ -59,7 +59,10 @@ Progressive disclosure is adopted, and it is split along the boundary above. Fou
 
 1. **The scaffold starts smaller and grows by subcommand.** `cutver init` writes the minimal
    `cutver.toml`: `[project]`, the detected `[[manifest]]` entries, `[changelog]`, and `[git]`'s
-   release guards. Nothing else is emitted until asked for. This resolves the direction that
+   release guards. Nothing else is emitted until asked for. An existing `cutver.toml` is refused rather
+   than overwritten (`src/init/scaffold/runner.rs:16,137` already names `--update` and `--force`), and
+   `--dry-run` — which `init` does not have today — prints what would be written. This resolves the
+   direction that
    [#360](https://github.com/cutver/cutver/issues/360) raised: the generator covers the shipped surface
    through the mutators rather than through one maximal file, and the mutators read the same schema the
    loader does.
@@ -100,8 +103,11 @@ Progressive disclosure is adopted, and it is split along the boundary above. Fou
   tool names it where a user looks: the next-steps block of `gate add` and a row in the guides.
 - **Harder**: a snippet printed once goes stale. The adapter has to be able to re-render and compare, and
   that re-render is the check, which is why rules 2 and 3 are one decision and not two.
-- **Downside**: `cutver gate add` mutates a file the user owns. Deterministic editing, refusal to
-  overwrite an existing workflow, and a dry run are requirements of the implementation, not polish.
+- **Downside**: three writers touch files the user owns — `cutver init` writes `cutver.toml`,
+  `cutver gate add` mutates it, and `cutver-gh` writes `.github/workflows/release.yml`. Deterministic
+  TOML editing that preserves comments, key order and formatting; refusal to overwrite an existing
+  scaffold or workflow without an explicit flag; and `--dry-run` on every one of them are requirements
+  of the implementation, not polish.
 - **Kept honestly**: this record is the same idea as the draft with its boundary corrected. The draft's
   trade-off section named the cheap cost (YAML inspection complexity) and not the expensive one
   (the core taking on a vendor's file format), which is the single defect this revision exists to fix.

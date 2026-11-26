@@ -7,7 +7,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::bump::PublishSummary;
+use crate::bump::{PublishSummary, Summary};
 
 use super::fields::Field;
 use super::text::{MAX_VALUE_CHARS, code_span, one_line};
@@ -192,6 +192,54 @@ fn the_publish_fields_report_what_the_closing_phase_did() {
         "tag=v1.3.0\ncommit=abc1234\ntag_pushed=false\nfloating_tag_moved=false\npublish_commands_run=0\n",
         "the planned pushes and the listed commands were not performed"
     );
+}
+
+/// A finished `bump` that released `next`, everything else filler: the field list reads the version,
+/// the tag it names and the two release flags, never the tree behind them.
+fn released(next: semver::Version) -> Summary {
+    let tag = format!("v{next}");
+    Summary {
+        source: "Cargo.toml".into(),
+        current: semver::Version::new(1, 2, 0),
+        next,
+        dry_run: false,
+        preflight: Vec::new(),
+        touched: Vec::new(),
+        changelog: None,
+        commit_message: "chore(release)".into(),
+        commit: "abc1234".into(),
+        tag,
+        tag_skipped: false,
+        floating_tag: None,
+        pre_bump: None,
+        post_bump: None,
+        warnings: Vec::new(),
+        publish_push: false,
+        publish_push_command: None,
+        publish_commands: Vec::new(),
+        deferred: false,
+        rationale: None,
+        root_dir: None,
+    }
+}
+
+/// S6: the run reports the channel the version it produced carries, so no downstream job re-parses a
+/// semver suffix to learn it — `stable` for a release, the identifier for a prerelease. The version
+/// decides, not the flag: `1.2.0-rc.1` is `rc` whether or not `--channel rc` was the request.
+#[test]
+fn the_bump_fields_name_the_channel_of_the_version_they_report() {
+    for (next, channel) in [("1.3.0", "stable"), ("1.3.0-alpha.1", "alpha"), ("1.3.0-rc.1", "rc")] {
+        let summary = released(next.parse().expect("a valid version"));
+        let expected =
+            format!("released=true\ndeferred=false\nversion={next}\nchannel={channel}\ntag=v{next}\ncommit=abc1234\n");
+
+        assert_eq!(
+            super::fields::render(&super::fields::bump(&summary)),
+            expected,
+            "`{next}` is on the `{channel}` channel and the run must say so: a consumer that has to \
+             parse the suffix for it is the parser this field exists to remove"
+        );
+    }
 }
 
 /// S2, S3: a sink the runner named but cannot be opened writes nothing and never fails the run — it

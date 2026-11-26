@@ -202,7 +202,11 @@ fn expression(expr: &str, dispatch: &[(&str, &str)]) -> String {
         .find(|(key, _)| *key == name)
         .map(|(_, value)| *value)
         .unwrap_or_else(|| panic!("this dispatch sets no `{name}`, whose value decides the argv"));
-    let value = if value.is_empty() { fallback.unwrap_or("") } else { value };
+    let value = if value.is_empty() {
+        fallback.unwrap_or("")
+    } else {
+        value
+    };
     assert!(
         !value.contains(char::is_whitespace),
         "a dispatch value with whitespace in it cannot be modelled here: `{name}` is `{value}`"
@@ -244,7 +248,10 @@ fn shell_words(contents: &str, dispatch: &[(&str, &str)]) -> Vec<String> {
             other => current.push(other),
         }
     }
-    assert!(!quoted, "unbalanced quote in `{contents}`: the reader cannot split it into arguments");
+    assert!(
+        !quoted,
+        "unbalanced quote in `{contents}`: the reader cannot split it into arguments"
+    );
     if !current.is_empty() {
         words.push(current);
     }
@@ -292,10 +299,7 @@ fn bump_arguments(step: &str, dispatch: &[(&str, &str)]) -> Vec<String> {
          spliced into the call line, or a dispatch that sets no channel stops running today's argv"
     );
 
-    let mut arguments = vec![
-        "bump".to_string(),
-        expand("${{ inputs.bump || 'auto' }}", dispatch),
-    ];
+    let mut arguments = vec!["bump".to_string(), expand("${{ inputs.bump || 'auto' }}", dispatch)];
     // `None` while no branch is open, `Some(false)` while skipping the branch that did not apply.
     let mut branch: Option<bool> = None;
     for line in head.lines().map(str::trim).filter(|line| !line.is_empty()) {
@@ -327,7 +331,10 @@ fn bump_arguments(step: &str, dispatch: &[(&str, &str)]) -> Vec<String> {
              arguments that line adds, or the argv this test reads is not the one the step builds"
         );
     }
-    assert!(branch.is_none(), "the bump step leaves a conditional open before its call: {head}");
+    assert!(
+        branch.is_none(),
+        "the bump step leaves a conditional open before its call: {head}"
+    );
     arguments
 }
 
@@ -529,7 +536,7 @@ fn the_version_job_publishes_nothing_irreversible() {
         "the job outputs must come from a step that carries `id: cutver`, which is what \
          `steps.cutver.outputs.*` reads"
     );
-    // Phase 4B of #326: the bump step owns the job outputs. `cutver bump` writes the five keys to
+    // Phase 4B of #326: the bump step owns the job outputs. `cutver bump` writes them to
     // `$GITHUB_OUTPUT` itself, so a `--report` or a `jq` back in this job is not a style regression:
     // it is a second authority over the release result, and two authorities drift.
     assert!(
@@ -652,10 +659,7 @@ fn a_dispatch_channel_reaches_the_bump_arguments() {
     // The dry run is the first dispatch of the ladder: it has to read the plan for the channel it
     // was asked about, so the flag cannot be skipped when `--dry-run` is set.
     for (dry_run, expected) in [
-        (
-            "false",
-            vec!["bump", "minor", "--defer-publish", "--channel", "alpha"],
-        ),
+        ("false", vec!["bump", "minor", "--defer-publish", "--channel", "alpha"]),
         (
             "true",
             vec!["bump", "minor", "--defer-publish", "--dry-run", "--channel", "alpha"],
@@ -699,14 +703,14 @@ fn an_empty_channel_keeps_todays_bump_arguments() {
 
 /// S1: every job output must read a key `cutver bump` writes, from the step that ran it.
 ///
-/// The bump step appends `released`, `deferred`, `version`, `tag` and `commit` to `$GITHUB_OUTPUT`
-/// (phase 4A of #326). An output pointing at another step, or naming a key nobody writes, resolves
+/// The bump step appends `released`, `deferred`, `version`, `channel`, `tag` and `commit` to
+/// `$GITHUB_OUTPUT` (phase 4A of #326). An output pointing at another step, or naming a key nobody writes, resolves
 /// to an empty string, and the `needs.version.outputs.*` gate it feeds then skips the release it was
 /// supposed to run.
 #[test]
 fn every_version_job_output_reads_a_key_the_tool_writes() {
     /// The keys `cutver bump` writes to `$GITHUB_OUTPUT`.
-    const WRITTEN: [&str; 5] = ["released", "deferred", "version", "tag", "commit"];
+    const WRITTEN: [&str; 6] = ["released", "deferred", "version", "channel", "tag", "commit"];
     let workflow = repo_text(".github/workflows/release.yml");
     let version = job(&workflow, "version");
     let outputs = declared_outputs(version);

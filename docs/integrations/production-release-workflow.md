@@ -122,7 +122,7 @@ exists ([`.github/workflows/release.yml`](../../.github/workflows/release.yml)).
 | `first_release` input | `--first-release` tags the current version without bumping, for repositories that already shipped. |
 | `dry_run` input | `--dry-run` runs the full pipeline without writing, and the step outputs it writes say `released=false`, so every later step is skipped. |
 | `--defer-publish` | The bump creates the release commit and pushes the branch, then stops: no tag, no publish commands until you ask for them. |
-| Step outputs instead of a report file | `cutver bump` writes `released`, `deferred`, `version`, `tag` and `commit` to `$GITHUB_OUTPUT` itself, so later steps and jobs read one machine-readable result and no step parses a file. `--report <path>` remains the equivalent for a local or scripted run. |
+| Step outputs instead of a report file | `cutver bump` writes `released`, `deferred`, `version`, `channel`, `tag` and `commit` to `$GITHUB_OUTPUT` itself, so later steps and jobs read one machine-readable result and no step parses a file. `--report <path>` remains the equivalent for a local or scripted run. |
 | `notes-file -` on publish | The notes arrive on standard input, so no path is named and an empty stream is refused before the tag exists. |
 
 Nothing in the workflow creates the GitHub Release record by hand: `cutver publish` runs

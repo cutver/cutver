@@ -1,12 +1,13 @@
 //! The field names `$GITHUB_OUTPUT` receives (S2).
 //!
 //! They are the names the machine payload already carries, which is what lets the release workflow
-//! stop parsing the report: `bump` feeds the five keys `.github/workflows/release.yml` extracts with
-//! `jq` today, `plan` feeds the three a planning step reads, and `publish` mirrors `bump`'s `tag` and
-//! `commit` and adds only what the closing phase knows.
+//! stop parsing the report: `bump` feeds the keys `.github/workflows/release.yml` extracts with `jq`
+//! today, `channel` included, `plan` feeds the four a planning step reads, and `publish` mirrors
+//! `bump`'s `tag` and `commit` and adds only what the closing phase knows.
 
 use crate::bump::plan::ReleasePlan;
 use crate::bump::{PublishSummary, Summary};
+use crate::semver_bump::channel_of;
 
 use super::text::one_line;
 
@@ -14,20 +15,26 @@ use super::text::one_line;
 pub type Field = (&'static str, Option<String>);
 
 /// The keys `bump` feeds, in the order the payload documents them.
+///
+/// `channel` is the channel the version this run produced carries, read from the version itself
+/// ([`channel_of`]) rather than from the flag: a stable cut reports `stable`, and a prerelease reports
+/// the identifier in its suffix, so no downstream job has to parse a semver suffix to learn it.
 pub fn bump(finished: &Summary) -> Vec<Field> {
     vec![
         ("released", Some(finished.released().to_string())),
         ("deferred", Some(finished.deferred.to_string())),
         ("version", Some(finished.next.to_string())),
+        ("channel", Some(channel_of(&finished.next).to_string())),
         ("tag", Some(finished.tag.clone())),
         ("commit", Some(finished.commit.clone())),
     ]
 }
 
-/// The keys `plan` feeds.
+/// The keys `plan` feeds, with `channel` meaning what it means in `bump`.
 pub fn plan(release: &ReleasePlan) -> Vec<Field> {
     vec![
         ("next_version", Some(release.next_version.to_string())),
+        ("channel", Some(channel_of(&release.next_version).to_string())),
         ("tag", Some(release.tag.clone())),
         ("commit", Some(release.commit.clone())),
     ]

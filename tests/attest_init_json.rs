@@ -14,7 +14,7 @@
 mod common;
 
 use std::collections::BTreeSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Output;
 
 use common::{CARGO_TOML, Fixture, FixtureGuard, GRADLE_KTS, PACKAGE_JSON, cutver_command, load_config};
@@ -135,6 +135,17 @@ fn assert_surface(document: &str, surface: &str, keys: &[&str]) -> Value {
 
 /// S3: the object names the record `attest` just wrote, including the file, and the flag changes the
 /// channel and never the bytes of the file.
+/// The path a comparison can hold.
+///
+/// One file has more than one honest spelling: macOS reaches `/var/...` through the `/private/var`
+/// symlink, and a Windows runner reaches its temp directory through the 8.3 short name (`RUNNER~1`
+/// for `runneradmin`). A raw `Path` comparison then fails on a path nobody disagrees about, so both
+/// sides are canonicalized and the assertion is about the file, never about its spelling.
+fn resolved(path: impl AsRef<Path>) -> PathBuf {
+    let path = path.as_ref();
+    std::fs::canonicalize(path).unwrap_or_else(|err| panic!("the path must exist, {} failed: {err}", path.display()))
+}
+
 #[test]
 fn attest_with_the_flag_prints_the_record_it_wrote_and_the_path_publish_reads() {
     let guard = FixtureGuard::new("attest-json");
@@ -179,8 +190,8 @@ fn attest_with_the_flag_prints_the_record_it_wrote_and_the_path_publish_reads() 
     let recorded = cutver::config::gates::read(&config, &gate).expect("the record publish reads");
     assert_eq!(recorded.commit, SHA, "{document}");
     assert_eq!(
-        cutver::config::gates::path_of(&config, &gate),
-        fixture.dir.join(path),
+        resolved(cutver::config::gates::path_of(&config, &gate)),
+        resolved(fixture.dir.join(path)),
         "the path the object reports is the path publish reads"
     );
 
@@ -296,12 +307,14 @@ fn init_with_the_flag_names_every_manifest_the_primary_and_the_files_it_wrote() 
     );
     assert_eq!(primary, "package.json", "{document}");
     assert_eq!(
-        load_config(fixture)
-            .primary_manifest()
-            .expect("the generated configuration declares one")
-            .path
-            .as_path(),
-        fixture.dir.join(primary),
+        resolved(
+            load_config(fixture)
+                .primary_manifest()
+                .expect("the generated configuration declares one")
+                .path
+                .as_path()
+        ),
+        resolved(fixture.dir.join(primary)),
         "the object names the manifest the configuration makes the source of truth"
     );
 

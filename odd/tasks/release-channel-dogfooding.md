@@ -1,0 +1,262 @@
+# Shipping cutver's own prereleases — the channel in this repository's pipeline
+
+Status: **prepared, not started.** Queued behind `odd/tasks/phase5-debt-payment.md` and gated on four
+maintainer decisions (D2, D3, D4 and D6 below). Branch to create when it starts: `feat/own-channel`.
+Base: `main` at `cec818e`. Scope: make this repository's pipeline pass `--channel` and survive a
+prerelease end to end, so `0.22.0-alpha.1` is the first non-stable version cutver ever ships.
+
+## Specs
+
+- **S1.** «Para cuando vayamos a simplificar el workflow de este repo como lo dejamos guardado también
+  implementaremos los nuevos canales para ahora sí poder lanzar versiones alpha, betas, rc y cuando esté
+  todo pulido, las stables» — one workstream, not two: the workflow simplification and the real channels
+  are the same move, because a channel is only proven when this repository's own pipeline uses it.
+- **S2.** «hasta la v0.21.0 que lanzamos hace unos días todas son stables» — verified: `Cargo.toml:3` is
+  `0.21.0`, `CHANGELOG.md:6` is `v0.21.0`, and no prerelease exists anywhere in the history. The first
+  alpha is therefore the first exercise of every downstream consumer at once, which is why S3's ordering
+  matters more than the version numbers.
+- **S3.** «cuando esté todo pulido, las stables» — the ladder ends in a promotion, not a new verb:
+  `cutver bump --channel stable` on `0.22.0-rc.1` yields `0.22.0` (ADR-0005, phase 5's S1). No task here
+  invents a `promote` command, a state machine, or a channel that outlives the version it produced.
+- **S4.** The recorded plan is issue #326, «feat(ci): make the release pipeline an artifact instead of a
+  workflow», and its own disclaimer is binding on how "simplify" may be read — `.git/issue-ci-native.md:98`
+  (untracked local copy of the body): «**Making this repository's workflow short.** The workflow stays the
+  reference consumer; shortening it is evidence that the phases landed, not a deliverable in itself.»
+  So the workflow may shrink only where a landed phase took over a step, never to reach a line count.
+- **S5.** The size of the thing being simplified: `.github/workflows/release.yml` is **1041 lines with 64
+  `- name:` steps** (issue #326, `## What`), and the pipeline facts it encodes — artifact matrix, `needs:`
+  gate order, promotion, channel tags, retry — are exactly what #326 wants inside the tool. Gaps 1, 3, 4
+  shipped; 6 and 7 shipped as phase 5; **2, 5, 8 and 9 are still "not verified in this pass"** (#326's own
+  status table), so no task below may assume them.
+- **S6.** Irreversibility is named before it is touched: a crates.io version can be yanked but never
+  deleted, `v0` and container `latest` are force-moved refs, and the GitHub release draft becomes the
+  repository's *Latest* when promoted. Every task that touches one of those three says what happens on a
+  prerelease before it runs.
+- **S7.** Non-goals, unchanged from phase 5's S5: no CI provider SDK, no HTTP client in the lean build,
+  stdio/exit codes/files only. Nothing here adds a dependency, and nothing here implements gaps 2, 5, 8 or
+  9 beyond what a real prerelease forces.
+
+## Tasks
+
+Order is deliberate: the decisions gate the code, the tool-level rules come before the workflow consumes
+them, and the first real prerelease is observed before anything downstream is simplified.
+
+- **T1 — Correct #326's status table before planning from it.** (S5) Gaps 6 and 7 are shipped as of
+  `cec818e` (`--channel` + promotion: `src/cli/args/commands.rs:35-47` is where the flag now lives; resume:
+  `src/bump/exec/publish/resume.rs`), and phase 5 is the chain #391-#396 plus #397. Rewrite the table rows
+  for 6 and 7 with that evidence, keep the reversal as the record (the body already does this for ADR-0004
+  → ADR-0005), and leave gaps 2, 5, 8 and 9 marked unverified. Ask before editing the issue; the corrected
+  text is what makes the rest of this document plannable by someone who only reads #326.
+- **T2 — Decision batch, before any code.** (S3, S6) Four answers, each with a recommendation in
+  `## Decisions`. If the maintainer accepts all four, T3 onward runs without another question.
+- **T3 — `channel` reaches the bump step.** (S1) `release.yml:4-20` declares only `bump` and `dry_run`;
+  the call is hardcoded at `release.yml:146` with `args` built at `:141-145` (only `--defer-publish` /
+  `--dry-run`). Add a `channel` choice input (empty = current behaviour, then `alpha|beta|rc|stable`) and
+  append `--channel "$CHANNEL"` only when it is set, so an untouched dispatch is byte-identical to today.
+  The contract tests pin the old shape literally and must move with it:
+  `tests/release_pipeline_contract.rs:184,387` (the exact `cutver bump "${{ inputs.bump || 'auto' }}"`),
+  `:381-395` (requires `args=(--defer-publish)` verbatim and `"${args[@]}"` on the call line), `:249-255`
+  (`inputs.dry_run` guard), `:331-372` (the `released=` grep and its byte-exact error text). Test-first:
+  a new assertion that a dispatch with `channel: alpha` produces `--channel alpha`, and one that an empty
+  channel produces the current argv unchanged.
+- **T4 — The tool reports the channel it produced.** (S6) `cutver bump` writes exactly
+  `released, deferred, version, tag, commit` (`src/cli/ci/fields.rs:17-25`; `plan` at `:28-34`) and no
+  `channel` key, so every downstream job would have to re-parse the semver suffix. Add `channel` to the two
+  field lists and to the contract's expected set at `tests/release_pipeline_contract.rs:408`
+  (`WRITTEN: [released, deferred, version, tag, commit]`), which is the test that keeps the workflow from
+  reading a key the tool never writes. No `--json` change beyond an additive key (phase 5's D3 stays
+  intact: `plan --json` keeps `touched[]` as the transition's authority).
+- **T5 — A prerelease never becomes the repository's Latest.** (S6) The promotion step is
+  `gh release edit "$TAG" --draft=false` (`release.yml:787`) with no `--prerelease` and no `--latest=false`,
+  and the draft itself is created without a flag (`cutver.toml:86-91`). A published alpha would become
+  Latest, and `cutver/setup`'s default `version: latest` (`docs/integrations/github-actions.md:17,20`)
+  would install the alpha for every consumer — the exact failure this task exists to prevent. Pinned by
+  `tests/release_pipeline_contract.rs:679-697` (an `assert_eq!` on that exact string) and constrained by
+  `:658-671` (exactly two `GH_TOKEN:` and two `TAG:` lines). Resolve the unknown first: whether the pinned
+  `github-publish-0.2.1.wasm` (`cutver.toml:66-94`) accepts a prerelease/latest parameter at all; if it does
+  not, the draft is created by the plugin and corrected by the workflow, and that correction is a named line
+  in the test.
+- **T6 — The floating major tag does not follow a prerelease.** (S6) `cutver.toml:22` sets
+  `floating_major_tag = true`, `src/bump/plan.rs:301` decides it with no channel condition, and
+  `src/bump/plan/resolve.rs:54-56` force-moves `v0`. On `0.22.0-alpha.1` that re-points `v0` at a version
+  nobody should get by default. Make the floating major a **stable-only** effect for a prerelease target,
+  report the skip in the plan tree the way the no-op is reported (phase 5's `No-op` section is the
+  precedent), and pin it: `plan minor --channel alpha` on `0.21.0` must not print a floating tag line and
+  must not move `v0`. This is a behaviour change to a shipped flag → ADR-0005 gains one bullet, or a new
+  ADR if the maintainer prefers; do not decide it in a commit message.
+- **T7 — Container tags stop lying about `latest`.** (S6) `container.yml:4-5` triggers on
+  `release: published` with no prerelease filter and the rules at `:303-308` emit `{{version}}`,
+  `{{major}}.{{minor}}`, `{{major}}` and `type=raw,value=latest` for any release (the plugins image opts
+  out of `latest` at `:328-331`). A prerelease must publish `{{version}}` only. Gate the rules on the
+  release's prerelease flag, and pin it in whatever contract test covers `container.yml` (check
+  `tests/ci_workflow_contract.rs:24-25` before assuming there is one — it currently pins the three CI legs,
+  not the container tags).
+- **T8 — Homebrew and Scoop wait for stable.** (S6) `release.yml:802-808` builds formula URLs from
+  `${TAG#v}` and `:957` does the same for Scoop, both gated only on a token being present. An alpha would
+  be published as the tap/bucket version. Gate both on the channel, and resolve the unknown first: how the
+  tap derives `version` from `cutver-0.22.0-alpha.1-macos-arm64.tar.gz` (not observable from this repo;
+  `odd/tasks/cutver-homebrew-tap-automation.md:19-21` records the steps as tag-driven).
+- **T9 — crates.io: decide, then execute.** (S6) `cutver.toml:57` runs `cargo publish` inside
+  `cutver publish`, so **every** prerelease run burns a version permanently. The two honest options are in
+  D4. Whichever wins, `publish-crate.yml:38` needs no change (it seds any version string and lets the API
+  refuse a duplicate), and the refusal path must be observed once so a re-run of a doomed alpha fails with
+  a readable message rather than a mystery.
+- **T10 — Cut `0.22.0-alpha.1` for real, then `beta.1`, then `rc.1`, then promote.** (S2, S3) Four
+  dispatches: `dry_run=true` first to read the plan for `bump=minor channel=alpha`, then the real one, then
+  a patch-level alpha, then `--channel beta`, then `--channel rc`, then `--channel stable` to promote
+  `0.22.0-rc.N` to `0.22.0`. Record each run verbatim in `## Log`, the way phase 5's L11 recorded the
+  promotion in a scratch repository — except this time on the real repository, and say plainly what each run
+  published to crates.io, GitHub, GHCR and the tap.
+- **T11 — Simplify only what a landed phase took over.** (S4) After T10, delete a job or a step only when
+  the tool now owns it, and cite the phase that landed it in the commit message. Each deletion is its own
+  commit and its own test update, because `tests/release_pipeline_contract.rs:20` (`JOBS`),
+  `:22` (`VERIFIED_BEFORE_PUBLISHING`), `:571-585`, `:617-650` and `:710-846` pin the current shape
+  literally. If nothing can be deleted honestly, this task reports "nothing yet" — that is a valid outcome
+  and preferable to a shorter YAML that proves nothing.
+
+## Decisions
+
+Recommendations, not accepted decisions. T2 exists because four of them are genuinely the maintainer's.
+
+- **D1 — Order.** Phase-5 debts first (`odd/tasks/phase5-debt-payment.md`, T1-T3 are cheap and independent),
+  then this document from T1. T6 and T5 are the two that change shipped behaviour; they come before the
+  workflow consumes the channel, because a workflow that passes `--channel` while `v0` still follows alphas
+  would publish a broken default on the first run.
+- **D2 — Version choice: `0.22.0`, prereleased as `alpha → beta → rc → stable`.** Not a patch on `0.21`;
+  the pipeline change is a feature (`.github` surface plus a tool behaviour change), so `minor` is the
+  honest level, and the ladder is what proves promotion. **Accepted 2026-11-25** (:«de ahora en adelante
+  las versiones las lanzaremos con escaleras»).
+- **D3 — The floating major tag, container `latest`, the Homebrew tap and the Scoop bucket are
+  stable-only.** A prerelease publishes exactly its own version everywhere. This is the only rule that keeps
+  `cutver/setup`'s `version: latest` default from installing an alpha, and it is why T5-T8 are one decision
+  rather than four. **Accepted in full on 2026-11-25**: Scoop first («a scoop solo estables»), then all
+  four surfaces — a prerelease publishes exactly its own version everywhere. See L8.
+- **D4 — crates.io: publish the prereleases.** Recommended, for one reason: the crate is the surface under
+  test, and a channel that skips it would leave `cargo publish` inside `cutver publish` unexercised exactly
+  where `--resume`'s attestation logic lives. The cost is named in S6 — a broken alpha can be yanked, never
+  deleted. The alternative (skip the crate step on prerelease, ship binaries only) is cheaper to undo and
+  proves less; if the maintainer picks it, T9 becomes a gate in `cutver.toml` and D4 is rewritten.
+  **Measured viable on 2026-11-25** — the evidence is L8 — and **accepted the same day**: T9 publishes
+  `cargo publish` output on every channel, permanence cost included.
+- **D5 — Simplification is evidence, never a line-count target.** S4 quotes #326's own words; T11 is
+  therefore allowed to end with "nothing to delete yet". A workflow shrunk by guessing is how a release
+  loses a gate.
+- **D6 — The issue body is corrected before the plan is planned from.** T1 first: right now #326 says gaps
+  6 and 7 are open, which is false, and a plan built on a false table is the defect phase 5 spent L3
+  fixing once already.
+
+## Unknowns to resolve before T5, T8 and T9
+
+Each is one measured answer away, and none needs a decision:
+
+1. **Does crates.io treat `0.22.0-alpha.1` as the crate's newest version?** Resolve by publishing a
+   prerelease of a throwaway crate, or by reading the registry's documented semantics — do not assume.
+2. **Does `github-publish-0.2.1.wasm` accept a prerelease/latest parameter?** Its source lives in
+   `cutver/plugins`, outside this repository (`cutver.toml:66-94` pins the digest). Resolve by reading the
+   plugin's manifest/PDK surface, not by guessing from this side.
+3. **How does the tap derive `version` from a prerelease tarball name?** Not observable here; the answer
+   decides whether T8 is a gate or a rename.
+
+## Log
+
+**L1.** «Para cuando vayamos a simplificar el workflow de este repo como lo dejamos guardado también
+implementaremos los nuevos canales para ahora sí poder lanzar versiones alpha, betas, rc y cuando esté todo
+pulido, las stables, porque hasta la v0.21.0 que lanzamos hace unos días todas son stables»
+
+**L2. What "como lo dejamos guardado" resolves to.** Not a document in `odd/tasks/`, not an ADR, not a
+memory entry: the recorded plan is **issue #326's own body**, «feat(ci): make the release pipeline an
+artifact instead of a workflow», whose local copy is the untracked `.git/issue-ci-native.md`. Its `## What`
+carries the measurement this document's S5 repeats (1041 lines, 64 steps) and its `## Sequencing` is the
+phase list. `odd/tasks/cutver-issue-258-260-release-surface.md:41-43` records the opposite, older decision —
+delete a second workflow rather than fold one into a reusable one — so nothing in the tree ever promised to
+shrink `release.yml` by itself.
+
+**L3. The tension this document had to resolve, and how.** #326 explicitly says the workflow "stays the
+reference consumer" and that shortening it "is evidence that the phases landed, not a deliverable in
+itself" (`.git/issue-ci-native.md:98`), while the maintainer's request names simplification as a goal. Both
+are kept: the request sets the destination, #326's disclaimer constrains the method, and D5 makes T11
+report "nothing yet" as a valid result. Nothing here deletes a gate to look tidy.
+
+**L4. The nine measured blockers that separate `--channel` from a real alpha** (explorer sweep against
+`cec818e`, each with the line that proves it): no `channel` dispatch input (`release.yml:4-20,141-146`); no
+`channel` step output (`src/cli/ci/fields.rs:17-25`); the promotion step marks nothing as prerelease and
+nothing as not-latest (`release.yml:787`, pinned by `tests/release_pipeline_contract.rs:679-697`); the
+floating major follows any target (`cutver.toml:22`, `src/bump/plan.rs:301`, `src/bump/plan/resolve.rs:54-56`);
+container rules emit `latest`/`major` for any release (`container.yml:4-5,303-308,328-331`); Homebrew and
+Scoop are unconditional (`release.yml:802-808,957`); `cargo publish` runs on every publish (`cutver.toml:57`);
+and two contract test files pin the workflow's current shape literally, so any change lands with them
+(`tests/release_pipeline_contract.rs`, `tests/release_metadata_ownership.rs:50-77,114`).
+
+**L5. What is already channel-agnostic, so no task wastes a line on it.** Changelog headings survive a
+prerelease (`src/changelog/update.rs:97`, parser prefix-strip at `src/changelog/extract/parser.rs:136-153`,
+`changelog latest` at `src/cli/runner/changelog.rs:80-90`); `doctor --check-changelog` is string-based
+(`src/bump/exec/doctor.rs:139-152`); the notes path is tag-driven (`release.yml:184`, `.github/templates/`);
+`scripts/check.sh` parses no version; `ci.yml` has no tag trigger; `publish-crate.yml` and `publish-pdk.yml`
+need no change; `tests/source_line_budget.rs` governs `src/**`, not YAML.
+
+**L6. What «continuemos» must be read as, for this document.** «continuemos» still means the phase-5 debts
+first (`odd/tasks/phase5-debt-payment.md`). This document starts at T1 only when the maintainer says so
+explicitly, or after the debts close — and T2's four answers are owed before T3 writes a line of workflow.
+
+**L7.** T1 done on 2026-11-25, by maintainer authorization («crea el issue» → "Corregir la tabla de estado
+del #326"), and it went further than the task asked because the evidence arrived with the phase-5 debt
+branch (#398): the table now marks gaps **2 and 5 shipped** (they were "not verified in this pass"), **6 and
+7 shipped in phase 5**, and **8 and 9 open**, with `path:line` evidence in each row; the three
+`NOT RE-CHECKED` headings became `SHIPPED`/`OPEN`; gap 2 and gap 5 got a `Correction (2026-11-25)` block
+like gap 6's; gap 7's correction records the finding that a `publish-<n>` attestation **authorizes** a repeat
+rather than recording one, so a crate that already went out is finished by the upload and the promotion, not
+by attesting a resume; and `## Sequencing` is a record with phases 1-5 done and phase 6 as the only open
+work. The reversal ADR-0004 → ADR-0005 stays as the record. Nothing else in the body changed.
+
+`gh issue view 326` is the state to plan from; T2 (the four decisions) is now the next step, and no code in
+this document has been written.
+
+**L8. D2 accepted, D3 accepted for Scoop, and unknown 1 measured: prereleases on crates.io are viable.**
+Maintainer, verbatim: «Sí, de ahora en adelante las versiones las lanzaremos con escaleras, a scoop solo
+estables y dime si es viable prereleases a crates.io?»
+
+**Verified, not assumed (2026-11-25).**
+
+- **Cargo never selects a prerelease unless the requirement asks for one.** The Cargo Book's pre-release
+  section states both halves: a prerelease is not matched by a default requirement, and "`cargo install`
+  will avoid pre-releases unless explicitly asked to install one"
+  (`doc.rust-lang.org/cargo/reference/specifying-dependencies.html`); the resolver chapter repeats
+  "Cargo doesn't automatically select pre-release versions"
+  (`/cargo/reference/resolver.html#pre-releases`), and RFC 3493 states the rule as "always favours selecting
+  stable versions over pre-release versions". The same page adds the property the ladder needs: "Cargo will
+  also upgrade automatically to semver-compatible released versions from prereleases" — so `0.22.0`
+  arriving lifts every `0.22.0-alpha.1` consumer on its next resolve.
+- **crates.io already carries prereleases and distinguishes them.** Live API, `GET /api/v1/crates/<name>`:
+  `leptos` returns `max_version = 0.9.0-rc1` with `max_stable_version = 0.8.23`; `dioxus`
+  `0.8.0-alpha.3` / `0.7.10`; `rocket` `0.6.0-rc.1` / `0.5.4`. A consumer that wants stable reads the
+  stable field; a consumer that wants the edge names the prerelease. Nothing about a prerelease hides the
+  stable version from a default requirement.
+- **docs.rs does not follow the prerelease.** `docs.rs/leptos/latest` renders **0.8.23** while `0.9.0-rc1`
+  is the newest version; the prerelease keeps its own version path. So a `cutver-pdk` prerelease does not
+  hijack the documented surface.
+- **`cargo install cutver` is unaffected**, per the same Cargo Book sentence, so a published alpha does not
+  become what `cargo install` gives a stranger.
+- **The cost is permanence, and it is the one we already named.** A crates.io publish is permanent and the
+  code cannot be deleted; `cargo yank` removes a version from resolution for new projects but leaves it
+  downloadable (`doc.rust-lang.org/cargo/commands/cargo-yank.html`). Consequence for the ladder: a broken
+  alpha costs a permanent artifact under a version number nobody will reuse — not a yank of anything a
+  consumer already resolved, because no default requirement ever picked it.
+
+**What this means for D4.** Viable, and the reason to do it stands on its own: the crate is the surface
+under test, and skipping crates.io on a prerelease would leave `[publish].commands` — the `cargo publish`
+that `--resume` must not repeat without a `publish-<n>` attestation — unexercised on exactly the channel
+that is supposed to prove the ladder. One consequence to write into the guide when T9 lands: a
+`cutver-pdk` prerelease is opt-in by exact requirement (`cutver-pdk = "= 0.3.0-alpha.1"`), because `"0.3"`
+will not match it — which is the property that keeps plugin authors stable.
+
+**D3 closed the same day, in full.** Asked which of the other three surfaces follow the same rule, the
+maintainer chose all four, so the floating major tag, container `latest`, the Homebrew tap and the Scoop
+bucket are stable-only and a prerelease publishes exactly its own version everywhere. That is the only
+shape in which `uses: cutver/setup@v0` and its `version: latest` default cannot receive an alpha, which was
+the hazard D3 existed for.
+
+**D4 accepted too**, so all four decisions are answered and T2 is complete: per T2's own text, T3 onward
+runs without another question. What that acceptance obliges is worth restating once, because it is
+irreversible: the crate half now publishes on every channel, so the first alpha leaves a permanent
+`0.22.0-alpha.1` on crates.io that can be yanked and never deleted. It is the price of exercising the
+`publish-<n>` attestation path on the channel that is meant to prove the ladder.

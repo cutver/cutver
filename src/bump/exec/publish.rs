@@ -23,6 +23,7 @@ use crate::config::gates::{self, GateName};
 use crate::git;
 use crate::git::ops::{tag_force_push_args, tag_push_args};
 use crate::plugin::PluginManager;
+use crate::semver_bump::{self, Channel};
 
 mod context;
 mod post_release;
@@ -130,6 +131,15 @@ pub struct PublishSummary {
     /// of rebuilding the manager to name them (#326 D2).
     pub post_release_left_alone: Vec<String>,
     pub dry_run: bool,
+}
+
+impl PublishSummary {
+    /// The `Stable-only` line this run prints when the floating major tag it left alone was a
+    /// deliberate skip (#326 T6): the rule and its wording stay beside the function that decides.
+    pub fn floating_tag_skipped(&self, config: &Config) -> Option<String> {
+        let version: Version = self.tag.strip_prefix(&config.git.tag_prefix)?.parse().ok()?;
+        floating_tag(config, &version).skipped
+    }
 }
 
 /// Publishes a prepared release: tag, tag push, floating major tag, `[publish].commands` and the
@@ -308,14 +318,45 @@ fn push_release_tag(scope: &PublicationScope<'_>, pushes: &mut PushLog) -> Resul
     Ok(())
 }
 
+/// What the closing phase does about the floating major tag: the tag it moves, or the line saying why
+/// it deliberately moves none (#326 T6). The plan carries the same shape, so both trees speak alike.
+struct Floating {
+    tag: Option<String>,
+    skipped: Option<String>,
+}
+
+/// The floating major tag rule, on the closing side (#326 T6, ADR-0005): **stable-only**. The plan
+/// decides what it reports; `cutver publish` is a separate process that reads no plan, so it answers
+/// from the version it publishes, and a prerelease publishes exactly its own version.
+fn floating_tag(config: &Config, version: &Version) -> Floating {
+    let named = git::tag_name(&config.git.tag_prefix, &version.major.to_string());
+    if !config.git.floating_major_tag {
+        return Floating {
+            tag: None,
+            skipped: None,
+        };
+    }
+    if semver_bump::channel_of(version) == Channel::Stable.as_str() {
+        return Floating {
+            tag: Some(named),
+            skipped: None,
+        };
+    }
+    Floating {
+        tag: None,
+        skipped: Some(format!(
+            "the floating major tag '{named}' is not moved: {version} is a prerelease, and that tag is stable-only (ADR-0005)"
+        )),
+    }
+}
+
 /// Moves the floating major tag and force-pushes it, in that order, and only once the release push
 /// has succeeded. Moving it before the push is what orphaned `v0` in issue #263. The force refspec
 /// lives on this path alone (Pillar II.2).
 fn handle_floating_tag(scope: &PublicationScope<'_>, pushes: &mut PushLog) -> Result<Option<String>, Error> {
-    if !scope.config.git.floating_major_tag {
+    let Some(f_tag) = floating_tag(scope.config, scope.version).tag else {
         return Ok(None);
-    }
-    let f_tag = git::tag_name(&scope.config.git.tag_prefix, &scope.version.major.to_string());
+    };
     git::update_floating_tag(scope.repo, &f_tag, "HEAD", scope.dry_run).map_err(|source| Error::FloatingTag {
         tag: f_tag.clone(),
         commit: scope.commit.to_string(),

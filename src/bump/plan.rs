@@ -47,7 +47,7 @@ mod tests;
 use self::finish::{PlanArtifact, PlanGate};
 use self::guards::{branch_blocker, collision_blocker, dirty_tree_blocker, one_line, undeclared_compatibility};
 pub(crate) use self::request::{ComputeRequest, PlanMode};
-use self::resolve::resolve_next_version;
+use self::resolve::{floating_tag, resolve_next_version};
 /// Everything one release decides, plus the document `cutver plan` prints.
 ///
 /// The keys and their order are the contract of `cutver plan --json` (#326 S2); the fields below the
@@ -65,6 +65,10 @@ pub(crate) struct ReleasePlan {
     pub(crate) next_version: Version,
     pub(crate) tag: String,
     pub(crate) floating_tag: Option<String>,
+    /// Why this release deliberately moves no floating major tag, for the tree to print instead of a
+    /// line that disappears (#326 T6). Never serialized: `plan --json` keeps the key list it had.
+    #[serde(skip)]
+    pub(crate) floating_tag_skipped: Option<String>,
     /// The commit the release would be cut from, read from `HEAD`.
     pub(crate) commit: String,
     pub(crate) branch: Option<String>,
@@ -298,8 +302,7 @@ impl ReleasePlan {
         } else {
             (String::new(), None)
         };
-        let floating_tag = (config.git.floating_major_tag && !no_op)
-            .then(|| git::tag_name(&config.git.tag_prefix, &next.major.to_string()));
+        let floating = floating_tag(config, &next, no_op);
 
         Ok(Self {
             read_only: true,
@@ -307,7 +310,8 @@ impl ReleasePlan {
             current_version: current,
             next_version: next,
             tag,
-            floating_tag,
+            floating_tag: floating.tag,
+            floating_tag_skipped: floating.skipped,
             commit,
             branch,
             commit_message,

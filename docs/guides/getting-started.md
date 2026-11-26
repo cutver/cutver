@@ -156,10 +156,11 @@ a version that is already a prerelease — there is no separate promotion verb. 
 The header names the rung the run leaves and the one it lands on, so approving a promotion is not
 reading suffixes by eye. `cutver bump --channel stable` performs it, and what it produces is an ordinary
 release: the tag is `v0.3.0` with no suffix; with `[git] floating_major_tag = true` the floating major
-tag moves onto that commit exactly as it moves for a release cut without a channel; and the entry
-prepended is the release's own — `## [v0.3.0]` under the default heading, which renders the release tag
-rather than the suffix it promoted from — while the `v0.3.0-rc.1` entry stays where it is, because the
-run prepends one entry and rewrites none.
+tag moves onto that commit exactly as it moves for a release cut without a channel, because both are
+stable releases (a prerelease publishes exactly its own version and moves no floating tag — ADR-0005);
+and the entry prepended is the release's own — `## [v0.3.0]` under the default heading, which renders the
+release tag rather than the suffix it promoted from — while the `v0.3.0-rc.1` entry stays where it is,
+because the run prepends one entry and rewrites none.
 
 *Gotcha*: on a prerelease the level is ignored, so `cutver bump major --channel stable` on `0.3.0-rc.1`
 promotes to `0.3.0`. On an already-stable version it is not ignored: `cutver bump minor --channel stable`

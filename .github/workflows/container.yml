@@ -300,13 +300,21 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          # A prerelease publishes exactly its own version (ADR-0005, D3). `{{version}}` stays
+          # unconditional, because that is the one tag a prerelease must carry; every other rule
+          # carries `enable=` on the release's own flag, which `docker/metadata-action` evaluates
+          # per rule and skips when false. `latest` keeps its guard and gains the condition after it,
+          # parenthesised because `||` must bind before the `&&`. On `workflow_dispatch` and on a
+          # `main` push there is no release payload, so `github.event.release` is absent, an absent
+          # property is null, and null is falsy — `!null` is true — so those two paths emit exactly
+          # the tags they emitted before this gate.
           tags: |
             type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-            type=raw,value=latest,enable=${{ github.event_name == 'release' || github.ref == 'refs/heads/main' }}
+            type=semver,pattern={{major}}.{{minor}},enable=${{ !github.event.release.prerelease }}
+            type=semver,pattern={{major}},enable=${{ !github.event.release.prerelease }}
+            type=raw,value=latest,enable=${{ (github.event_name == 'release' || github.ref == 'refs/heads/main') && !github.event.release.prerelease }}
             type=ref,event=branch
-            type=sha
+            type=sha,enable=${{ !github.event.release.prerelease }}
 
       - name: Retag the smoked CLI digest into the release tags
         env:
@@ -333,10 +341,13 @@ jobs:
           # default tag.
           flavor: |
             latest=false
+          # Same rule for the plugin image: it owns no bare `{{major}}` tag, but the floating `:plugins`
+          # and a partial-version tag are stable-only too. See the CLI image's comment for why an absent
+          # release payload evaluates as stable.
           tags: |
             type=semver,pattern={{version}}-plugins
-            type=semver,pattern={{major}}.{{minor}}-plugins
-            type=raw,value=plugins
+            type=semver,pattern={{major}}.{{minor}}-plugins,enable=${{ !github.event.release.prerelease }}
+            type=raw,value=plugins,enable=${{ !github.event.release.prerelease }}
 
       - name: Retag the smoked plugins digest into the release tags
         env:

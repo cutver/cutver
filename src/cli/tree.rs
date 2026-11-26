@@ -226,11 +226,24 @@ fn child_indent(is_last: bool) -> &'static str {
     if is_last { "    " } else { "│   " }
 }
 
-fn collect_tree_sections(summary: &Summary, theme: &Theme) -> Vec<Vec<String>> {
+/// The tree's own name for a deliberate stable-only skip, so the plan and the publish outcome call it
+/// the same thing (#326 T6).
+pub(crate) const STABLE_ONLY: &str = "Stable-only";
+
+/// The same sections, plus one trailing section for a deliberate skip the run has to report.
+///
+/// The `No-op` section is the precedent: a run that does something other than the obvious says so in
+/// its own section, instead of leaving a reader to infer why a line is missing (#326 D1a, T6).
+fn collect_tree_sections_with(
+    summary: &Summary,
+    theme: &Theme,
+    skip: Option<(&'static str, &str)>,
+) -> Vec<Vec<String>> {
     let has_publish = summary.publish_push
         || summary.publish_push_command.is_some()
         || !summary.publish_commands.is_empty()
         || summary.deferred;
+    let last = skip.is_none();
 
     let mut sections = Vec::new();
     if summary.no_op() {
@@ -245,9 +258,12 @@ fn collect_tree_sections(summary: &Summary, theme: &Theme) -> Vec<Vec<String>> {
     if summary.changelog.is_some() {
         sections.push(render_changelog_node(summary, theme, false));
     }
-    sections.push(render_git_node(summary, theme, !has_publish));
+    sections.push(render_git_node(summary, theme, last && !has_publish));
     if has_publish {
-        sections.push(render_publish_node(summary, theme, true));
+        sections.push(render_publish_node(summary, theme, last));
+    }
+    if let Some((title, line)) = skip {
+        sections.push(render_section_with_items(title, &[line.to_string()], true));
     }
     sections
 }
@@ -268,8 +284,13 @@ fn render_no_op_node(summary: &Summary, theme: &Theme, is_last: bool) -> Vec<Str
 
 /// Renders the complete release plan tree string.
 pub fn render_release_plan(summary: &Summary, theme: &Theme) -> String {
+    render_release_plan_with(summary, theme, None)
+}
+
+/// The same tree, plus the one trailing section a deliberate skip adds (#326 T6).
+fn render_release_plan_with(summary: &Summary, theme: &Theme, skip: Option<(&'static str, &str)>) -> String {
     let mut out = format_plan_header(summary, theme);
-    for sec in collect_tree_sections(summary, theme) {
+    for sec in collect_tree_sections_with(summary, theme, skip) {
         for line in sec {
             out.push('\n');
             out.push_str(&line);
@@ -301,7 +322,10 @@ pub(crate) fn render_plan(plan: &ReleasePlan, theme: &Theme) -> String {
     // readers, and a no-op is not a release that happens to skip a tag (#326 D1a).
     let mut summary = plan.summary();
     summary.tag_skipped = plan.no_op();
-    let mut out = render_release_plan(&summary, theme);
+    // A deliberate skip is a section, not a missing line: this is the floating major tag a prerelease
+    // leaves where the last stable release put it (#326 T6).
+    let skip = plan.floating_tag_skipped.as_deref().map(|line| (STABLE_ONLY, line));
+    let mut out = render_release_plan_with(&summary, theme, skip);
     out.push_str(&format!(
         "\n\n{}",
         theme.muted("Nothing was written, staged, committed, tagged or pushed.")

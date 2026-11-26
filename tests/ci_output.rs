@@ -202,8 +202,8 @@ fn no_ci_keeps_doctors_drift_exit_code_and_fills_no_sink() {
     assert!(!sinks.summary().exists(), "`--no-ci` writes no summary");
 }
 
-/// S2, S3: a finished `bump` feeds both sinks: the five keys the workflow extracts today, and a
-/// bounded block saying what was released.
+/// S2, S3: a finished `bump` feeds both sinks: the keys the workflow extracts today, `channel`
+/// included, and a bounded block saying what was released.
 #[test]
 fn bump_fills_both_sinks_with_what_it_released() {
     let guard = repo("sinks-bump", TOML);
@@ -216,12 +216,40 @@ fn bump_fills_both_sinks_with_what_it_released() {
     let commit = head_commit(fixture);
     assert_eq!(
         sinks.output_text(),
-        format!("released=true\ndeferred=false\nversion=1.3.0\ntag=v1.3.0\ncommit={commit}\n")
+        format!("released=true\ndeferred=false\nversion=1.3.0\nchannel=stable\ntag=v1.3.0\ncommit={commit}\n")
     );
     assert_eq!(
         sinks.summary_text(),
         format!(
-            "### cutver bump\n\n- released: `true`\n- deferred: `false`\n- version: `1.3.0`\n- tag: `v1.3.0`\n- commit: `{commit}`\n"
+            "### cutver bump\n\n- released: `true`\n- deferred: `false`\n- version: `1.3.0`\n- channel: `stable`\n- tag: `v1.3.0`\n- commit: `{commit}`\n"
+        )
+    );
+}
+
+/// S6: a prerelease reports the channel its version carries, so a downstream job reads `channel`
+/// instead of splitting `version` apart. This is the alpha the ladder's first rung cuts.
+#[test]
+fn a_prerelease_bump_reports_the_channel_its_version_carries() {
+    let guard = repo("sinks-bump-alpha", TOML);
+    let fixture = guard.fixture();
+    let sinks = Sinks::new("sinks-bump-alpha");
+
+    let out = with_ci(&fixture.dir, &["bump", "minor", "--channel", "alpha"], &sinks);
+
+    assert_eq!(out.status.code(), Some(0), "stderr:\n{}", stderr_of(&out));
+    let commit = head_commit(fixture);
+    assert_eq!(
+        sinks.output_text(),
+        format!(
+            "released=true\ndeferred=false\nversion=1.3.0-alpha.1\nchannel=alpha\ntag=v1.3.0-alpha.1\ncommit={commit}\n"
+        ),
+        "the version carries its own channel: `channel=alpha` is the field that keeps a consumer from \
+         re-parsing the suffix it reads beside it"
+    );
+    assert_eq!(
+        sinks.summary_text(),
+        format!(
+            "### cutver bump\n\n- released: `true`\n- deferred: `false`\n- version: `1.3.0-alpha.1`\n- channel: `alpha`\n- tag: `v1.3.0-alpha.1`\n- commit: `{commit}`\n"
         )
     );
 }
@@ -253,6 +281,7 @@ fn a_no_op_bump_fills_both_sinks_with_no_release() {
 - released: `false`
 - deferred: `false`
 - version: `1.2.3`
+- channel: `stable`
 - tag: `v1.2.3`
 "
     );
@@ -261,6 +290,7 @@ fn a_no_op_bump_fills_both_sinks_with_no_release() {
         "released=false
 deferred=false
 version=1.2.3
+channel=stable
 tag=v1.2.3
 "
     );
@@ -284,13 +314,13 @@ fn a_dry_run_omits_the_commit_it_does_not_have() {
     assert_eq!(out.status.code(), Some(0), "stderr:\n{}", stderr_of(&out));
     assert_eq!(
         sinks.output_text(),
-        "released=false\ndeferred=false\nversion=1.3.0\ntag=v1.3.0\n"
+        "released=false\ndeferred=false\nversion=1.3.0\nchannel=stable\ntag=v1.3.0\n"
     );
 }
 
-/// S2, S3: `plan` appends its three keys after what the file already held, and writes the brief.
+/// S2, S3: `plan` appends its keys after what the file already held, and writes the brief.
 #[test]
-fn plan_appends_its_three_keys_and_writes_the_brief() {
+fn plan_appends_its_four_keys_and_writes_the_brief() {
     let guard = repo("sinks-plan", TOML);
     let fixture = guard.fixture();
     let sinks = Sinks::new("sinks-plan");
@@ -302,12 +332,12 @@ fn plan_appends_its_three_keys_and_writes_the_brief() {
     let commit = head_commit(fixture);
     assert_eq!(
         sinks.output_text(),
-        format!("earlier=kept\nnext_version=1.3.0\ntag=v1.3.0\ncommit={commit}\n")
+        format!("earlier=kept\nnext_version=1.3.0\nchannel=stable\ntag=v1.3.0\ncommit={commit}\n")
     );
     assert_eq!(
         sinks.summary_text(),
         format!(
-            "### cutver plan\n\n- level: `minor`\n- next_version: `1.3.0`\n- tag: `v1.3.0`\n- commit: `{commit}`\n- blockers: `0`\n"
+            "### cutver plan\n\n- level: `minor`\n- next_version: `1.3.0`\n- channel: `stable`\n- tag: `v1.3.0`\n- commit: `{commit}`\n- blockers: `0`\n"
         )
     );
 }
@@ -361,7 +391,7 @@ fn publish_fills_both_sinks_with_what_it_published() {
     assert_eq!(
         sinks.output_text(),
         format!(
-            "released=true\ndeferred=true\nversion=1.3.0\ntag=v1.3.0\ncommit={commit}\n\
+            "released=true\ndeferred=true\nversion=1.3.0\nchannel=stable\ntag=v1.3.0\ncommit={commit}\n\
              tag=v1.3.0\ncommit={commit}\ntag_pushed=false\nfloating_tag_moved=true\npublish_commands_run=1\n"
         ),
         "the closing phase appends its own lines after the preparing bump's, never truncating them"
@@ -369,7 +399,7 @@ fn publish_fills_both_sinks_with_what_it_published() {
     assert_eq!(
         sinks.summary_text(),
         format!(
-            "### cutver bump\n\n- released: `true`\n- deferred: `true`\n- version: `1.3.0`\n- tag: `v1.3.0`\n- commit: `{commit}`\n\
+            "### cutver bump\n\n- released: `true`\n- deferred: `true`\n- version: `1.3.0`\n- channel: `stable`\n- tag: `v1.3.0`\n- commit: `{commit}`\n\
              ### cutver publish\n\n- tag: `v1.3.0`\n- commit: `{commit}`\n- tag_pushed: `false`\n- floating_tag_moved: `true`\n- publish_commands_run: `1`\n"
         )
     );

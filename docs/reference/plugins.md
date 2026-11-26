@@ -4,16 +4,18 @@
 events to sandboxed WebAssembly plugins. `cutver plugin` installs one from the registry index, verifies
 it, and writes the configuration entry that makes `cutver` load it.
 
-> **Gotcha**: plugins are an opt-in build. The default `cutver` binary and `:latest` image are lean:
-> no `plugin` command and no WebAssembly runtime. Use a published `cutver-plugins-*` archive or the
-> `:plugins` image; the fallback for older versions is `--features plugins`.
+> **Gotcha**: the runtime is a build flag, not a config option, and `cargo install cutver` is the lean
+> build: no `plugin` command, no WebAssembly runtime. Every package manager, the `:plugins` image and
+> the `cutver-plugins-*` archives ship the runtime; no flag makes it appear in a binary compiled
+> without it.
 
 ---
 
 ## Quick Path
 
-1. Get a plugin-enabled binary from a `cutver-plugins-*` archive or the `:plugins` image (older
-   versions: `cargo install cutver --features plugins`).
+1. Get a binary that links the runtime: `brew install Row0902/tap/cutver`, `scoop install cutver`, the
+   `:plugins` image, or `cargo install cutver --features plugins` (older versions: a
+   `cutver-plugins-*` archive).
 2. Install the official `github-releases` plugin:
    ```bash
    cutver plugin add github-releases
@@ -29,27 +31,24 @@ it, and writes the configuration entry that makes `cutver` load it.
    cutver plugin add github-releases --dry-run
    ```
 
-Writing your own plugin — scaffolding the crate, exporting `invoke`, building for `wasm32-wasip1`
-and publishing the digest a registry entry needs — is covered in
-[Writing a Plugin](../guides/plugin-authoring.md).
+Writing your own plugin — scaffolding the crate, exporting `invoke`, building for `wasm32-wasip1`,
+and publishing the digest an entry needs — is in [Writing a Plugin](../guides/plugin-authoring.md).
 
 ## Building with Plugin Support
 
-Plugin support ships as its own artifact, so most users never build from source. Releases carry
-`cutver-plugins-<version>-<slug>` archives beside the lean ones, and the `:plugins` image
-(`ghcr.io/cutver/cutver:<version>-plugins`, also `:<major>.<minor>-plugins`) is the container equivalent.
+Plugin support ships inside the packaged build, so most users never build from source. Releases carry
+`cutver-plugins-<version>-<slug>` archives beside the lean `cutver-<version>-<slug>` ones; the
+`:plugins` image is the container equivalent (`:<version>-plugins`, also `:<major>.<minor>-plugins`).
 
-| Build | Command | Result |
+| Build | How to get it | Result |
 | :--- | :--- | :--- |
-| Lean (default) | `cargo install cutver` | No `plugin` command and no plugin runtime; materially smaller than the plugin build. |
-| Plugin-enabled archive | `cutver-plugins-<version>-<slug>` or the `:plugins` image | `plugin` command and the WebAssembly runtime; larger, because that runtime is linked in. |
-| Plugin-enabled, Homebrew | `brew install Row0902/tap/cutver-plugins` | Same as above; installs the `cutver` binary. |
-| Plugin-enabled, Scoop | `scoop bucket add row https://github.com/Row0902/scoop-bucket && scoop install cutver-plugins` | Same as above, on Windows. |
-| Plugin-enabled, pre-artifact versions | `cargo install cutver --features plugins` | Same build, compiled locally. |
+| Packaged, Homebrew or Scoop | `brew install Row0902/tap/cutver`, or `scoop install cutver` | `plugin` command and the WebAssembly runtime; larger, because that runtime is linked in. |
+| Plugin-enabled archive | `cutver-plugins-<version>-<slug>`, or the `:plugins` image | The same build, for a runner that downloads its binary directly. |
+| Lean | `cargo install cutver`, or the `cutver-<version>-<slug>` archive | No `plugin` command and no plugin runtime; materially smaller. |
+| From source, with the runtime | `cargo install cutver --features plugins` | Same build as the archives, compiled locally. |
 
 Both failure modes name the remedy, so a lean binary is never a dead end: `cutver plugin` fails closed
-with `--features plugins`, and loading a `[plugins.<name>]` entry at release time fails with the same
-instruction instead of a `runtime` setting that cannot help.
+with `--features plugins`, and a `[plugins.<name>]` entry fails at release time with that instruction.
 
 Sizes are per-target and change every release, so none is quoted here: the release workflow writes the
 bytes and MiB of every archive it uploads into that run's job summary, and the archives are on the
@@ -179,7 +178,7 @@ you are working on.
 
 | Symptom | Cause and remedy |
 | :--- | :--- |
-| `cutver plugin` reports the `plugins` feature is missing | Lean binary. Install or build with `--features plugins`. |
+| `cutver plugin` reports the `plugins` feature is missing | Lean binary. Install a packaged build, or build with `--features plugins`. |
 | `unresolvable plugin cache root` | Neither the override nor a home directory is set. Set `CUTVER_PLUGIN_CACHE_DIR`. |
 | `integrity check` on install | The artifact does not match the registry digest. Retry; if it persists, the release or the index is wrong. |
 | `plugin list` shows `mismatched` | The cached file changed after installation. Reinstall with `cutver plugin add <NAME> --force`. |

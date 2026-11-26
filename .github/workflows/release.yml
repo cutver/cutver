@@ -13,6 +13,23 @@ on:
           - patch
           - minor
           - major
+      # The ladder `cutver bump --channel` publishes on, as a closed choice: `alpha`, `beta` and `rc`
+      # append the channel and start its counter (`0.22.0` becomes `0.22.0-alpha.1`), and `stable`
+      # publishes the version itself, which is how `0.22.0-rc.1` is promoted to `0.22.0` (ADR-0005).
+      # Empty is the default and means "cut the version the level names", i.e. exactly what every
+      # dispatch before this input existed did; the empty option has to stay first so a dispatch
+      # nobody re-filled submits it rather than whichever channel happens to head the list.
+      channel:
+        description: "Prerelease channel (empty cuts the stable version)"
+        required: false
+        default: ""
+        type: choice
+        options:
+          - ""
+          - alpha
+          - beta
+          - rc
+          - stable
       dry_run:
         description: "Simulate the release without publishing or creating a release"
         required: false
@@ -35,6 +52,9 @@ jobs:
       released: ${{ steps.cutver.outputs.released }}
       version: ${{ steps.cutver.outputs.version }}
       commit: ${{ steps.cutver.outputs.commit }}
+      # The channel the run produced, reported by `cutver bump` itself. The publish job's promotion
+      # reads it to state the release state explicitly instead of re-deriving it from the tag.
+      channel: ${{ steps.cutver.outputs.channel }}
       # The render step owns this path, so the value is a constant: the action output that used to
       # carry it went away with the action.
       notes: RELEASE_NOTES.md
@@ -132,6 +152,11 @@ jobs:
       # `--defer-publish` is what keeps this job harmless: the bump commit and its branch push are
       # the only writes it performs. The tag, the registry and the release wait for `publish`.
       #
+      # The channel is appended to the same array only when the dispatch names one. An empty channel
+      # contributes no argument at all — not an empty `--channel ""` — so a dispatch that sets none
+      # runs the byte-identical command it ran before the input existed, and the ladder is opt-in.
+      # An empty argument would instead fail at parse time, after the release-profile build.
+      #
       # The step owns the job outputs. `cutver bump` appends `released`, `deferred`, `version`, `tag`
       # and `commit` to `$GITHUB_OUTPUT` itself (phase 4A of #326), so no step after this one parses a
       # report file and the release result has one owner. `--dry-run` reports `released=false`, which
@@ -142,6 +167,9 @@ jobs:
           args=(--defer-publish)
           if [ "${{ inputs.dry_run }}" = "true" ]; then
             args+=(--dry-run)
+          fi
+          if [ -n "${{ inputs.channel }}" ]; then
+            args+=(--channel "${{ inputs.channel }}")
           fi
           cutver bump "${{ inputs.bump || 'auto' }}" "${args[@]}"
           # Fail closed. Every downstream job is gated on `released`, so an output that is missing —
@@ -762,6 +790,7 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.release-token.outputs.token || secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.version.outputs.tag }}
+          CHANNEL: ${{ needs.version.outputs.channel }}
         run: |
           state=$(gh release view "$TAG" --json isDraft --jq 'if .isDraft then "draft" else "published" end')
           case "$state" in
@@ -784,7 +813,34 @@ jobs:
           # entry Cutver rendered (fed by `--notes-file` on `cutver publish`) and the title
           # `title_template` asked for. Passing either again gave the release a second owner — that
           # is how `title_template` once came out dead.
-          gh release edit "$TAG" --draft=false
+          #
+          # The channel decides the state, and both states are stated explicitly. GitHub enforces half
+          # of it by itself: "the latest release is the most recent non-prerelease, non-draft
+          # release", and a prerelease cannot be set as latest. What it does not enforce is that this
+          # draft is *marked*: it arrives marked only because the plugin derives the flag from the
+          # version it was handed (`github-publish` 0.2.1, `post_release.rs`), and nothing here pins
+          # that derivation. So the stable arm asks for Latest with a cleared prerelease mark, and the
+          # prerelease arm asks to stay marked and to never be Latest — which is what keeps
+          # `0.22.0-alpha.1` out of the slot `uses: cutver/setup@v0` resolves with `version: latest`.
+          #
+          # Both spellings are `gh release edit`'s documented boolean forms (`gh release edit --help`
+          # accepts `--draft[=true|false]`, `--prerelease[=true|false]`, `--latest[=true|false]`), so
+          # `--prerelease=false` is a value rather than a missing flag.
+          #
+          # An unknown channel fails closed. `cutver bump` always reports one, so an empty value means
+          # the tool wrote none: guessing Latest from here is how an alpha becomes the default install.
+          case "$CHANNEL" in
+            stable)
+              gh release edit "$TAG" --draft=false --prerelease=false --latest=true
+              ;;
+            alpha|beta|rc)
+              gh release edit "$TAG" --draft=false --prerelease --latest=false
+              ;;
+            *)
+              echo "::error::Refusing to promote $TAG: cutver bump reported channel '$CHANNEL', which decides no release state. Expected stable, alpha, beta or rc."
+              exit 1
+              ;;
+          esac
           gh release view "$TAG" --json isDraft,tagName --jq 'if .isDraft then error("release is still a draft after publishing") else "published \(.tagName)" end'
 
       - name: Generate distribution bot token
@@ -799,8 +855,19 @@ jobs:
           CUTVER_APP_ID: ${{ secrets.CUTVER_APP_ID }}
           CUTVER_APP_PRIVATE_KEY: ${{ secrets.CUTVER_APP_PRIVATE_KEY }}
 
+      # D3/S8: the tap and the bucket are stable-only, so a prerelease publishes no formula and no
+      # manifest. A skipped step shows as "skipped" in the run with no cause attached, which reads
+      # exactly like a missing token or a forgotten step, so a prerelease says it here instead.
+      - name: Say the package-manager update was skipped
+        if: needs.version.outputs.channel != 'stable'
+        run: |
+          echo "::notice::${{ needs.version.outputs.tag }} is a ${{ needs.version.outputs.channel }} prerelease: the Homebrew tap and the Scoop bucket are stable-only, so neither Formula/cutver.rb nor bucket/cutver.json was updated."
+
       - name: Update Homebrew tap formula
-        if: steps.bot-token.outputs.token != '' || env.HOMEBREW_TAP_TOKEN != ''
+        # D3: the tap is stable-only. A prerelease publishes no formula at all, and the notice step
+        # above says so; the token guard stays beside the channel one so a missing secret still skips
+        # this step instead of failing the release.
+        if: needs.version.outputs.channel == 'stable' && (steps.bot-token.outputs.token != '' || env.HOMEBREW_TAP_TOKEN != '')
         env:
           DIST_TOKEN: ${{ steps.bot-token.outputs.token || secrets.HOMEBREW_TAP_TOKEN }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
@@ -808,14 +875,17 @@ jobs:
           TAG="${{ needs.version.outputs.tag }}"
           VERSION="${TAG#v}"
 
-          # Extract SHA-256 hashes generated in dist/SHA256SUMS
-          SHA_MACOS_ARM=$(grep "cutver-${VERSION}-macos-arm64.tar.gz" dist/SHA256SUMS | awk '{print $1}')
-          SHA_MACOS_INTEL=$(grep "cutver-${VERSION}-macos-x86_64.tar.gz" dist/SHA256SUMS | awk '{print $1}')
-          SHA_LINUX_INTEL=$(grep "cutver-${VERSION}-linux-musl-x86_64.tar.gz" dist/SHA256SUMS | awk '{print $1}')
-          SHA_LINUX_ARM=$(grep "cutver-${VERSION}-linux-musl-arm64.tar.gz" dist/SHA256SUMS | awk '{print $1}')
+          # S8: `cutver` installs the plugin-enabled build. A package manager is the "just make it
+          # work" channel, and asking a user to know what a WASM plugin is before choosing a formula
+          # was a support question invented here. The lean build keeps shipping as a release asset,
+          # measured and smoked exactly as before — it is simply not what a formula gives you.
+          SHA_PLUGIN_MACOS_ARM=$(grep "cutver-plugins-${VERSION}-macos-arm64.tar.gz" dist/SHA256SUMS | awk '{print $1}')
+          SHA_PLUGIN_MACOS_INTEL=$(grep "cutver-plugins-${VERSION}-macos-x86_64.tar.gz" dist/SHA256SUMS | awk '{print $1}')
+          SHA_PLUGIN_LINUX_INTEL=$(grep "cutver-plugins-${VERSION}-linux-musl-x86_64.tar.gz" dist/SHA256SUMS | awk '{print $1}')
+          SHA_PLUGIN_LINUX_ARM=$(grep "cutver-plugins-${VERSION}-linux-musl-arm64.tar.gz" dist/SHA256SUMS | awk '{print $1}')
 
-          if [ -z "$SHA_MACOS_ARM" ] || [ -z "$SHA_MACOS_INTEL" ] || [ -z "$SHA_LINUX_INTEL" ] || [ -z "$SHA_LINUX_ARM" ]; then
-            echo "::error::Failed to resolve all required SHA-256 sums for Homebrew formula"
+          if [ -z "$SHA_PLUGIN_MACOS_ARM" ] || [ -z "$SHA_PLUGIN_MACOS_INTEL" ] || [ -z "$SHA_PLUGIN_LINUX_INTEL" ] || [ -z "$SHA_PLUGIN_LINUX_ARM" ]; then
+            echo "::error::Failed to resolve all required SHA-256 sums for the Homebrew formula"
             exit 1
           fi
 
@@ -830,23 +900,23 @@ jobs:
 
             on_macos do
               on_arm do
-                url "https://github.com/cutver/cutver/releases/download/${TAG}/cutver-${VERSION}-macos-arm64.tar.gz"
-                sha256 "${SHA_MACOS_ARM}"
+                url "https://github.com/cutver/cutver/releases/download/${TAG}/cutver-plugins-${VERSION}-macos-arm64.tar.gz"
+                sha256 "${SHA_PLUGIN_MACOS_ARM}"
               end
               on_intel do
-                url "https://github.com/cutver/cutver/releases/download/${TAG}/cutver-${VERSION}-macos-x86_64.tar.gz"
-                sha256 "${SHA_MACOS_INTEL}"
+                url "https://github.com/cutver/cutver/releases/download/${TAG}/cutver-plugins-${VERSION}-macos-x86_64.tar.gz"
+                sha256 "${SHA_PLUGIN_MACOS_INTEL}"
               end
             end
 
             on_linux do
               on_intel do
-                url "https://github.com/cutver/cutver/releases/download/${TAG}/cutver-${VERSION}-linux-musl-x86_64.tar.gz"
-                sha256 "${SHA_LINUX_INTEL}"
+                url "https://github.com/cutver/cutver/releases/download/${TAG}/cutver-plugins-${VERSION}-linux-musl-x86_64.tar.gz"
+                sha256 "${SHA_PLUGIN_LINUX_INTEL}"
               end
               on_arm do
-                url "https://github.com/cutver/cutver/releases/download/${TAG}/cutver-${VERSION}-linux-musl-arm64.tar.gz"
-                sha256 "${SHA_LINUX_ARM}"
+                url "https://github.com/cutver/cutver/releases/download/${TAG}/cutver-plugins-${VERSION}-linux-musl-arm64.tar.gz"
+                sha256 "${SHA_PLUGIN_LINUX_ARM}"
               end
             end
 
@@ -877,7 +947,9 @@ jobs:
           fi
 
       - name: Update Homebrew tap plugin formula
-        if: steps.bot-token.outputs.token != '' || env.HOMEBREW_TAP_TOKEN != ''
+        # D3/S8: one release of grace for the old name, and it publishes on stable only like every
+        # other package-manager step.
+        if: needs.version.outputs.channel == 'stable' && (steps.bot-token.outputs.token != '' || env.HOMEBREW_TAP_TOKEN != '')
         env:
           DIST_TOKEN: ${{ steps.bot-token.outputs.token || secrets.HOMEBREW_TAP_TOKEN }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
@@ -904,6 +976,12 @@ jobs:
             desc "Cut a release. Bump SemVer. Every project, every language (plugin-enabled build)"
             homepage "https://github.com/cutver/cutver"
             license "MIT"
+
+            # S8/D8: this formula is a shim for exactly one release. `cutver` now installs this same
+            # plugin-enabled build, so all that is left here is the name a script may still say. The
+            # removal is a future change on purpose: a formula that vanished in the release that
+            # deprecated it would break `brew install` for everyone who had not read the changelog.
+            deprecate! date: "2026-12-01", because: "cutver installs the same plugin-enabled build; this shim is removed in the next release"
 
             on_macos do
               on_arm do
@@ -955,7 +1033,8 @@ jobs:
           fi
 
       - name: Update Scoop bucket manifest
-        if: steps.bot-token.outputs.token != '' || env.HOMEBREW_TAP_TOKEN != ''
+        # D3: the bucket is stable-only, exactly like the tap above.
+        if: needs.version.outputs.channel == 'stable' && (steps.bot-token.outputs.token != '' || env.HOMEBREW_TAP_TOKEN != '')
         env:
           DIST_TOKEN: ${{ steps.bot-token.outputs.token || secrets.HOMEBREW_TAP_TOKEN }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
@@ -963,11 +1042,12 @@ jobs:
           TAG="${{ needs.version.outputs.tag }}"
           VERSION="${TAG#v}"
 
-          # Extract Windows SHA-256 hashes generated in dist/SHA256SUMS
-          SHA_WIN_X64=$(grep "cutver-${VERSION}-windows-x86_64.zip" dist/SHA256SUMS | awk '{print $1}')
-          SHA_WIN_ARM=$(grep "cutver-${VERSION}-windows-arm64.zip" dist/SHA256SUMS | awk '{print $1}')
+          # S8: `scoop install cutver` installs the plugin-enabled build, the same choice the formula
+          # above made: one build per package manager, and it is the functional superset.
+          SHA_PLUGIN_WIN_X64=$(grep "cutver-plugins-${VERSION}-windows-x86_64.zip" dist/SHA256SUMS | awk '{print $1}')
+          SHA_PLUGIN_WIN_ARM=$(grep "cutver-plugins-${VERSION}-windows-arm64.zip" dist/SHA256SUMS | awk '{print $1}')
 
-          if [ -z "$SHA_WIN_X64" ] || [ -z "$SHA_WIN_ARM" ]; then
+          if [ -z "$SHA_PLUGIN_WIN_X64" ] || [ -z "$SHA_PLUGIN_WIN_ARM" ]; then
             echo "::error::Failed to resolve all required Windows SHA-256 sums for Scoop manifest"
             exit 1
           fi
@@ -984,24 +1064,24 @@ jobs:
           data['version'] = '${VERSION}'
           data['architecture'] = {
               '64bit': {
-                  'url': 'https://github.com/cutver/cutver/releases/download/${TAG}/cutver-${VERSION}-windows-x86_64.zip',
-                  'hash': '${SHA_WIN_X64}',
-                  'extract_dir': 'cutver-${VERSION}-windows-x86_64'
+                  'url': 'https://github.com/cutver/cutver/releases/download/${TAG}/cutver-plugins-${VERSION}-windows-x86_64.zip',
+                  'hash': '${SHA_PLUGIN_WIN_X64}',
+                  'extract_dir': 'cutver-plugins-${VERSION}-windows-x86_64'
               },
               'arm64': {
-                  'url': 'https://github.com/cutver/cutver/releases/download/${TAG}/cutver-${VERSION}-windows-arm64.zip',
-                  'hash': '${SHA_WIN_ARM}',
-                  'extract_dir': 'cutver-${VERSION}-windows-arm64'
+                  'url': 'https://github.com/cutver/cutver/releases/download/${TAG}/cutver-plugins-${VERSION}-windows-arm64.zip',
+                  'hash': '${SHA_PLUGIN_WIN_ARM}',
+                  'extract_dir': 'cutver-plugins-${VERSION}-windows-arm64'
               }
           }
           data['autoupdate']['architecture'] = {
               '64bit': {
-                  'url': 'https://github.com/cutver/cutver/releases/download/v\$version/cutver-\$version-windows-x86_64.zip',
-                  'extract_dir': 'cutver-\$version-windows-x86_64'
+                  'url': 'https://github.com/cutver/cutver/releases/download/v\$version/cutver-plugins-\$version-windows-x86_64.zip',
+                  'extract_dir': 'cutver-plugins-\$version-windows-x86_64'
               },
               'arm64': {
-                  'url': 'https://github.com/cutver/cutver/releases/download/v\$version/cutver-\$version-windows-arm64.zip',
-                  'extract_dir': 'cutver-\$version-windows-arm64'
+                  'url': 'https://github.com/cutver/cutver/releases/download/v\$version/cutver-plugins-\$version-windows-arm64.zip',
+                  'extract_dir': 'cutver-plugins-\$version-windows-arm64'
               }
           }
 
@@ -1023,7 +1103,8 @@ jobs:
           fi
 
       - name: Generate Scoop bucket plugin manifest
-        if: steps.bot-token.outputs.token != '' || env.HOMEBREW_TAP_TOKEN != ''
+        # D3/S8: the deprecated shim, stable-only like the other three.
+        if: needs.version.outputs.channel == 'stable' && (steps.bot-token.outputs.token != '' || env.HOMEBREW_TAP_TOKEN != '')
         env:
           DIST_TOKEN: ${{ steps.bot-token.outputs.token || secrets.HOMEBREW_TAP_TOKEN }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
@@ -1051,7 +1132,7 @@ jobs:
               'description': 'Cut a release. Bump SemVer. Every project, every language. (Plugin-enabled build)',
               'homepage': 'https://github.com/cutver/cutver',
               'license': 'MIT',
-              'notes': 'Plugin-enabled build. Install either this or cutver, not both. If both were installed, run: scoop reset cutver-plugins',
+              'notes': 'Deprecated: this shim is removed in the next release. `scoop install cutver` now installs this same plugin-enabled build; uninstall this one and install cutver instead.',
               'architecture': {
                   '64bit': {
                       'url': 'https://github.com/cutver/cutver/releases/download/${TAG}/cutver-plugins-${VERSION}-windows-x86_64.zip',

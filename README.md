@@ -114,18 +114,19 @@ closed naming the flag. Authoring starts at [Writing a Plugin](docs/guides/plugi
 
 ## Installation
 
-Two builds ship for every platform: `cutver-plugins`, with the WebAssembly runtime and the `plugin` commands,
-and the lean `cutver`, with neither. The plugin build is the one to start with; the lean build is for a runner
-that must stay small.
+Every package manager installs one build: `cutver`, with the WebAssembly runtime and the `plugin` commands.
+The lean build — the same tool without the runtime — ships as a release asset for a runner that must stay
+small, and `cargo install cutver --features plugins` builds the plugin-enabled one.
 
-| Platform | Plugin build |
+| Platform | Install |
 | :--- | :--- |
-| Windows (Scoop) | `scoop install cutver-plugins` |
-| macOS / Linux (Homebrew) | `brew install Row0902/tap/cutver-plugins` |
+| Windows (Scoop) | `scoop install cutver` |
+| macOS / Linux (Homebrew) | `brew install Row0902/tap/cutver` |
 | Rust (Cargo) | `cargo install cutver --features plugins` |
 | Containers | `docker pull ghcr.io/cutver/cutver:plugins` |
 
-The [Installation Guide](docs/guides/installation.md) covers every package manager, the lean builds, the bucket
+`cutver-plugins` still resolves for one release and then goes away. The
+[Installation Guide](docs/guides/installation.md) covers every package manager, the lean releases, the bucket
 and tap setup, and how to verify an install. Once it is installed, `cutver init` discovers your manifests and
 writes `cutver.toml`, the starter changelog and the release template; [Getting Started](docs/guides/getting-started.md)
 walks the first release from there.

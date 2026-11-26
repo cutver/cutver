@@ -976,3 +976,106 @@ fn a_prerelease_channel_on_a_stable_version_starts_its_counter_on_the_bumped_bas
     assert_eq!(plan["next_version"], "1.3.0-beta.1", "{plan}");
     assert_eq!(plan["tag"], "v1.3.0-beta.1", "{plan}");
 }
+
+/// Where a tag points, as the release path would read it: the value a plan must leave alone.
+fn tag_target(fixture: &Fixture, tag: &str) -> String {
+    let out = run_git(&fixture.dir, &["rev-parse", &format!("{tag}^{{commit}}")]);
+    assert!(
+        out.status.success(),
+        "git rev-parse {tag} failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8_lossy(&out.stdout).trim().to_string()
+}
+
+/// T6, and ADR-0005's decision stated whole: the floating major tag, container `latest`, the Homebrew
+/// tap and the Scoop bucket are stable-only, so a prerelease publishes exactly its own version. `v0` is
+/// what `uses: cutver/setup@v0` and its `version: latest` default resolve to, so a tag that followed
+/// `0.22.0-alpha.1` would hand an alpha to every consumer who asked for the default.
+#[test]
+fn a_prerelease_plan_names_no_floating_major_tag() {
+    let config = armed_config().replace("tag_prefix = \"v\"", "tag_prefix = \"v\"\nfloating_major_tag = true");
+    let guard = released_fixture("plan-floating-prerelease", "0.21.0", &config);
+    let fixture = guard.fixture();
+    // The state a real ladder starts from: `0.21.0` is released and `v0` points at it.
+    run_git_ok(&fixture.dir, &["tag", "-a", "v0.21.0", "-m", "release 0.21.0"]);
+    run_git_ok(&fixture.dir, &["tag", "-a", "v0", "-m", "v0"]);
+    let floating_before = tag_target(fixture, "v0");
+    let tags_before = local_tags(fixture);
+
+    let output = cutver_in(fixture, &["plan", "--json", "minor", "--channel", "alpha"]);
+
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr_of(&output));
+    let plan = parse(&output);
+    assert_eq!(plan["next_version"], "0.22.0-alpha.1", "{plan}");
+    assert_eq!(
+        plan["floating_tag"],
+        Value::Null,
+        "a prerelease moves no floating major tag, so the plan names none: {plan}"
+    );
+    assert!(
+        !plan["phases"].to_string().contains("floating major tag"),
+        "the phase list obeys the same rule as the document: {plan}"
+    );
+
+    let human = stdout_of(&cutver_in(fixture, &["plan", "minor", "--channel", "alpha"]));
+    assert!(
+        human.contains("Release Plan: 0.21.0 -> 0.22.0-alpha.1"),
+        "the tree reports the release it would cut: {human}"
+    );
+    assert!(
+        !human.contains("floating tag:"),
+        "the tree names no floating tag it would not move: {human}"
+    );
+    assert!(
+        human.contains("Stable-only"),
+        "the tree reports the skip instead of dropping the line: {human}"
+    );
+    assert!(
+        human.contains(
+            "the floating major tag 'v0' is not moved: 0.22.0-alpha.1 is a prerelease, and that tag is stable-only (ADR-0005)"
+        ),
+        "the skipped tag is named, with the reason and the decision behind it: {human}"
+    );
+    assert_eq!(local_tags(fixture), tags_before, "no tag is created by a plan");
+    assert_eq!(
+        tag_target(fixture, "v0"),
+        floating_before,
+        "`v0` still points at the stable release a plan must leave alone"
+    );
+}
+
+/// The other arm of the same rule, and the behaviour the flag had before T6: a stable release still
+/// moves `v0` onto itself, and the plan says so.
+#[test]
+fn a_stable_plan_still_names_the_floating_major_tag() {
+    let config = armed_config().replace("tag_prefix = \"v\"", "tag_prefix = \"v\"\nfloating_major_tag = true");
+    let guard = released_fixture("plan-floating-stable", "0.21.0", &config);
+    let fixture = guard.fixture();
+    run_git_ok(&fixture.dir, &["tag", "-a", "v0.21.0", "-m", "release 0.21.0"]);
+    run_git_ok(&fixture.dir, &["tag", "-a", "v0", "-m", "v0"]);
+
+    let output = cutver_in(fixture, &["plan", "--json", "minor"]);
+
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr_of(&output));
+    let plan = parse(&output);
+    assert_eq!(plan["next_version"], "0.22.0", "{plan}");
+    assert_eq!(
+        plan["floating_tag"], "v0",
+        "a stable release still moves the floating major tag: {plan}"
+    );
+    assert!(
+        plan["phases"].to_string().contains("move floating major tag 'v0'"),
+        "a stable release still schedules the move: {plan}"
+    );
+
+    let human = stdout_of(&cutver_in(fixture, &["plan", "minor"]));
+    assert!(
+        human.contains("floating tag: v0"),
+        "the tree still names the tag a stable release moves: {human}"
+    );
+    assert!(
+        !human.contains("Stable-only"),
+        "a stable cut reports the tag and nothing about a skip: {human}"
+    );
+}

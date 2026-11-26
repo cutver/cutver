@@ -7,6 +7,13 @@
 //! release tag and a red smoke retracted nothing. The workflow cannot be run from a test, but every
 //! coupling that would silently publish unverified bytes is text-visible: exact lines, per-job
 //! slices, and one named regression per assertion.
+//!
+//! Second invariant (T7, ADR-0005/D3): a prerelease image publishes exactly its own version. The
+//! workflow triggers on `release: published` with no prerelease filter, so the discrimination lives in
+//! `docker/metadata-action`'s per-rule `enable=` attribute — every rule but the `{{version}}` one is
+//! gated on the release's own flag. A stable release therefore keeps every tag it emitted before the
+//! gate, which [`a_stable_release_still_emits_the_tag_set_it_emitted_before_the_prerelease_gate`]
+//! proves by stripping the gate back off and comparing byte for byte.
 
 use std::path::PathBuf;
 
@@ -30,7 +37,23 @@ struct Image {
     rehearsal: &'static str,
     /// A release tag rule the promotion for this image declares and no build job may.
     release_rule: &'static str,
+    /// The `docker/metadata-action` step declaring this image's release tags, by step name. Both
+    /// images share the `promote` job, so a job-wide rule slice would return both images' rules at
+    /// once and compare nothing.
+    promote_step: &'static str,
+    /// Every rule that step must declare, in order, `enable=` attribute included (T7). The `{{version}}`
+    /// rule is the one rule with no gate: a prerelease must exist under its own version. Every other
+    /// rule is gated on `github.event.release.prerelease` except `type=ref,event=branch`, which a
+    /// release event's tag ref cannot match, so it emits nothing with or without a gate.
+    release_rules: &'static [&'static str],
+    /// The same rules, in the same order, as this workflow declared them before T7. Stripping the gate
+    /// from the current rules must reproduce this list byte for byte — that is what proves a stable
+    /// release still emits exactly the tag set it emitted before.
+    release_rules_before_gate: &'static [&'static str],
 }
+
+/// The one job declaring both images' release tags.
+const RELEASE_TAG_JOB: &str = "promote";
 
 const IMAGES: [Image; 2] = [
     Image {
@@ -39,6 +62,23 @@ const IMAGES: [Image; 2] = [
         smoke: "smoke",
         rehearsal: "type=raw,value=rehearsal-${{ github.run_id }}-${{ github.run_attempt }}",
         release_rule: "type=semver,pattern={{version}}",
+        promote_step: "Extract release tags for the CLI image",
+        release_rules: &[
+            "type=semver,pattern={{version}}",
+            "type=semver,pattern={{major}}.{{minor}},enable=${{ !github.event.release.prerelease }}",
+            "type=semver,pattern={{major}},enable=${{ !github.event.release.prerelease }}",
+            "type=raw,value=latest,enable=${{ (github.event_name == 'release' || github.ref == 'refs/heads/main') && !github.event.release.prerelease }}",
+            "type=ref,event=branch",
+            "type=sha,enable=${{ !github.event.release.prerelease }}",
+        ],
+        release_rules_before_gate: &[
+            "type=semver,pattern={{version}}",
+            "type=semver,pattern={{major}}.{{minor}}",
+            "type=semver,pattern={{major}}",
+            "type=raw,value=latest,enable=${{ github.event_name == 'release' || github.ref == 'refs/heads/main' }}",
+            "type=ref,event=branch",
+            "type=sha",
+        ],
     },
     Image {
         label: "plugins image",
@@ -46,6 +86,17 @@ const IMAGES: [Image; 2] = [
         smoke: "smoke-plugins",
         rehearsal: "type=raw,value=rehearsal-plugins-${{ github.run_id }}-${{ github.run_attempt }}",
         release_rule: "type=semver,pattern={{version}}-plugins",
+        promote_step: "Extract release tags for the plugins image",
+        release_rules: &[
+            "type=semver,pattern={{version}}-plugins",
+            "type=semver,pattern={{major}}.{{minor}}-plugins,enable=${{ !github.event.release.prerelease }}",
+            "type=raw,value=plugins,enable=${{ !github.event.release.prerelease }}",
+        ],
+        release_rules_before_gate: &[
+            "type=semver,pattern={{version}}-plugins",
+            "type=semver,pattern={{major}}.{{minor}}-plugins",
+            "type=raw,value=plugins",
+        ],
     },
 ];
 
@@ -98,6 +149,21 @@ fn container_tag_rules(job: &[&str]) -> Vec<String> {
         .filter_map(|line| line.strip_prefix("            "))
         .filter(|rule| rule.starts_with("type="))
         .map(str::to_string)
+        .collect()
+}
+
+/// One step's lines inside a job body: from `      - name: <name>` to the next step. Both metadata
+/// invocations live in the same job, so the rules have to be sliced per step rather than per job.
+fn container_step<'a>(job: &[&'a str], name: &str) -> Vec<&'a str> {
+    let marker = format!("      - name: {name}");
+    let start = job
+        .iter()
+        .position(|line| *line == marker.as_str())
+        .unwrap_or_else(|| panic!("the job must declare a step `{name}`"));
+    job[start + 1..]
+        .iter()
+        .copied()
+        .take_while(|line| !line.starts_with("      - "))
         .collect()
 }
 
@@ -274,6 +340,75 @@ fn the_container_workflow_keeps_its_triggers_platforms_and_smoke_digests() {
         assert!(
             container_needs(&smoke).iter().any(|need| *need == image.build),
             "the {} smoke must need its build, or it pulls a digest from another run",
+            image.label
+        );
+    }
+}
+
+/// The gate, stripped back off a rule: the `enable=` value as a whole, the same condition spliced after
+/// `latest`'s pre-existing guard, and the parentheses that splice required (`||` has to bind inside the
+/// guard before `&&`, or `A || B && gate` would re-enable `latest` on a prerelease release event). Every
+/// fragment is literal, so a rule that spells the condition differently is left untouched and fails the
+/// comparison rather than being normalised away.
+fn strip_prerelease_gate(rule: &str) -> String {
+    rule.replace(",enable=${{ !github.event.release.prerelease }}", "")
+        .replace("enable=${{ (", "enable=${{ ")
+        .replace(") && !github.event.release.prerelease", "")
+}
+
+/// T7 / ADR-0005 / D3: "a prerelease publishes exactly its own version everywhere".
+///
+/// The workflow publishes on `release: published` with no prerelease filter, and it must keep doing so
+/// — a prerelease image is wanted. The discrimination therefore lives in each rule's `enable=`
+/// attribute, which `docker/metadata-action` evaluates per rule: a rule whose `enable` is false is not
+/// emitted. `{{version}}` stays unconditional because that is the one tag a prerelease must carry.
+///
+/// Why `!github.event.release.prerelease` and not a release-event check: on `workflow_dispatch` and on
+/// a `main` push there is no release payload, so `github.event.release` is absent, an absent property
+/// evaluates to null, and null is falsy — `!null` is `true`. Both of those paths therefore evaluate the
+/// gate as enabled and keep emitting the rules they emitted before T7; only a `release: published`
+/// event with a prerelease tag disables them. The `latest` rule keeps its original
+/// `(release event || main ref)` guard byte for byte and gains the gate after it, so `main` still
+/// publishes `latest` and a stable release still publishes all four of its version tags.
+#[test]
+fn a_prerelease_publishes_its_own_version_and_no_partial_floating_or_commit_tag() {
+    let workflow = repo_text(CONTAINER);
+    let promote = container_job(&workflow, RELEASE_TAG_JOB);
+    for image in IMAGES {
+        let rules = container_tag_rules(&container_step(&promote, image.promote_step));
+        let expected: Vec<String> = image.release_rules.iter().map(|rule| rule.to_string()).collect();
+        assert_eq!(
+            rules, expected,
+            "the {} promotion must declare exactly these tag rules: `{{{{version}}}}` with no gate, so \
+             the prerelease exists under its own version, and every other rule gated on the release's \
+             own flag, so no `{{{{major}}}}.{{{{minor}}}}`, `{{{{major}}}}`, `latest`, `plugins` or \
+             `sha-<commit>` tag is published for a prerelease",
+            image.label
+        );
+    }
+}
+
+/// The preserve half of T7: a stable release keeps every tag it emitted before the gate, byte for byte.
+///
+/// The gate is only an `enable=` condition, so removing it has to reproduce the pre-T7 rule list
+/// exactly — same patterns, same order, same `latest` guard, same `sha` rule. A rule added, dropped or
+/// reordered alongside the gate fails here even though the rule above would still see a gated list.
+#[test]
+fn a_stable_release_still_emits_the_tag_set_it_emitted_before_the_prerelease_gate() {
+    let workflow = repo_text(CONTAINER);
+    let promote = container_job(&workflow, RELEASE_TAG_JOB);
+    for image in IMAGES {
+        let rules = container_tag_rules(&container_step(&promote, image.promote_step));
+        let stripped: Vec<String> = rules.iter().map(|rule| strip_prerelease_gate(rule)).collect();
+        let before: Vec<String> = image
+            .release_rules_before_gate
+            .iter()
+            .map(|rule| rule.to_string())
+            .collect();
+        assert_eq!(
+            stripped, before,
+            "a stable release must emit exactly the {} tags it emitted before T7; stripping the \
+             prerelease gate left {stripped:?}",
             image.label
         );
     }

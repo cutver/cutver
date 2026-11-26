@@ -131,6 +131,243 @@ fn branch_of(text: &str, exists: &str) -> (usize, usize, usize) {
     (at, else_at, fi_at)
 }
 
+/// One `workflow_dispatch` input, as declared: its block under `inputs:`, comments dropped.
+///
+/// Reading the block — not the whole file — is what separates an input that exists from a string
+/// that happens to appear somewhere in the workflow: an `options:` list under another input or a
+/// `default:` inside an unrelated job would satisfy a `contains` on `release.yml`.
+fn dispatch_input(workflow: &str, name: &str) -> String {
+    const INPUTS: &str = "\n    inputs:\n";
+    let dispatch = workflow
+        .find("\n  workflow_dispatch:\n")
+        .expect("release.yml must be dispatchable by hand");
+    let start = dispatch
+        + workflow[dispatch..]
+            .find(INPUTS)
+            .unwrap_or_else(|| panic!("the dispatch must declare its inputs under `inputs:`"))
+        + INPUTS.len();
+    let marker = format!("\n      {name}:\n");
+    let at = workflow[start..]
+        .find(&marker)
+        .unwrap_or_else(|| panic!("the dispatch must declare a `{name}` input"))
+        + start
+        + marker.len();
+
+    let block = &workflow[at..];
+    // An input's keys sit at six spaces and their children at eight, so the first non-blank line
+    // indented by six or less is either the next input or the end of the map.
+    let end = block
+        .match_indices('\n')
+        .find(|(index, _)| {
+            let line = &block[index + 1..];
+            !line.trim().is_empty() && line.len() - line.trim_start_matches(' ').len() <= 6
+        })
+        .map(|(index, _)| index)
+        .unwrap_or(block.len());
+    code(&block[..end])
+}
+
+/// The shell a step runs, read from its own `run: |` block rather than from the whole step: the
+/// `env:` keys below it and the step's YAML header are not shell, and a reader that took them for
+/// shell would have to guess what they add to the command line.
+fn run_script(step: &str) -> String {
+    const MARKER: &str = "        run: |\n";
+    let start = step
+        .find(MARKER)
+        .unwrap_or_else(|| panic!("the step must carry a `run: |` block: {step}"))
+        + MARKER.len();
+    let body: Vec<&str> = step[start..]
+        .lines()
+        .take_while(|line| line.trim().is_empty() || line.starts_with("          "))
+        .collect();
+    code(&body.join("\n"))
+}
+
+/// The value one `${{ inputs.<name> }}` reference takes for the dispatch a test asks about.
+///
+/// The bump step reads three inputs and nothing else, so the reader models exactly that shape and
+/// fails on anything new instead of guessing: a construct it skipped would be an argv nobody
+/// checked, which is the same as no test at all.
+fn expression(expr: &str, dispatch: &[(&str, &str)]) -> String {
+    let reference = expr
+        .trim()
+        .strip_prefix("inputs.")
+        .unwrap_or_else(|| panic!("the bump step reads `${{{{ {expr} }}}}`, which this reader does not model"));
+    let (name, fallback) = match reference.split_once("||") {
+        Some((name, fallback)) => (name.trim(), Some(fallback.trim().trim_matches('\''))),
+        None => (reference.trim(), None),
+    };
+    let value = dispatch
+        .iter()
+        .find(|(key, _)| *key == name)
+        .map(|(_, value)| *value)
+        .unwrap_or_else(|| panic!("this dispatch sets no `{name}`, whose value decides the argv"));
+    let value = if value.is_empty() {
+        fallback.unwrap_or("")
+    } else {
+        value
+    };
+    assert!(
+        !value.contains(char::is_whitespace),
+        "a dispatch value with whitespace in it cannot be modelled here: `{name}` is `{value}`"
+    );
+    value.to_string()
+}
+
+/// `text` with every `${{ … }}` replaced by the value this dispatch gives it.
+fn expand(text: &str, dispatch: &[(&str, &str)]) -> String {
+    let mut expanded = String::new();
+    let mut rest = text;
+    while let Some(at) = rest.find("${{") {
+        expanded.push_str(&rest[..at]);
+        let close = rest[at..]
+            .find("}}")
+            .unwrap_or_else(|| panic!("unterminated `${{{{` in `{text}`"))
+            + at;
+        expanded.push_str(&expression(&rest[at + 3..close], dispatch));
+        rest = &rest[close + 2..];
+    }
+    expanded.push_str(rest);
+    expanded
+}
+
+/// The words of one shell array literal after expansion, quotes stripped: `--channel "alpha"` is two
+/// arguments, and `""` is the one empty argument an unset input would contribute if it were passed.
+fn shell_words(contents: &str, dispatch: &[(&str, &str)]) -> Vec<String> {
+    let mut words = Vec::new();
+    let mut current = String::new();
+    let mut quoted = false;
+    for character in expand(contents, dispatch).chars() {
+        match character {
+            '"' => quoted = !quoted,
+            ' ' | '\t' if !quoted => {
+                if !current.is_empty() {
+                    words.push(std::mem::take(&mut current));
+                }
+            }
+            other => current.push(other),
+        }
+    }
+    assert!(
+        !quoted,
+        "unbalanced quote in `{contents}`: the reader cannot split it into arguments"
+    );
+    if !current.is_empty() {
+        words.push(current);
+    }
+    words
+}
+
+/// Whether one shell test passes for this dispatch: `-n` on a value, and `=` against a literal.
+fn holds(test: &str, dispatch: &[(&str, &str)]) -> bool {
+    if let Some(reference) = test.strip_prefix("[ -n ").and_then(|rest| rest.strip_suffix(" ]")) {
+        let words = shell_words(reference, dispatch);
+        return words.len() == 1 && !words[0].is_empty();
+    }
+    if let Some(rest) = test.strip_prefix("[ ").and_then(|rest| rest.strip_suffix(" ]"))
+        && let Some((reference, expected)) = rest.split_once(" = ")
+    {
+        let words = shell_words(reference, dispatch);
+        return words.len() == 1 && words[0] == expected.trim().trim_matches('"');
+    }
+    panic!("the bump step tests `{test}`, a condition this reader does not model")
+}
+
+/// The two promotion commands, one per channel, exactly as the pipeline runs them.
+///
+/// Written out in full rather than assembled from flags: the two lines ask for opposite states, and
+/// a `--prerelease` that landed in the stable arm, or a `--latest=true` in the prerelease one, would
+/// still satisfy any substring check on the step.
+const PROMOTE_STABLE: &str = "gh release edit \"$TAG\" --draft=false --prerelease=false --latest=true";
+const PROMOTE_PRERELEASE: &str = "gh release edit \"$TAG\" --draft=false --prerelease --latest=false";
+
+/// The `cutver bump` invocation exactly as the pipeline runs it today.
+///
+/// Byte-identical is the requirement for a dispatch that sets no channel: the channel is appended to
+/// the argument array, so this line never learns about it and an untouched dispatch cannot change.
+const BUMP_CALL: &str = "cutver bump \"${{ inputs.bump || 'auto' }}\" \"${args[@]}\"";
+
+/// The argv the bump step produces for one dispatch, read from the shell it runs.
+///
+/// The channel flag only means anything if it reaches this command line, and `contains("--channel")`
+/// cannot tell a guarded append from one spliced into the call: the flag printed unconditionally, or
+/// appended after the call, reads the same to a substring check while `release.yml` runs a different
+/// command. So the array is built here the way the shell builds it, from the step's own lines, and any
+/// construct this reader does not model stops the test rather than being skipped.
+fn bump_arguments(step: &str, dispatch: &[(&str, &str)]) -> Vec<String> {
+    let script = run_script(step);
+    let call_at = script
+        .find("cutver bump \"")
+        .unwrap_or_else(|| panic!("the version job must run `cutver bump`: {script}"));
+    let (head, rest) = script.split_at(call_at);
+    let call = rest.lines().next().unwrap_or_default();
+    assert_eq!(
+        call, BUMP_CALL,
+        "the bump invocation must stay byte-identical: the channel is appended to `args`, never \
+         spliced into the call line, or a dispatch that sets no channel stops running today's argv"
+    );
+
+    let mut arguments = vec!["bump".to_string(), expand("${{ inputs.bump || 'auto' }}", dispatch)];
+    // `None` while no branch is open, `Some(false)` while skipping the branch that did not apply.
+    let mut branch: Option<bool> = None;
+    for line in head.lines().map(str::trim).filter(|line| !line.is_empty()) {
+        if let Some(test) = line.strip_prefix("if ").and_then(|rest| rest.strip_suffix("; then")) {
+            assert!(
+                branch.is_none(),
+                "the reader models one conditional at a time, and the bump step nests `{line}`"
+            );
+            branch = Some(holds(test, dispatch));
+            continue;
+        }
+        if line == "fi" {
+            assert!(branch.take().is_some(), "`fi` without an `if` in the bump step: {head}");
+            continue;
+        }
+        if branch == Some(false) {
+            continue;
+        }
+        if let Some(contents) = line
+            .strip_prefix("args=(")
+            .or_else(|| line.strip_prefix("args+=("))
+            .and_then(|rest| rest.strip_suffix(')'))
+        {
+            arguments.extend(shell_words(contents, dispatch));
+            continue;
+        }
+        panic!(
+            "the bump step runs `{line}`, a construct this reader does not model: extend it with the \
+             arguments that line adds, or the argv this test reads is not the one the step builds"
+        );
+    }
+    assert!(
+        branch.is_none(),
+        "the bump step leaves a conditional open before its call: {head}"
+    );
+    arguments
+}
+
+/// D4: a prerelease publishes the crate too, on the same run that publishes everything else.
+///
+/// The cost is permanent — a crates.io version can be yanked and never deleted — and the maintainer
+/// accepted it, because the crate is the surface under test and `cargo publish` is where
+/// `publish --resume`'s `publish-<n>` attestation lives. Gating this entry on `stable` would not
+/// protect the registry; it would silently reverse the decision and leave that path unexercised on
+/// exactly the channel the ladder exists to prove.
+#[test]
+fn the_publish_commands_publish_the_crate_on_every_channel() {
+    let config_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("cutver.toml");
+    let cfg = config::load(config_path).expect("the repository cutver.toml must load");
+    assert!(
+        cfg.publish
+            .commands
+            .iter()
+            .any(|command| command.trim() == "cargo publish"),
+        "`[publish].commands` must publish the crate on every channel, prereleases included (D4, \
+         ADR-0005): the ladder proves the registry path, and a stable gate here is a decision to \
+         revisit out loud rather than in a diff"
+    );
+}
+
 fn declared_plugin() -> PluginConfig {
     let config_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("cutver.toml");
     let cfg = config::load(config_path).expect("the repository cutver.toml must load");
@@ -216,6 +453,32 @@ fn plugin_creates_the_release_as_a_draft() {
     );
 }
 
+/// S6: `[plugins.github-publish.config]` must not declare `prerelease`.
+///
+/// GitHub's own rule is the protection: "The latest release is the most recent non-prerelease,
+/// non-draft release" and "Drafts and prereleases cannot be set as latest". The plugin leans on it by
+/// deriving the mark from the version it is handed
+/// (`plugins/github-publish/src/post_release.rs:78-80`, `config.prerelease.unwrap_or_else(||
+/// is_prerelease(&payload.version))`), so this key is the one thing that cancels the derivation while
+/// the repository never has to set anything. Unset is not "false": unset is "let the version decide".
+/// `prerelease = false` would make the draft for `0.22.0-alpha.1` a non-prerelease release, and a
+/// non-prerelease release is exactly what can take the repository's Latest slot — the slot
+/// `uses: cutver/setup@v0` resolves with its `version: latest` default. `prerelease = true` would go
+/// the other way and mark every stable release as a prerelease, which no `--latest=true` can undo.
+#[test]
+fn the_publish_plugin_config_declares_no_prerelease_key() {
+    let plugin = declared_plugin();
+    let plugin_config = plugin.config.expect("the publish plugin needs a config table");
+    assert!(
+        !plugin_config.contains_key("prerelease"),
+        "`[plugins.github-publish.config]` must not declare `prerelease`: leaving it unset is what \
+         makes the plugin derive the mark from the released version, so `0.22.0-alpha.1` is created \
+         as a prerelease. Setting it false would let an alpha take the repository's Latest slot, \
+         because only a release *marked* prerelease is protected from it, and `version: latest` is \
+         what `uses: cutver/setup@v0` installs by default"
+    );
+}
+
 /// Events are compared by exact string, and lifecycle events only reach `lifecycle.v1` plugins.
 #[test]
 fn declared_capability_events_and_permissions_are_the_ones_the_host_uses() {
@@ -261,6 +524,47 @@ fn workflow_requests_the_plugin_build_and_forwards_dry_run() {
     }
 }
 
+/// S1: the channel is the dispatch's own closed choice, and its empty default is load-bearing.
+///
+/// The option set is `cutver bump --channel`'s ladder and nothing else: a free-text input accepts
+/// `alhpa`, and the bump then fails after the token mint, the checkout and the release-profile build
+/// instead of at the dispatch form. The empty option is what keeps a dispatch that never heard of the
+/// ladder on today's argv, so it has to be the default rather than the first channel in the list.
+#[test]
+fn the_dispatch_declares_the_channel_as_a_choice_input() {
+    let workflow = repo_text(".github/workflows/release.yml");
+    let input = dispatch_input(&workflow, "channel");
+
+    assert!(
+        input.contains("        type: choice"),
+        "the `channel` input must be a `choice`, so the dispatch form can only submit a channel the \
+         ladder knows: {input}"
+    );
+    assert!(
+        input.contains("        required: false"),
+        "the `channel` input must stay optional: a dispatch without it is the stable release this \
+         workflow already cuts: {input}"
+    );
+    assert!(
+        input.contains("        default: \"\""),
+        "the `channel` input must default to empty: any other default silently turns every existing \
+         dispatch into a prerelease, and `inputs.channel` would never be empty for the guard to \
+         skip: {input}"
+    );
+    let options: Vec<&str> = input
+        .lines()
+        .map(str::trim)
+        .filter_map(|line| line.strip_prefix("- "))
+        .collect();
+    assert_eq!(
+        options,
+        ["\"\"", "alpha", "beta", "rc", "stable"],
+        "the `channel` options must be the empty choice followed by the ladder `cutver bump --channel` \
+         accepts, in that order: a free-text or differently-spelled option set fails at the bump, \
+         after the build, instead of at the dispatch form: {input}"
+    );
+}
+
 /// #259: the version job must leave no trace a failed smoke would have to undo. A tag cannot be
 /// unpublished, a crate version cannot be reused, and a public release without its assets is
 /// exactly what `draft = true` exists to prevent.
@@ -288,7 +592,7 @@ fn the_version_job_publishes_nothing_irreversible() {
         "the job outputs must come from a step that carries `id: cutver`, which is what \
          `steps.cutver.outputs.*` reads"
     );
-    // Phase 4B of #326: the bump step owns the job outputs. `cutver bump` writes the five keys to
+    // Phase 4B of #326: the bump step owns the job outputs. `cutver bump` writes them to
     // `$GITHUB_OUTPUT` itself, so a `--report` or a `jq` back in this job is not a style regression:
     // it is a second authority over the release result, and two authorities drift.
     assert!(
@@ -396,16 +700,73 @@ fn the_bump_call_expands_the_defer_flag_it_declares() {
     );
 }
 
+/// S1: a dispatch that names a channel runs the bump on that channel.
+///
+/// The argv is the contract, not the presence of a flag: `--channel alpha` has to be two arguments
+/// after `--defer-publish`, exactly as `cutver bump --channel` parses them. Without it the workflow
+/// cuts a stable version from a dispatch that asked for an alpha, which is the whole ladder lost
+/// silently — the release is green, published, and not the prerelease the maintainer requested.
+#[test]
+fn a_dispatch_channel_reaches_the_bump_arguments() {
+    let workflow = repo_text(".github/workflows/release.yml");
+    let version = job(&workflow, "version");
+    let step = step_containing(version, "cutver bump");
+
+    // The dry run is the first dispatch of the ladder: it has to read the plan for the channel it
+    // was asked about, so the flag cannot be skipped when `--dry-run` is set.
+    for (dry_run, expected) in [
+        ("false", vec!["bump", "minor", "--defer-publish", "--channel", "alpha"]),
+        (
+            "true",
+            vec!["bump", "minor", "--defer-publish", "--dry-run", "--channel", "alpha"],
+        ),
+    ] {
+        let arguments = bump_arguments(step, &[("bump", "minor"), ("channel", "alpha"), ("dry_run", dry_run)]);
+        assert_eq!(
+            arguments, expected,
+            "a dispatch with `channel: alpha` and `dry_run: {dry_run}` must run `cutver bump` with \
+             `--channel alpha`: the bump step is the only place the channel can enter the release, and \
+             a run that drops it publishes a stable version instead of the requested prerelease"
+        );
+    }
+}
+
+/// S1: an untouched dispatch runs today's argv, byte for byte.
+///
+/// This is the other half of the channel pin, and the half a `contains("--channel")` cannot see: a
+/// flag appended outside its guard, or a call line that grew a suffix, still satisfies every string
+/// the rest of this file looks for while every dispatch that sets no channel changes what it
+/// publishes. The empty channel must contribute no argument at all — not an empty one.
+#[test]
+fn an_empty_channel_keeps_todays_bump_arguments() {
+    let workflow = repo_text(".github/workflows/release.yml");
+    let version = job(&workflow, "version");
+    let step = step_containing(version, "cutver bump");
+
+    for (bump, dry_run, expected) in [
+        ("auto", "false", vec!["bump", "auto", "--defer-publish"]),
+        ("minor", "true", vec!["bump", "minor", "--defer-publish", "--dry-run"]),
+    ] {
+        let arguments = bump_arguments(step, &[("bump", bump), ("channel", ""), ("dry_run", dry_run)]);
+        assert_eq!(
+            arguments, expected,
+            "a dispatch with no channel must run exactly the argv it runs today, `{expected:?}`: the \
+             channel is appended only when it is set, and an empty value that still contributed an \
+             argument would hand `cutver bump` a channel it never meant to publish on"
+        );
+    }
+}
+
 /// S1: every job output must read a key `cutver bump` writes, from the step that ran it.
 ///
-/// The bump step appends `released`, `deferred`, `version`, `tag` and `commit` to `$GITHUB_OUTPUT`
-/// (phase 4A of #326). An output pointing at another step, or naming a key nobody writes, resolves
+/// The bump step appends `released`, `deferred`, `version`, `channel`, `tag` and `commit` to
+/// `$GITHUB_OUTPUT` (phase 4A of #326). An output pointing at another step, or naming a key nobody writes, resolves
 /// to an empty string, and the `needs.version.outputs.*` gate it feeds then skips the release it was
 /// supposed to run.
 #[test]
 fn every_version_job_output_reads_a_key_the_tool_writes() {
     /// The keys `cutver bump` writes to `$GITHUB_OUTPUT`.
-    const WRITTEN: [&str; 5] = ["released", "deferred", "version", "tag", "commit"];
+    const WRITTEN: [&str; 6] = ["released", "deferred", "version", "channel", "tag", "commit"];
     let workflow = repo_text(".github/workflows/release.yml");
     let version = job(&workflow, "version");
     let outputs = declared_outputs(version);
@@ -513,9 +874,7 @@ fn the_tag_the_crate_and_the_draft_are_published_after_verification() {
     let upload = publish
         .find("gh release upload \"$TAG\" dist/* --clobber")
         .expect("upload step");
-    let promote = publish
-        .find("gh release edit \"$TAG\" --draft=false")
-        .expect("promotion step");
+    let promote = publish.find(PROMOTE_STABLE).expect("promotion step");
     assert!(
         closing < assets && assets < upload && upload < promote,
         "`cutver publish` creates the tag and the crate, the assets land in its draft, and only then \
@@ -687,13 +1046,352 @@ fn release_notes_artifact_is_kept_but_does_not_feed_the_promotion() {
         version.contains("cutver changelog latest --template .github/templates/cutver/RELEASE.md > RELEASE_NOTES.md"),
         "the version job must render the notes from the template cutver.toml names"
     );
-    let promote_at = workflow
-        .find("gh release edit \"$TAG\" --draft=false")
-        .expect("the promotion step");
-    let promotion = workflow[promote_at..].split('\n').next().unwrap_or_default();
+    // The promotion is exactly the two channel commands, and nothing else: a `--title` or a
+    // `--notes-file` here gives the release a second author, and any third `gh release edit` in this
+    // job is a promotion nobody reviewed.
+    let publish_job = job(&workflow, "publish");
+    let promotions: Vec<&str> = publish_job
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with("gh release edit \"$TAG\""))
+        .collect();
     assert_eq!(
-        promotion, "gh release edit \"$TAG\" --draft=false",
-        "the promotion must only publish the draft: a `--title` or a body there overrides the plugin"
+        promotions,
+        vec![PROMOTE_STABLE, PROMOTE_PRERELEASE],
+        "the promotion must be exactly `{PROMOTE_STABLE}` for a stable cut and \
+         `{PROMOTE_PRERELEASE}` for a prerelease: a `--title`, a body or a fourth flag there \
+         overrides the plugin that authored the release"
+    );
+}
+
+/// The arms of the promotion's `case "$CHANNEL" in … esac`, as `(patterns, commands)`.
+///
+/// The promotion does not build an argv array, so the branch that picks the command *is* the
+/// contract: both command literals sit in the same step, and a `contains` on either cannot tell the
+/// stable arm from the prerelease one. Reading the arms is what a swapped or duplicated pattern
+/// fails. A construct this reader does not model stops the test rather than being skipped.
+fn channel_arms(step: &str) -> Vec<(String, Vec<String>)> {
+    const HEAD: &str = "case \"$CHANNEL\" in";
+    let script = run_script(step);
+    let start = script
+        .find(HEAD)
+        .unwrap_or_else(|| panic!("the promotion must pick its command from the reported channel: {script}"))
+        + HEAD.len();
+    let mut arms: Vec<(String, Vec<String>)> = Vec::new();
+    for line in script[start..].lines().map(str::trim) {
+        if line == "esac" {
+            return arms;
+        }
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if let Some(patterns) = line.strip_suffix(')') {
+            arms.push((patterns.to_string(), Vec::new()));
+            continue;
+        }
+        if line == ";;" {
+            continue;
+        }
+        let arm = arms
+            .last_mut()
+            .unwrap_or_else(|| panic!("`{line}` runs outside any channel arm of the promotion: {script}"));
+        arm.1.push(line.to_string());
+    }
+    panic!("the channel `case` must close with `esac`: {script}")
+}
+
+/// S6: the promotion states the release state the channel asks for, and the publish job can only do
+/// that because the bump step reports the channel.
+///
+/// GitHub cannot make a prerelease Latest — "the latest release is the most recent non-prerelease,
+/// non-draft release" — but the draft arrives already marked prerelease only because the plugin
+/// derives that flag from the version it is handed
+/// (`plugins/github-publish/src/post_release.rs:78-80`). Two things nothing in this repository pins
+/// then decide whether an alpha takes the Latest slot `uses: cutver/setup@v0` resolves:
+/// `version: latest` defaults to it, and the mark is the only thing GitHub refuses to override.
+/// Passing both flags here removes the first dependency; `the_publish_plugin_config_declares_no_prerelease_key`
+/// removes the second. A stable cut asks for Latest explicitly and clears a prerelease mark an
+/// earlier run could have left; a prerelease asks to stay marked and to never be Latest.
+#[test]
+fn the_promotion_publishes_by_channel() {
+    let workflow = repo_text(".github/workflows/release.yml");
+    let version = job(&workflow, "version");
+    let publish = job(&workflow, "publish");
+
+    // The channel travels exactly like `released`, `tag` and `commit`: an output of the step that
+    // ran `cutver bump`, declared on the `version` job and read as `needs.version.outputs.*`.
+    let channel = declared_outputs(version)
+        .into_iter()
+        .find(|(key, _)| key == "channel")
+        .map(|(_, value)| value)
+        .unwrap_or_else(|| {
+            panic!(
+                "the version job must declare a `channel` output: `cutver bump` reports the channel \
+                 the run produced, and without the output the publish job cannot know whether the \
+                 release it promotes is Latest or a prerelease — `needs.version.outputs.channel` \
+                 then renders empty for every run"
+            )
+        });
+    assert_eq!(
+        channel, "${{ steps.cutver.outputs.channel }}",
+        "the `channel` output must read the step that ran `cutver bump`: that step owns the release \
+         result, so a value taken from anywhere else is empty and the promotion fails closed on \
+         every stable release"
+    );
+
+    let step = step_containing(publish, "gh release edit \"$TAG\"");
+    assert!(
+        step.contains("CHANNEL: ${{ needs.version.outputs.channel }}"),
+        "the promotion step must receive the reported channel as CHANNEL, the same way it receives \
+         TAG: the command it runs is decided by the channel, and a step that has to re-derive it from \
+         the tag string is the coupling this pin exists to prevent: {step}"
+    );
+
+    let arms = channel_arms(step);
+    assert_eq!(
+        arms.len(),
+        3,
+        "the promotion must declare exactly three channel arms — stable, the prerelease ladder, and \
+         a fail-closed default: {arms:?}"
+    );
+    assert_eq!(
+        arms[0],
+        ("stable".to_string(), vec![PROMOTE_STABLE.to_string()]),
+        "a stable release must be published as a non-prerelease Latest: `--prerelease=false` clears a \
+         mark an earlier run could have left and `--latest=true` sets the slot explicitly, instead of \
+         leaving both to whichever release GitHub happened to consider most recent"
+    );
+    assert_eq!(
+        arms[1],
+        ("alpha|beta|rc".to_string(), vec![PROMOTE_PRERELEASE.to_string()]),
+        "every channel `cutver bump --channel` accepts must publish as a marked prerelease that is \
+         never Latest, or `0.22.0-alpha.1` takes the slot `uses: cutver/setup@v0` with `version: \
+         latest` installs by default"
+    );
+    assert_eq!(arms[2].0, "*", "the last arm must be the catch-all: {arms:?}");
+    let default_arm = &arms[2].1;
+    assert!(
+        default_arm.iter().any(|line| line.contains("exit 1")),
+        "an unknown channel must fail the job, not fall through to a published release: a step that \
+         continues here promotes a release whose state nobody decided: {default_arm:?}"
+    );
+    assert!(
+        default_arm
+            .iter()
+            .any(|line| line.contains("::error::Refusing to promote")),
+        "the catch-all must fail with an `::error::` line naming the release, the way the draft guard \
+         above does: a bare exit surfaces as a step failure with no cause: {default_arm:?}"
+    );
+}
+
+/// The guard every package-manager step carries: the channel `cutver bump` reported decides, and a
+/// missing token still skips the step instead of failing it.
+const STABLE_ONLY_PACKAGING: &str = "if: needs.version.outputs.channel == 'stable' && (steps.bot-token.outputs.token != '' || env.HOMEBREW_TAP_TOKEN != '')";
+
+/// The four steps that write to a tap or a bucket, each with the `git clone` that proves it is one.
+const PACKAGE_MANAGER_STEPS: [(&str, &str); 4] = [
+    ("Update Homebrew tap formula", "homebrew-tap.git\" tap\n"),
+    ("Update Homebrew tap plugin formula", "homebrew-tap.git\" tap-plugins\n"),
+    ("Update Scoop bucket manifest", "scoop-bucket.git\" scoop\n"),
+    (
+        "Generate Scoop bucket plugin manifest",
+        "scoop-bucket.git\" scoop-plugins\n",
+    ),
+];
+
+/// D3/S8: the tap and the bucket are stable-only, and a prerelease says it skipped them. A
+/// prerelease published as the tap's `version` hands `brew install cutver` an alpha nobody asked for.
+/// The skip is announced because a step GitHub skips shows as "skipped" with no cause, which reads
+/// like a missing token.
+#[test]
+fn the_package_manager_steps_publish_only_on_a_stable_channel() {
+    let workflow = repo_text(".github/workflows/release.yml");
+    let publish = job(&workflow, "publish");
+
+    // A fifth `git clone` added without a gate is the regression no per-step assertion can see.
+    let clones = publish.matches("git clone \"https://x-access-token:").count();
+    assert_eq!(
+        clones, 4,
+        "the publish job pushes to exactly four tap/bucket clones, found {clones}: a new surface has \
+         to be gated like the other four"
+    );
+
+    for (name, clone) in PACKAGE_MANAGER_STEPS {
+        let step = step_containing(publish, name);
+        assert!(
+            step.contains(clone),
+            "`{name}` must still be the step that clones `{clone}`: {step}"
+        );
+        let guard = step
+            .lines()
+            .find(|line| line.trim_start().starts_with("if: "))
+            .unwrap_or_else(|| panic!("`{name}` must gate itself on the reported channel: {step}"));
+        assert_eq!(
+            guard.trim(),
+            STABLE_ONLY_PACKAGING,
+            "`{name}` must run only on the channel `cutver bump` reported, and still skip with no token"
+        );
+    }
+
+    let notice = step_containing(publish, "Say the package-manager update was skipped");
+    assert!(
+        notice.contains("if: needs.version.outputs.channel != 'stable'"),
+        "the skip is announced on every channel but stable, from the same reported value: {notice}"
+    );
+    let message = run_script(notice);
+    for expected in ["::notice::", "Homebrew", "Scoop"] {
+        assert!(
+            message.contains(expected),
+            "the skip must surface as an `::notice::` naming Homebrew and Scoop and the file each \
+             left alone, so a prerelease reads as a decision: {message}"
+        );
+    }
+}
+
+/// S8: one build per package manager, and it is the plugin-enabled one.
+///
+/// `cutver` installed the lean archive, which asked a user to know what a WASM plugin is before
+/// choosing a formula. The plugin build is a superset and its sums are already computed in the same
+/// step, so nothing new is measured; the binary name, the conflict and the assertion stay.
+#[test]
+fn the_plain_package_installs_the_plugin_enabled_build() {
+    let workflow = repo_text(".github/workflows/release.yml");
+    let publish = job(&workflow, "publish");
+
+    let brew = run_script(step_containing(publish, "git add Formula/cutver.rb"));
+    let (mut urls, mut sums) = (Vec::new(), Vec::new());
+    for line in brew.lines().map(str::trim) {
+        if line.starts_with("url \"") {
+            urls.push(line);
+        } else if line.starts_with("sha256 \"") {
+            sums.push(line);
+        }
+    }
+    let targets = [
+        "cutver-plugins-${VERSION}-macos-arm64.tar.gz",
+        "cutver-plugins-${VERSION}-macos-x86_64.tar.gz",
+        "cutver-plugins-${VERSION}-linux-musl-x86_64.tar.gz",
+        "cutver-plugins-${VERSION}-linux-musl-arm64.tar.gz",
+    ];
+    assert_eq!(urls.len(), targets.len(), "one url per target: {urls:?}");
+    for (url, target) in urls.iter().zip(targets) {
+        assert!(
+            url.contains(target),
+            "`cutver` must install the plugin archive `{target}`, or a package-manager user gets \
+             a binary that cannot run `cutver plugin`: {url}"
+        );
+    }
+    assert_eq!(sums.len(), targets.len(), "one digest per target: {sums:?}");
+    for sum in &sums {
+        assert!(
+            sum.contains("${SHA_PLUGIN_"),
+            "the digest must be the plugin archive's own sum; a lean one beside a plugin url fails \
+             `brew install`: {sum}"
+        );
+    }
+    assert!(
+        brew.matches("grep \"cutver-plugins-${VERSION}-").count() == 4,
+        "the sums come from the `cutver-plugins-` lines of SHA256SUMS: {brew}"
+    );
+    for kept in [
+        "bin.install \"cutver\"",
+        "conflicts_with \"cutver-plugins\"",
+        "assert_match \"cutver #{version}\"",
+    ] {
+        assert!(
+            brew.contains(kept),
+            "the formula must keep `{kept}`: the asset changed, not the package"
+        );
+    }
+
+    let scoop = run_script(step_containing(publish, "git add bucket/cutver.json"));
+    let urls: Vec<&str> = scoop
+        .lines()
+        .filter(|line| line.contains("'url': ") && line.contains("download/${TAG}/"))
+        .collect();
+    assert_eq!(urls.len(), 2, "one url per architecture: {urls:?}");
+    for (url, arch) in urls.iter().zip(["x86_64", "arm64"]) {
+        assert!(
+            url.contains(&format!("cutver-plugins-${{VERSION}}-windows-{arch}.zip")),
+            "`scoop install cutver` must install the plugin-enabled archive: {url}"
+        );
+    }
+    // `autoupdate` names the archive for a version it has not seen (`\$version`), so the release's
+    // own directories are the ones with `${VERSION}` in them.
+    let extracts: Vec<&str> = scoop
+        .lines()
+        .filter(|line| line.contains("'extract_dir': ") && line.contains("${VERSION}"))
+        .collect();
+    assert_eq!(extracts.len(), 2, "one extract_dir per architecture: {extracts:?}");
+    for extract in extracts {
+        assert!(
+            extract.contains("cutver-plugins-${VERSION}-windows-"),
+            "`extract_dir` is what points at the unpacked plugin archive: {extract}"
+        );
+    }
+}
+
+/// `cutver-plugins` is a shim for one release: same archive, same conflict, and it says what
+/// replaces it in each manager's own vocabulary — Homebrew `deprecate!` with a date and a reason
+/// naming `cutver`, Scoop a `notes` entry.
+#[test]
+fn the_deprecated_shim_still_resolves_and_names_what_replaces_it() {
+    let workflow = repo_text(".github/workflows/release.yml");
+    let publish = job(&workflow, "publish");
+
+    let brew = run_script(step_containing(publish, "git add Formula/cutver-plugins.rb"));
+    assert!(
+        brew.contains("class CutverPlugins < Formula"),
+        "the shim keeps its own class so `brew install cutver-plugins` still resolves: {brew}"
+    );
+    assert!(
+        brew.matches("cutver-plugins-${VERSION}-").count() >= 4,
+        "the shim must still install the same asset it always did: {brew}"
+    );
+    let deprecation = brew
+        .lines()
+        .map(str::trim)
+        .find(|line| line.starts_with("deprecate!"))
+        .unwrap_or_else(|| {
+            panic!(
+                "the shim must say it is going away in Homebrew's own vocabulary — `deprecate!` — \
+                 or a formula removed without it reads as a broken tap: {brew}"
+            )
+        });
+    let date = deprecation
+        .split("date: \"")
+        .nth(1)
+        .and_then(|rest| rest.split('"').next());
+    assert!(
+        date.is_some_and(|date| date.len() == 10 && date.as_bytes()[4] == b'-' && date.as_bytes()[7] == b'-'),
+        "`deprecate!` must carry an ISO date, the only form `brew` reads: {deprecation}"
+    );
+    assert!(
+        deprecation
+            .split("because: ")
+            .nth(1)
+            .is_some_and(|reason| reason.contains("cutver")),
+        "the reason must point at `cutver`, which installs the same build: {deprecation}"
+    );
+    assert!(
+        brew.contains("conflicts_with \"cutver\""),
+        "both packages install the `cutver` binary, so the shim keeps the conflict: {brew}"
+    );
+
+    let scoop = run_script(step_containing(publish, "git add bucket/cutver-plugins.json"));
+    let notes = scoop
+        .lines()
+        .map(str::trim)
+        .find(|line| line.starts_with("'notes':"))
+        .unwrap_or_else(|| panic!("the Scoop shim must carry a `notes` entry: {scoop}"));
+    assert!(
+        notes.contains("cutver") && notes.to_lowercase().contains("deprecat"),
+        "the Scoop notes are the only place Scoop prints, so they must say deprecated and name \
+         `cutver`: {notes}"
+    );
+    assert!(
+        scoop.contains("'bin': 'cutver.exe'"),
+        "the shim keeps installing the `cutver` binary, which is why it conflicts: {scoop}"
     );
 }
 

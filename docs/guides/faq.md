@@ -48,14 +48,16 @@ asks the question in. The [first release](getting-started.md) reads the plan bef
 
 ## Do I need WebAssembly or Wasmtime if I only want minimal CI bumps?
 
-No. Cutver provides two distinct builds:
+No, and you no longer choose between the two at install time: one package name gets you the build with
+the runtime, and the lean one is a download.
 
-- **`cutver` (Lean build):** Standalone zero-overhead static binary containing the
-  complete core engine (manifest parsing, SemVer deduction, atomic apply, preflight checks,
-  changelog rendering). Perfect for lean, minimal CI/CD runners: no WebAssembly runtime is linked in,
-  so it is materially smaller than the plugin build.
-- **`cutver-plugins`:** Adds the full sandboxed WebAssembly plugin engine (`Wasmtime`) for
-  projects leveraging custom plugins.
+- **`cutver` from Homebrew or Scoop** (`brew install Row0902/tap/cutver`, `scoop install cutver`)
+  links the sandboxed WebAssembly plugin engine (`Wasmtime`), so `cutver plugin add/remove/list` works.
+  Every package manager installs this build, and the `:plugins` image is its container equivalent.
+- **The lean build** is the `cutver-<version>-<slug>` release archive and `cargo install cutver`: the
+  complete core engine (manifest parsing, SemVer deduction, atomic apply, preflight checks, changelog
+  rendering) with no WebAssembly runtime linked in, so it is materially smaller. Download it directly
+  for a minimal runner; it is a functional subset, not a second product.
 
 Neither build has a fixed size to quote here: it differs per target and changes every release. The
 release workflow measures every archive it uploads and writes the bytes and MiB of each one into that
@@ -88,6 +90,6 @@ Per-format guarantees are listed in the
 
 ## Related Documentation
 
-- [Installation Guide](../guides/installation.md): which build you need.
+- [Installation Guide](../guides/installation.md): one package name, and the lean asset if you want it.
 - [Getting Started Walkthrough](../guides/getting-started.md): the first release end to end.
 - [Plugin Engine Architecture](../rfcs/0001-wasm-plugin-architecture.md): the microkernel behind the capability slots.

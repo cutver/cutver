@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 use common::*;
 use cutver::bump::{PublishRequest, run as bump_run, run_deferred_publish, run_publish};
 use cutver::config;
-use cutver::semver_bump::Bump;
+use cutver::semver_bump::{Bump, Channel};
 
 const TOML: &str = r#"[version]
 current_source = "package.json"
@@ -1851,5 +1851,117 @@ fn a_resume_dispatches_no_post_release_plugin_but_a_plain_publish_does() {
         rev(&remote.dir, "refs/tags/v1.3.0^{commit}"),
         head,
         "the repeated push must leave the release tag on the remote"
+    );
+}
+
+/// T6 and ADR-0005's decision: a prerelease publishes exactly its own version, so the floating major
+/// tag is stable-only. This is the decision point a later process reaches — `cutver publish` reads no
+/// plan, so it decides the tag again from the version it publishes, and a `--tag 1.3.0-alpha.1` must
+/// leave `v1` where the last stable release put it.
+#[test]
+fn publish_does_not_move_the_floating_major_tag_for_a_prerelease() {
+    let (guard, remote, cfg) = prepared_repo("deferred-publish-prerelease-floating");
+    let fixture = guard.fixture();
+    let floating_before = rev(&fixture.dir, "v1^{commit}");
+    // The fixture pushes the branch and never the floating tag, so the remote has none to keep: the
+    // property is that the closing phase does not create one either.
+    let remote_before = remote_refs(&remote.dir);
+
+    run_deferred_publish(&cfg, Bump::Minor, false, &[], false, Some(Channel::Alpha))
+        .expect("the prepare phase succeeds");
+    let head = rev(&fixture.dir, "HEAD");
+
+    let summary =
+        run_publish(&cfg, &publish_request("v1.3.0-alpha.1", Some(head.clone()))).expect("the closing phase succeeds");
+
+    assert_eq!(
+        rev(&fixture.dir, "v1.3.0-alpha.1^{commit}"),
+        head,
+        "the prerelease is still tagged"
+    );
+    assert_eq!(
+        rev(&remote.dir, "refs/tags/v1.3.0-alpha.1^{commit}"),
+        head,
+        "the prerelease tag is still published"
+    );
+    assert_eq!(
+        rev(&fixture.dir, "v1^{commit}"),
+        floating_before,
+        "the local floating major tag must not follow a prerelease"
+    );
+    let remote_after = remote_refs(&remote.dir);
+    assert!(
+        !remote_after.lines().any(|line| line == "refs/tags/v1"),
+        "no floating major tag may reach the remote on a prerelease: {remote_after}"
+    );
+    assert!(
+        !remote_before.lines().any(|line| line == "refs/tags/v1"),
+        "the fixture starts without a remote floating tag: {remote_before}"
+    );
+    assert_eq!(
+        summary.floating_tag, None,
+        "the closing phase reports no floating tag it did not move"
+    );
+    let command = summary
+        .publish_push_command
+        .as_deref()
+        .expect("the summary must name the push it ran");
+    assert!(
+        !command.contains("refs/tags/v1:"),
+        "no forced floating refspec may be pushed: {command}"
+    );
+    assert!(
+        fixture
+            .read("published.txt")
+            .trim()
+            .starts_with("published 1.3.0-alpha.1"),
+        "the publish commands still run on a prerelease"
+    );
+}
+
+/// The second place a reader looks: `cutver publish` prints its outcome as a tree, and a deliberate
+/// skip must be one of its sections. Phase 5 set the precedent — a resume that dispatches no
+/// `on_post_release` plugin names the ones it left alone instead of letting the omission pass — and a
+/// floating major tag that renders only as a missing line is the same defect (#326 D2, T6, ADR-0005).
+#[test]
+fn publish_names_the_floating_major_tag_it_deliberately_did_not_move() {
+    let (guard, remote, cfg) = prepared_repo("deferred-publish-prerelease-floating-line");
+    let fixture = guard.fixture();
+    let floating_before = rev(&fixture.dir, "v1^{commit}");
+    run_deferred_publish(&cfg, Bump::Minor, false, &[], false, Some(Channel::Alpha))
+        .expect("the prepare phase succeeds");
+    let head = rev(&fixture.dir, "HEAD");
+
+    let out = publish_cli(fixture, &["--tag", "v1.3.0-alpha.1", "--commit", &head]);
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "the closing phase must publish; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        stdout.contains("Stable-only"),
+        "the outcome tree reports the skip instead of dropping the section: {stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "the floating major tag 'v1' is not moved: 1.3.0-alpha.1 is a prerelease, and that tag is stable-only (ADR-0005)"
+        ),
+        "the skipped tag is named, with the reason and the decision behind it: {stdout}"
+    );
+    assert!(
+        !stdout.contains("Floating tag"),
+        "the tree does not also claim the tag it did not move: {stdout}"
+    );
+    assert_eq!(
+        rev(&fixture.dir, "v1^{commit}"),
+        floating_before,
+        "the line and the refs agree: the floating major tag did not move"
+    );
+    assert!(
+        !remote_refs(&remote.dir).lines().any(|line| line == "refs/tags/v1"),
+        "no floating major tag reaches the remote: {}",
+        remote_refs(&remote.dir)
     );
 }

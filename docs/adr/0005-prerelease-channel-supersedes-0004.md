@@ -49,6 +49,18 @@ Two senses of the word coexist, and both carry their qualifier **every time they
 - **Gate channel** — the attestation store, which already qualifies itself
   (`src/bump/exec/guard.rs:115`, `src/bump/plan/finish.rs:207`).
 
+- **Stable-only surfaces** — **a prerelease publishes exactly its own version**: the floating major
+  tag (`v0`), container `latest`, the Homebrew tap and the Scoop bucket all follow the stable release
+  and nothing else. The floating tag is one rule decided in two places — what the plan reports
+  (`src/bump/plan/resolve.rs`) and what `cutver publish` moves (`src/bump/exec/publish.rs`), a separate
+  process that reads no plan — so both answer from the version being released rather than from a flag a
+  caller remembered to pass. The other three follow from the same hazard: `uses: cutver/setup@v0`
+  resolves to `version: latest` by default, so a surface that follows a prerelease hands an alpha to a
+  consumer who asked for the default. Promotion produces a stable release, so `0.22.0` still moves all
+  four. The crate is the exception and goes out on every channel: `[publish].commands` publishes it on
+  each run, because the registry path is what the ladder exists to exercise, and no default requirement
+  selects a prerelease — a consumer opts in by naming the version.
+
 The bare word "channel", with no qualifier, means the prerelease ladder from now on.
 
 ## Alternatives

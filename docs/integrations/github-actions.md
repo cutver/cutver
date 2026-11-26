@@ -82,8 +82,8 @@ push the branch, and `cutver publish` does everything after it — the tag, the 
 `[publish].commands` and the `on_post_release` plugins. Anything between the two runs against the exact
 commit the step output names, which is what lets a build and a smoke test sit in front of the tag. The
 step outputs are also the only thing a later step reads: `cutver bump` writes `released`, `deferred`,
-`version`, `tag` and `commit` to `$GITHUB_OUTPUT` itself, so the job hands them on without a report
-file and a second parser in between.
+`version`, `channel`, `tag` and `commit` to `$GITHUB_OUTPUT` itself, so the job hands them on without a
+report file and a second parser in between.
 
 `plugin restore` is needed when `cutver.toml` declares plugins: it hydrates the cache from the `source`
 and `hash` the configuration owns, so the workflow never pins a plugin version of its own. Drop the

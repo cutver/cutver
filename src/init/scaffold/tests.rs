@@ -46,7 +46,7 @@ fn fresh_init_creates_files_and_config() {
     let td = TestDir::new("scaffold-fresh");
     td.write("Cargo.toml", "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n");
 
-    run_init(Some(td.path.clone()), false, false, false).unwrap();
+    run_init(Some(td.path.clone()), false, false, false, false).unwrap();
 
     assert!(td.path.join("cutver.toml").is_file());
     assert!(td.path.join("CHANGELOG.md").is_file());
@@ -82,7 +82,7 @@ fn fresh_init_no_template_flag() {
     let td = TestDir::new("scaffold-no-template");
     td.write("Cargo.toml", "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n");
 
-    run_init(Some(td.path.clone()), false, false, true).unwrap();
+    run_init(Some(td.path.clone()), false, false, true, false).unwrap();
 
     assert!(td.path.join("cutver.toml").is_file());
     assert!(td.path.join("CHANGELOG.md").is_file());
@@ -98,7 +98,7 @@ fn fresh_init_fails_if_cutver_toml_exists() {
     let td = TestDir::new("scaffold-exists");
     td.write("cutver.toml", "# existing\n");
 
-    let err = run_init(Some(td.path.clone()), false, false, false).unwrap_err();
+    let err = run_init(Some(td.path.clone()), false, false, false, false).unwrap_err();
     assert!(matches!(err, InitError::AlreadyExists { .. }));
 }
 
@@ -108,7 +108,7 @@ fn fresh_init_overwrites_with_force() {
     td.write("cutver.toml", "# old\n");
     td.write("package.json", r#"{"name": "test", "version": "1.0.0"}"#);
 
-    run_init(Some(td.path.clone()), false, true, false).unwrap();
+    run_init(Some(td.path.clone()), false, true, false, false).unwrap();
 
     let cfg_text = td.read("cutver.toml");
     assert!(cfg_text.contains("kind = \"json\""));
@@ -140,7 +140,7 @@ tag_prefix = "rel-"
         r#"{"name": "client", "version": "0.1.0"}"#,
     );
 
-    run_init(Some(td.path.clone()), true, false, false).unwrap();
+    run_init(Some(td.path.clone()), true, false, false, false).unwrap();
 
     let updated_cfg = td.read("cutver.toml");
     assert!(updated_cfg.contains("# Custom user header"));
@@ -162,7 +162,7 @@ kind = "cargo-package"
     td.write("cutver.toml", initial_cfg);
     td.write("Cargo.toml", "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n");
 
-    run_init(Some(td.path.clone()), true, false, false).unwrap();
+    run_init(Some(td.path.clone()), true, false, false, false).unwrap();
     assert_eq!(td.read("cutver.toml"), initial_cfg);
 }
 
@@ -189,7 +189,7 @@ fn shipped_release_template_matches_the_repository_one() {
 fn new_contributors_is_enabled_only_for_the_builtin_renderer() {
     let with_template = TestDir::new("scaffold-tpl");
     with_template.write("Cargo.toml", "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n");
-    run_init(Some(with_template.path.clone()), false, false, false).unwrap();
+    run_init(Some(with_template.path.clone()), false, false, false, false).unwrap();
     assert!(
         !with_template.read("cutver.toml").contains("new_contributors"),
         "the template renders contributors itself, so the key would be inert"
@@ -197,7 +197,7 @@ fn new_contributors_is_enabled_only_for_the_builtin_renderer() {
 
     let without_template = TestDir::new("scaffold-no-tpl");
     without_template.write("Cargo.toml", "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n");
-    run_init(Some(without_template.path.clone()), false, false, true).unwrap();
+    run_init(Some(without_template.path.clone()), false, false, true, false).unwrap();
     let config = without_template.read("cutver.toml");
     assert!(
         config.contains("new_contributors = true"),

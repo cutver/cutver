@@ -6,6 +6,7 @@ use std::path::Path;
 
 use super::runner::InitError;
 use crate::init::discovery::{DiscoveredKind, DiscoveredManifest, DiscoveryResult};
+use toml_edit::TableLike;
 
 /// Formats a single discovered manifest entry as TOML table syntax.
 pub fn format_manifest_entry(m: &DiscoveredManifest) -> String {
@@ -118,10 +119,13 @@ pub fn generate_fresh_config(discovery: &DiscoveryResult, no_template: bool) -> 
 }
 
 /// Appends newly discovered manifests to an existing `cutver.toml` configuration.
+///
+/// Answers with the manifests it appended and the primary source of truth the updated document
+/// declares, so the run can report both without reading the document a second time (#404 S4).
 pub fn update_existing_config(
     config_path: &Path,
     discovered: &[DiscoveredManifest],
-) -> Result<Vec<DiscoveredManifest>, InitError> {
+) -> Result<(Vec<DiscoveredManifest>, Option<String>), InitError> {
     let text = fs::read_to_string(config_path).map_err(|e| InitError::ReadConfig {
         path: config_path.display().to_string(),
         source: e,
@@ -136,23 +140,7 @@ pub fn update_existing_config(
     // already parsed here, so the scan costs no extra read and cannot fail twice (#272).
     crate::warnings::deprecations(&crate::config::deprecations_in_document(&doc));
 
-    let mut existing_paths = HashSet::new();
-    if let Some(manifests) = doc.get("manifest").and_then(|m| m.as_array_of_tables()) {
-        for m in manifests.iter() {
-            if let Some(p) = m.get("path").and_then(|p| p.as_str()) {
-                existing_paths.insert(p.to_string());
-            }
-        }
-    }
-    if let Some(arr) = doc.get("manifest").and_then(|m| m.as_array()) {
-        for v in arr.iter() {
-            if let Some(tbl) = v.as_inline_table()
-                && let Some(p) = tbl.get("path").and_then(|p| p.as_str())
-            {
-                existing_paths.insert(p.to_string());
-            }
-        }
-    }
+    let existing_paths: HashSet<String> = declared_manifests(&doc).into_iter().map(|(path, _)| path).collect();
 
     let new_manifests: Vec<DiscoveredManifest> = discovered
         .iter()
@@ -161,7 +149,7 @@ pub fn update_existing_config(
         .collect();
 
     if new_manifests.is_empty() {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), primary_source(&doc)));
     }
 
     let mut updated_text = text;
@@ -173,7 +161,9 @@ pub fn update_existing_config(
         updated_text.push_str(&format_manifest_entry(m));
     }
 
-    let _ = updated_text
+    // Re-parsed after appending, so the primary source of truth is the one the document it wrote
+    // declares — including the case where the configuration declared no manifest at all.
+    let updated = updated_text
         .parse::<toml_edit::DocumentMut>()
         .map_err(|e| InitError::ParseConfig {
             path: config_path.display().to_string(),
@@ -185,5 +175,55 @@ pub fn update_existing_config(
         source: e,
     })?;
 
-    Ok(new_manifests)
+    Ok((new_manifests, primary_source(&updated)))
+}
+
+/// Every declared manifest's path and whether it is flagged `primary = true`, in declaration order,
+/// in both spellings the loader accepts: an array of tables and an array of inline tables.
+fn declared_manifests(doc: &toml_edit::DocumentMut) -> Vec<(String, bool)> {
+    let Some(item) = doc.get("manifest") else {
+        return Vec::new();
+    };
+    let mut entries: Vec<&dyn TableLike> = Vec::new();
+    if let Some(tables) = item.as_array_of_tables() {
+        entries.extend(tables.iter().map(|table| table as &dyn TableLike));
+    } else if let Some(array) = item.as_array() {
+        entries.extend(
+            array
+                .iter()
+                .filter_map(|value| value.as_inline_table())
+                .map(|table| table as &dyn TableLike),
+        );
+    }
+    entries
+        .into_iter()
+        .filter_map(|entry| {
+            let path = entry.get("path")?.as_str()?.to_string();
+            let primary = entry.get("primary").and_then(|primary| primary.as_bool()) == Some(true);
+            Some((path, primary))
+        })
+        .collect()
+}
+
+/// The primary source of truth an existing document declares, read from the document itself.
+///
+/// `init --update` must not start failing because a configuration it was asked to append to does not
+/// load, so this mirrors `deduce_current_source` (`src/config/validation.rs:13`) at the document
+/// level, in its order: `[version] current_source` (or its deprecated alias `source`), then the
+/// manifest flagged `primary = true`, then the first declared manifest.
+fn primary_source(doc: &toml_edit::DocumentMut) -> Option<String> {
+    let declared = doc
+        .get("version")
+        .and_then(|version| version.get("current_source").or_else(|| version.get("source")))
+        .and_then(|item| item.as_str())
+        .filter(|path| !path.is_empty());
+    if let Some(path) = declared {
+        return Some(path.to_string());
+    }
+    let manifests = declared_manifests(doc);
+    manifests
+        .iter()
+        .find(|(_, primary)| *primary)
+        .or_else(|| manifests.first())
+        .map(|(path, _)| path.clone())
 }

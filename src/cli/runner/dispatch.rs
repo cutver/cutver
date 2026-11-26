@@ -60,7 +60,8 @@ pub fn run(args: Cli) -> i32 {
             force,
             path,
             no_template,
-        } => match crate::init::run_init(path, update, force, no_template) {
+            json,
+        } => match crate::init::run_init(path, update, force, no_template, json) {
             Ok(()) => 0,
             Err(e) => {
                 print_error(FailureCode::Init, e);
@@ -152,12 +153,13 @@ pub fn run(args: Cli) -> i32 {
             commit,
             conclusion,
             run,
+            json,
         } => {
             let config = match load_config(args.config) {
                 Ok(c) => c,
                 Err(code) => return code,
             };
-            run_attest(&config, &gate, &commit, conclusion.into(), run.as_deref())
+            run_attest(&config, &gate, &commit, conclusion.into(), run.as_deref(), json)
         }
         Commands::Open {
             target,
@@ -183,6 +185,7 @@ fn run_attest(
     commit: &str,
     conclusion: gates::Conclusion,
     run: Option<&str>,
+    json: bool,
 ) -> i32 {
     let gate = match gates::GateName::parse(gate) {
         Ok(gate) => gate,
@@ -192,18 +195,74 @@ fn run_attest(
         }
     };
     match gates::record(config, &gate, commit, conclusion, run) {
-        Ok(recorded) => {
-            println!(
-                "attested '{}' as {} for commit {} ({})",
-                recorded.attestation.gate, recorded.attestation.conclusion, recorded.attestation.commit, recorded.path
-            );
-            0
-        }
+        Ok(recorded) => report_attestation(&recorded, json),
         Err(e) => {
             print_error(FailureCode::Attest, e);
             1
         }
     }
+}
+
+/// Reports the record that was just written, on the channel the invocation asked for (#404 S3).
+///
+/// The human channel is the one line `attest` always printed; the machine channel is one compact
+/// object, and a render that fails is reported through the same envelope rather than panicking.
+fn report_attestation(recorded: &gates::Recorded, json: bool) -> i32 {
+    if !json {
+        println!(
+            "attested '{}' as {} for commit {} ({})",
+            recorded.attestation.gate, recorded.attestation.conclusion, recorded.attestation.commit, recorded.path
+        );
+        return 0;
+    }
+    match render_attest_json(recorded) {
+        Ok(object) => {
+            println!("{object}");
+            0
+        }
+        Err(source) => {
+            print_error(
+                FailureCode::Attest,
+                format!("failed to render the attestation object: {source}"),
+            );
+            1
+        }
+    }
+}
+
+/// The machine-readable result of `cutver attest` (#404 S3).
+///
+/// Field order is part of the contract, so the shape is a struct rather than a map; `src/cli/json.rs`
+/// owns the `schemaVersion` this object opens with and the payload keys are snake_case, like every
+/// other surface. `run` is present and `null` when the gate named none, so an adapter parses one
+/// shape instead of two.
+///
+/// `path` is the file the record landed in, spelled relative to the workspace root with forward
+/// slashes — the spelling the human line prints and the one `publish --require-gate` reads through
+/// `gates::path_of`. A wrapper resolves it against the workspace root it already knows instead of
+/// re-deriving the attestation directory from `[gates] dir`.
+#[derive(serde::Serialize)]
+struct AttestJson<'a> {
+    gate: &'a gates::GateName,
+    commit: &'a str,
+    conclusion: &'a gates::Conclusion,
+    verified_at: &'a str,
+    run: Option<&'a str>,
+    path: &'a str,
+}
+
+/// Renders one recorded verdict as the compact object `--json` prints: one line, `schemaVersion`
+/// first.
+fn render_attest_json(recorded: &gates::Recorded) -> Result<String, serde_json::Error> {
+    let fields = AttestJson {
+        gate: &recorded.attestation.gate,
+        commit: &recorded.attestation.commit,
+        conclusion: &recorded.attestation.conclusion,
+        verified_at: &recorded.attestation.verified_at,
+        run: recorded.attestation.run.as_deref(),
+        path: &recorded.path,
+    };
+    serde_json::to_string(&crate::cli::json::Versioned::new(&fields))
 }
 
 /// Parses every `--require-gate` value into a gate name before anything is read or tagged.

@@ -527,6 +527,7 @@ fn init_defaults() {
         force,
         path,
         no_template,
+        ..
     } = cli.command
     else {
         panic!("expected init");
@@ -554,6 +555,7 @@ fn init_with_long_flags() {
         force,
         path,
         no_template,
+        ..
     } = cli.command
     else {
         panic!("expected init");
@@ -634,6 +636,7 @@ fn init_with_short_flags() {
         force,
         path,
         no_template,
+        ..
     } = cli.command
     else {
         panic!("expected init");
@@ -661,6 +664,7 @@ fn attest_parses_its_arguments_and_requires_a_conclusion() {
         commit,
         conclusion,
         run,
+        ..
     } = cli.command
     else {
         panic!("expected attest")

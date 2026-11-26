@@ -71,6 +71,43 @@ const BUMP_KEYS: [&str; 8] = [
     "publish_commands",
 ];
 
+/// The keys `cutver publish --json` must carry, and the same keys a `--dry-run` reports.
+///
+/// Source of truth: `PublishJson` (`src/cli/runner/publish.rs:204`), whose field order is the
+/// contract, together with the two objects it embeds: one `[publish] commands` result per entry
+/// (`position`, `command`, `exit_code`) and the `on_post_release` outcome (`dispatched`,
+/// `left_alone`). This is the closing phase's whole outcome, and a program that drives the release
+/// tail from a subprocess has no other way to read it: the plan tree a human reads is prose, and the
+/// exit code only says whether the run worked. A dry run reports the same nine keys with the values
+/// of a rehearsal (S5), which is why the baseline is pinned without cutting a release.
+const PUBLISH_KEYS: [&str; 9] = [
+    "tag",
+    "commit",
+    "dry_run",
+    "tag_skipped",
+    "pushed_refs",
+    "floating_tag",
+    "floating_tag_moved",
+    "publish_commands",
+    "post_release",
+];
+
+/// The keys `cutver attest --json` must carry.
+///
+/// Source of truth: `AttestJson` (`src/cli/runner/dispatch.rs:245`), field order included. The object
+/// is the record `attest` just wrote plus the file it landed in, so a wrapper learns which
+/// attestation `publish --require-gate` will read without re-deriving `[gates] dir`; `run` is
+/// present and `null` when the gate names none, so an adapter parses one shape instead of two.
+const ATTEST_KEYS: [&str; 6] = ["gate", "commit", "conclusion", "verified_at", "run", "path"];
+
+/// The keys `cutver init --json` must carry.
+///
+/// Source of truth: `InitJson` (`src/init/scaffold/runner.rs:260`), field order included: the
+/// manifests detected (each one a `path`, `is_root` and `kind`), the primary source of truth chosen
+/// and the files the run wrote. A wrapper that loses `primary` has to guess which manifest is the
+/// version's source of truth, and one that loses `files_written` cannot tell what it may now commit.
+const INIT_KEYS: [&str; 3] = ["manifests", "primary", "files_written"];
+
 /// The keys `cutver doctor --json` must carry.
 ///
 /// Source of truth: `docs/internals/machine-contract-surfaces.md` § `doctor --json` (the example
@@ -173,6 +210,26 @@ fn stdout_of_success(fixture: &Fixture, args: &[&str], surface: &str) -> String 
     String::from_utf8_lossy(&output.stdout).to_string()
 }
 
+/// The full sha `git rev-parse` resolves for `revision`, failing with git's own stderr.
+///
+/// A surface that takes a commit needs a real one rather than the message the fixture helper
+/// returns, and a wrong sha would make the surface under test report a refusal instead of an object.
+fn git_sha(fixture: &Fixture, revision: &str, surface: &str) -> String {
+    let output = run_git(&fixture.dir, &["rev-parse", revision]);
+    assert!(
+        output.status.success(),
+        "`{surface}` needs the commit `{revision}` resolves to, and `git rev-parse` failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let sha = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    assert_eq!(
+        sha.len(),
+        40,
+        "`{surface}` needs a full commit sha, and `{revision}` resolved to {sha:?}"
+    );
+    sha
+}
+
 /// The properties this suite exists for, asserted the same way on every surface: the version is `1`,
 /// the object opens with it at the exact documented bytes, and no pinned key is gone.
 fn assert_surface(surface: &str, document: &str, baseline: &[&str], prefix: &str) {
@@ -258,6 +315,138 @@ fn bump_dry_run_keeps_every_documented_key_in_schema_version_one() {
         result["released"], false,
         "a dry run must keep reporting `released: false`, so a CI job reading it never claims a \
          release it did not cut. Got: {document}"
+    );
+}
+
+/// The closing phase: a dry run reports the same nine keys a real run does, so the key set is pinned
+/// without pushing a tag or driving `[publish] commands`. The tag is the version the fixture's
+/// manifests declare, which `publish` refuses to publish under any other name; a rehearsal writes
+/// nothing, so reporting it is enough.
+#[test]
+fn publish_dry_run_keeps_every_documented_key_in_schema_version_one() {
+    let guard = workspace("schema-publish");
+    let fixture = guard.fixture();
+
+    let document = stdout_of_success(
+        fixture,
+        &["publish", "--tag", "v1.2.3", "--dry-run", "--json"],
+        "cutver publish --dry-run --json",
+    );
+
+    assert_surface(
+        "`cutver publish --json --dry-run`",
+        &document,
+        &PUBLISH_KEYS,
+        COMPACT_PREFIX,
+    );
+
+    let result: Value = serde_json::from_str(document.trim()).expect("the publish result is one JSON object");
+    assert_eq!(
+        result["dry_run"], true,
+        "a dry run must keep saying it was one, so a wrapper never reports a rehearsal as a \
+         release. Got: {document}"
+    );
+}
+
+/// The attestation: the record just written and the path it landed in. `--json` reads no repository,
+/// so the commit is the fixture's own HEAD, resolved rather than invented.
+#[test]
+fn attest_keeps_every_documented_key_in_schema_version_one() {
+    let guard = workspace("schema-attest");
+    let fixture = guard.fixture();
+    let sha = git_sha(fixture, "HEAD", "cutver attest --json");
+
+    let document = stdout_of_success(
+        fixture,
+        &["attest", "ci", "--commit", &sha, "--conclusion", "success", "--json"],
+        "cutver attest --json",
+    );
+
+    assert_surface("`cutver attest --json`", &document, &ATTEST_KEYS, COMPACT_PREFIX);
+
+    let record: Value = serde_json::from_str(document.trim()).expect("the attestation result is one JSON object");
+    assert_eq!(
+        record["conclusion"], "success",
+        "the object reports the verdict that was recorded, not a default. Got: {document}"
+    );
+}
+
+/// The scaffold: a fresh directory holding one manifest, so `init` has something to detect and a
+/// configuration to write, and the object names both.
+#[test]
+fn init_keeps_every_documented_key_in_schema_version_one() {
+    let guard = FixtureGuard::new("schema-init");
+    let fixture = guard.fixture();
+    // `package.json` is the one manifest `init` can configure on its own, so the key set is
+    // observable without a `cutver.toml` already existing.
+    fixture.write("package.json", PACKAGE_JSON);
+
+    let document = stdout_of_success(fixture, &["init", "--json"], "cutver init --json");
+
+    assert_surface("`cutver init --json`", &document, &INIT_KEYS, COMPACT_PREFIX);
+
+    let scaffold: Value = serde_json::from_str(document.trim()).expect("the init result is one JSON object");
+    assert!(
+        scaffold["manifests"].is_array(),
+        "`manifests` stays the list a consumer iterates, never a bare array standing in for the \
+         whole document. Got: {document}"
+    );
+}
+
+/// The refusal half of the same surfaces: a `--json` invocation that is refused still writes the
+/// exact empty string on stdout, so a consumer never parses half a document, and the envelope on
+/// stderr keeps the class and the process code.
+#[test]
+fn a_refused_publish_keeps_stdout_empty_and_the_envelope_whole() {
+    let guard = workspace("schema-publish-refusal");
+    let fixture = guard.fixture();
+    // A commit that is not HEAD: `publish` refuses it before the tag, the pushes and the commands.
+    let behind = git_sha(fixture, "HEAD^", "the publish refusal");
+
+    let output = cutver_command(&fixture.dir)
+        .args(["publish", "--tag", "v1.2.3", "--commit", &behind, "--json"])
+        .output()
+        .expect("failed to execute the cutver binary");
+
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "a refusal exits 1 so the failure is observable, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "",
+        "a refused `--json` invocation writes the exact empty string on stdout — not a blank line, \
+         not the keys it had already rendered — because a consumer that reads stdout would \
+         otherwise parse an empty document as a result"
+    );
+    let envelope = String::from_utf8_lossy(&output.stderr).to_string();
+
+    assert_surface("the publish failure envelope", &envelope, &ERROR_KEYS, COMPACT_PREFIX);
+
+    let parsed: Value = serde_json::from_str(envelope.trim()).expect("stderr is the failure envelope");
+    let body = parsed["error"]
+        .as_object()
+        .unwrap_or_else(|| panic!("the envelope's `error` is an object, got {envelope:?}"));
+    let body_keys: BTreeSet<&str> = body.keys().map(String::as_str).collect();
+    let missing: Vec<&str> = ERROR_BODY_KEYS
+        .iter()
+        .copied()
+        .filter(|key| !body_keys.contains(key))
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "a refused publish keeps the envelope's `error` keys {missing:?}: the class lives in `code`, \
+         never in the exit code, and the outcome in `exitCode`. Emitted keys: {body_keys:?}"
+    );
+    assert_eq!(
+        parsed["error"]["code"], "publish",
+        "the failure class is the command's, spelled in the envelope: {envelope}"
+    );
+    assert_eq!(
+        parsed["error"]["exitCode"], 1,
+        "`exitCode` must equal the process code, or the object and the status disagree: {envelope}"
     );
 }
 

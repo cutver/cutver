@@ -28,18 +28,23 @@ existing key changes meaning or disappears.
 | `cutver plugin list --json` | `{"schemaVersion", "plugins": [...]}`. | `1` |
 | `cutver plugin info <NAME> --json` | The registry entry, pretty-printed. | `1` |
 | `cutver plugin search --json` | `{"schemaVersion", "plugins": [...]}`. | `1` |
+| `cutver publish --json` | The closing phase: the tag, the commit, the refs pushed, the floating major tag, each `[publish] commands` result and the `on_post_release` outcome. | `1` |
+| `cutver attest --json` | The verdict it just recorded, and the file it landed in. | `1` |
+| `cutver init --json` | The manifests detected, the primary source of truth and the files written. | `1` |
 
 `changelog` carries two keys that look alike and are not: `schemaVersion` is the contract version and
 `version` the release version the entry describes.
 
-The surfaces that do not emit JSON are deliberate: `init`, `attest`, `open --print-url` (a URL),
-`publish` (the plan tree), `plan` without `--json` (the same tree the dry run prints) and `plugin
-add|update|restore|remove` print human output only. Passing `--json` to them is a usage error, not a
-silent fallback.
+The surfaces that do not emit JSON are deliberate: `open --print-url` (a URL), `plan` without `--json`
+(the same tree the dry run prints) and `plugin add|update|restore|remove` print human output only.
+`open` and those four `plugin` subcommands declare no `--json` at all, so passing it to them is a usage
+error, not a silent fallback; `plan` prints the tree until the flag asks for its object.
 
-Three of these need more than a row, so the CI output channel `bump`, `plan` and `publish` also fill on
-a runner, `doctor --json` and `plan --json` are specified on the
-[command surfaces page](machine-contract-surfaces.md); this table stays the index to them.
+Several of these need more than a row: the CI output channel `bump`, `plan` and `publish` also fill on a
+runner, and `doctor --json`, `plan --json` and `changelog --json` are specified as data on the
+[command surfaces page](machine-contract-surfaces.md); the object `publish --json`, `attest --json` and
+`init --json` print is on the [release tail page](machine-contract-release-tail.md). This table stays
+the index to both.
 
 ## Exit Codes
 
@@ -91,8 +96,9 @@ A message is escaped, so the envelope is one JSON line however long the human te
 | `publish` | The closing phase prepared by `bump --defer-publish`. |
 | `report` | Serializing or writing the `--json`/`--report` result after the release finished. |
 
-`init`, `attest` and `external` have no machine surface today, so their failures still render for a
-human; the codes are reserved so a `--json` on them later does not have to invent one.
+`external` still has no machine surface: its envelope is wired, but `wants_machine` answers `false` for
+it, so its failures render for a human and the code stays reserved. `init` and `attest` were the other
+two names here and answer on `--json` now, so their codes are the class those objects carry.
 
 ### Limits
 

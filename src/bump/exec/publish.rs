@@ -15,6 +15,7 @@ use std::sync::Arc;
 use semver::Version;
 
 use crate::bump::Error;
+pub use crate::bump::exec::command::publish::{PublishCommand, PushLog, joined};
 use crate::bump::exec::command::{format_command, run_publish_command};
 use crate::bump::exec::guard;
 use crate::changelog;
@@ -69,17 +70,12 @@ pub(crate) struct Published {
     /// True when this run stopped before publishing, so the summary can name the command that
     /// finishes it instead of claiming nothing was configured.
     pub deferred: bool,
-    /// The `on_post_release` plugins a resume left alone, named where the phase decision was made.
-    pub post_release_left_alone: Vec<String>,
-}
-
-/// The pushes a publication run made, kept per caller: `planned` is what a dry run reports (the
-/// pipeline's summary names a command only when it did not run it), `performed` is what was really
-/// sent, which is what `cutver publish` reports after it closed a release.
-#[derive(Default)]
-pub(crate) struct PushLog {
-    pub planned: Vec<String>,
-    pub performed: Vec<String>,
+    /// The `on_post_release` outcome: the plugins the phase dispatched and the ones a resume left
+    /// alone, named where the phase decision was made (#326 D2).
+    pub post_release: post_release::Dispatch,
+    /// Each `[publish] commands` entry with the code it exited with, so a machine reads what
+    /// `publish_commands` only names (#404 S1).
+    pub publish_command_results: Vec<PublishCommand>,
 }
 
 impl Published {
@@ -90,7 +86,8 @@ impl Published {
             publish_push_command: joined(planned),
             publish_commands: Vec::new(),
             deferred: true,
-            post_release_left_alone: Vec::new(),
+            post_release: post_release::Dispatch::default(),
+            publish_command_results: Vec::new(),
         }
     }
 }
@@ -124,12 +121,22 @@ fn notes_are_streamed(request: &PublishRequest) -> bool {
 pub struct PublishSummary {
     pub tag: String,
     pub commit: String,
+    /// The refspecs `git` really received, in push order: what a machine reads where
+    /// `publish_push_command` joins the same pushes for a human (#404 S1).
+    pub push_refs: Vec<String>,
     pub floating_tag: Option<String>,
     pub publish_push_command: Option<String>,
     pub publish_commands: Vec<String>,
+    /// Each `[publish] commands` entry with its 1-based position and the code its child exited with,
+    /// so a machine reads the results `publish_commands` only names (#404 S1).
+    pub publish_command_results: Vec<PublishCommand>,
     /// The `on_post_release` plugins this run left alone, so the runner prints what happened instead
     /// of rebuilding the manager to name them (#326 D2).
     pub post_release_left_alone: Vec<String>,
+    /// The plugins the phase dispatched, which is the other half of the same outcome (#404 S1).
+    pub post_release_dispatched: Vec<String>,
+    /// Whether the release tag already pointed at HEAD, so this run created none.
+    pub tag_skipped: bool,
     pub dry_run: bool,
 }
 
@@ -211,10 +218,14 @@ fn publish_prepared(
     Ok(PublishSummary {
         tag: request.tag.clone(),
         commit: head.to_string(),
+        push_refs: pushes.performed_refs,
         floating_tag: published.floating_tag,
         publish_push_command: joined(&pushes.performed),
         publish_commands: published.publish_commands,
-        post_release_left_alone: published.post_release_left_alone,
+        publish_command_results: published.publish_command_results,
+        post_release_left_alone: published.post_release.left_alone,
+        post_release_dispatched: published.post_release.dispatched,
+        tag_skipped: published.tag_skipped,
         dry_run: request.dry_run,
     })
 }
@@ -238,30 +249,17 @@ pub(crate) fn finalize(scope: &PublicationScope<'_>, pushes: &mut PushLog) -> Re
     }
     push_release_tag(scope, pushes)?;
     let floating_tag = handle_floating_tag(scope, pushes)?;
-    let publish_commands = run_publish_commands(scope)?;
-    let post_release_left_alone = post_release::dispatch(scope)?;
+    let publish_command_results = run_publish_commands(scope)?;
+    let post_release = post_release::dispatch(scope)?;
     Ok(Published {
         tag_skipped,
         floating_tag,
         publish_push_command: joined(&pushes.planned),
-        publish_commands,
+        publish_commands: publish_command_results.iter().map(|c| c.command.clone()).collect(),
+        publish_command_results,
+        post_release,
         deferred: false,
-        post_release_left_alone,
     })
-}
-
-fn joined(push_commands: &[String]) -> Option<String> {
-    if push_commands.is_empty() {
-        None
-    } else {
-        Some(push_commands.join(" && "))
-    }
-}
-
-/// The command line one push argv names, in the same display form `git::ops::run_push` uses: the
-/// summary must name exactly what `git` received, so the argv comes from the same builders.
-fn push_command(argv: &[String]) -> String {
-    format!("git {}", argv.join(" "))
 }
 
 fn create_tag(scope: &PublicationScope<'_>) -> Result<bool, Error> {
@@ -314,7 +312,7 @@ fn push_release_tag(scope: &PublicationScope<'_>, pushes: &mut PushLog) -> Resul
     if let Some(cmd) = pushed {
         pushes.planned.push(cmd);
     }
-    pushes.performed.push(push_command(&tag_push_args(scope.tag)));
+    pushes.record(&tag_push_args(scope.tag));
     Ok(())
 }
 
@@ -372,26 +370,30 @@ fn handle_floating_tag(scope: &PublicationScope<'_>, pushes: &mut PushLog) -> Re
     })? {
         pushes.planned.push(cmd);
     }
-    pushes.performed.push(push_command(&tag_force_push_args(&f_tag)));
+    pushes.record(&tag_force_push_args(&f_tag));
     Ok(Some(f_tag))
 }
 
-fn run_publish_commands(scope: &PublicationScope<'_>) -> Result<Vec<String>, Error> {
-    let mut publish_commands = Vec::new();
-    for cmd in &scope.config.publish.commands {
+fn run_publish_commands(scope: &PublicationScope<'_>) -> Result<Vec<PublishCommand>, Error> {
+    let mut results = Vec::new();
+    for (index, cmd) in scope.config.publish.commands.iter().enumerate() {
         let formatted = format_command(cmd, scope.interp_ctx)?;
+        let mut exit_code = None;
         if !scope.dry_run {
             // The last step of a run whose commit and tag already exist, so the failure carries
             // them: it must never look like a failure before anything landed.
-            run_publish_command(&formatted, &scope.config.root_dir, scope.config.publish.default_timeout).map_err(
-                |source| Error::PublishAfterCommit {
-                    commit: scope.commit.to_string(),
-                    tag: scope.tag.to_string(),
-                    source: Box::new(source),
-                },
-            )?;
+            let run = run_publish_command(&formatted, &scope.config.root_dir, scope.config.publish.default_timeout);
+            exit_code = run.map_err(|source| Error::PublishAfterCommit {
+                commit: scope.commit.to_string(),
+                tag: scope.tag.to_string(),
+                source: Box::new(source),
+            })?;
         }
-        publish_commands.push(formatted);
+        results.push(PublishCommand {
+            position: index + 1,
+            command: formatted,
+            exit_code,
+        });
     }
-    Ok(publish_commands)
+    Ok(results)
 }

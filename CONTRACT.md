@@ -226,7 +226,7 @@ The pillars above govern how well something is built; this one governs whether i
 Crossing this boundary is a **judgement** call for the maintainer, stated in the pull request and recorded in the changelog, never an implementation detail discovered in review.
 
 ### 2. Surface Compatibility & Deprecation
-`schemaVersion` implies a policy that had never been written down. Every machine surface — `bump`, `plan`, `doctor`, `changelog`, `plugin` JSON, exit codes, the plan file and the attestation files — follows it:
+`schemaVersion` implies a policy that had never been written down. Every machine surface — `bump`, `publish`, `attest`, `init`, `plan`, `doctor`, `changelog`, `plugin` JSON, exit codes, the plan file and the attestation files — follows it:
 
 - **Additive within a schema version.** New fields may appear; existing fields keep their name, type, meaning and position, because field order is part of the contract.
 - **A break is a major bump with a deprecation cycle**, not a release: the old surface keeps working and warns, and the removal happens in a later release than the rename. The channel is live (#272): one table of deprecated spellings in `src/config/deprecations.rs`, a `warning: …` line on stderr always, the same sentence as a `::warning::` annotation under CI, and the sentence as data in `doctor --json`.

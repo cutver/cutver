@@ -11,7 +11,8 @@ use serde::Serialize;
 ///
 /// `1` is the first published schema. It covers the release result (`bump --json`, `bump --report`),
 /// the release context (`changelog latest|show --json`), the plugin surfaces (`plugin list|info|search
-/// --json`) and the diagnosis (`doctor --json`).
+/// --json`), the release tail (`publish --json`, `attest --json`, `init --json`) and the diagnosis
+/// (`doctor --json`).
 pub const SCHEMA_VERSION: u32 = 1;
 
 /// Wraps a payload struct in the version envelope, so `schemaVersion` is the first key and the

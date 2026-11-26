@@ -34,6 +34,9 @@ pub fn wants_machine(command: &Commands) -> bool {
     match command {
         Commands::Bump { json, report, .. } => *json || report.is_some(),
         Commands::Plan { json, .. } => *json,
+        Commands::Publish { json, .. } => *json,
+        Commands::Attest { json, .. } => *json,
+        Commands::Init { json, .. } => *json,
         Commands::Doctor { json, .. } => *json,
         Commands::Changelog { command } => matches!(
             command,
@@ -50,10 +53,7 @@ pub fn wants_machine(command: &Commands) -> bool {
             | PluginCommands::Update(_)
             | PluginCommands::Remove { .. } => false,
         },
-        Commands::Init { .. } | Commands::Publish { .. } | Commands::Open { .. } | Commands::External(_) => false,
-        // `attest` prints one human line and has no `--json` surface of its own, so its failure
-        // keeps the human path.
-        Commands::Attest { .. } => false,
+        Commands::Open { .. } | Commands::External(_) => false,
     }
 }
 
@@ -163,6 +163,7 @@ pub fn try_emit_failure(code: FailureCode, message: &str) -> bool {
 mod tests {
     use super::*;
     use crate::cli::args::{BumpLevel, PluginAddArgs, PluginInfoArgs, PluginSearchArgs};
+    use clap::Parser;
 
     // The global is deliberately not flipped here: the test binary runs these tests in parallel in
     // one process, so `select`/`is_machine` are proven by `tests/machine_error_contract.rs`.
@@ -192,6 +193,48 @@ mod tests {
 
     fn plugin(command: PluginCommands) -> Commands {
         Commands::Plugin { command }
+    }
+
+    fn publish(json: bool) -> Commands {
+        Commands::Publish {
+            tag: "v1.3.0".into(),
+            commit: None,
+            notes_file: None,
+            require_gate: Vec::new(),
+            dry_run: false,
+            resume: false,
+            json,
+        }
+    }
+
+    /// `attest`'s verdict type belongs to `args` and is not re-exported, so the helper parses the
+    /// invocation a user writes instead of naming the type: the flag has to reach the parser anyway.
+    fn attest(json: bool) -> Commands {
+        let mut args = vec![
+            "cutver",
+            "attest",
+            "ci",
+            "--commit",
+            "0123456789abcdef0123456789abcdef01234567",
+            "--conclusion",
+            "success",
+        ];
+        if json {
+            args.push("--json");
+        }
+        crate::cli::args::Cli::try_parse_from(args)
+            .expect("`attest` parses")
+            .command
+    }
+
+    fn init(json: bool) -> Commands {
+        Commands::Init {
+            update: false,
+            force: false,
+            path: None,
+            no_template: false,
+            json,
+        }
     }
 
     #[test]
@@ -277,6 +320,9 @@ mod tests {
         assert!(wants_machine(&bump(true, None)), "`bump --json`");
         assert!(wants_machine(&bump(false, Some("release.json"))), "`bump --report`");
         assert!(wants_machine(&plan(true)), "`plan --json`");
+        assert!(wants_machine(&publish(true)), "`publish --json`");
+        assert!(wants_machine(&attest(true)), "`attest --json`");
+        assert!(wants_machine(&init(true)), "`init --json`");
         assert!(wants_machine(&Commands::Doctor {
             check_changelog: false,
             json: true
@@ -315,6 +361,9 @@ mod tests {
     fn a_command_that_asks_for_human_output_keeps_the_human_line() {
         assert!(!wants_machine(&bump(false, None)), "`bump`");
         assert!(!wants_machine(&plan(false)), "`plan`");
+        assert!(!wants_machine(&publish(false)), "`publish`");
+        assert!(!wants_machine(&attest(false)), "`attest`");
+        assert!(!wants_machine(&init(false)), "`init`");
         assert!(!wants_machine(&Commands::Doctor {
             check_changelog: false,
             json: false

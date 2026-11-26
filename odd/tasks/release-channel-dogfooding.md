@@ -437,3 +437,42 @@ body written from the workflow still fails.
   allows it, because a citation that names `Promote the draft release` cannot rot.
 - Worth keeping: the worker disclosed that it ran two `gh release edit -R cutver/cutver` invocations with a
   nonexistent tag to compare flag parsing. Both were `release not found` reads; no release was touched.
+
+**L15. T6 done: the floating major tag is stable-only, and the skip says so.** Both decision points and
+both renderings, pinned on this host. `plan minor --channel alpha` on `0.21.0` prints
+
+```
+├── Stable-only
+│   └── the floating major tag 'v0' is not moved: 0.22.0-alpha.1 is a prerelease, and that tag is stable-only (ADR-0005)
+```
+
+and `cutver publish --tag 1.3.0-alpha.1` prints the same section with `'v1'` — measured by running the
+binary in two throwaway repositories, not asserted from reading code. A stable cut is unchanged in both
+trees (`floating tag: v0` inside `Git`; `Floating tag` in `publish`), which the preserve pins assert
+including the absence of the new section. The rule lives in `resolve::floating_tag`
+(`src/bump/plan/resolve.rs:62`) and its second reader `handle_floating_tag`
+(`src/bump/exec/publish.rs:356`), each explaining at the point of decision so the report cannot disagree
+with it. Three REDs came first: the unit (`left: Some("v0") right: None`), the plan e2e (the tree dropped
+the line instead of explaining it) and the publish e2e (`v1` local and remote both moved to the prerelease
+commit). One real failure inside the bound: `publish.rs` grew to **406** and the ceiling caught it; prose
+was trimmed to 397, not the assertion. Budgets after: `plan.rs` 394/400, `publish.rs` 397/400,
+`tree.rs` 363, `runner/publish.rs` 178, `resolve.rs` 218. `plan --json` gained no key (the carrier is
+`#[serde(skip)]`, phase 5's D3 intact). Four pages that promised the tag always follows were corrected in
+one sentence each, and none needed a trim.
+
+**Two residuals, recorded rather than papered over.**
+- **The fact travels to the publish tree as a method, not a field**: `PublishSummary::floating_tag_skipped(&self,
+  config)` re-derives the reason from the same config the decision used, because adding the field meant
+  growing `src/bump/exec/publish.rs` past 400 — it is at **397**. The re-derivation is deterministic from
+  identical inputs, so it cannot lie today, but it is the shape T4 paid a debt to remove. **When
+  `publish.rs` is next extracted, the field becomes cheap: make it a field and give
+  `src/cli/ci/tests.rs:174`'s exhaustive literal its one `floating_tag_skipped: None,` line.**
+- **The bump and dry-run trees still drop the line silently.** `Summary` lives in `src/bump/types.rs` at
+  **399/400** and has no carrier for the skip, so `cutver bump --dry-run --channel alpha` reports no
+  floating tag and no reason. Same trigger: the `types.rs` split (T7's condition) makes the carrier a field
+  and the line renderable.
+
+**Process note that has now happened twice.** The worker reported two `## Allowed edit surfaces` blocks
+again: a `subagent_continue` prompt adds its own block to the original task's block, and the worker has to
+choose. Saying "replacement, not a union" is what kept both rounds correct; keep saying it, and read
+whichever block is labelled.

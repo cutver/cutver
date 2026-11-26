@@ -13,6 +13,23 @@ on:
           - patch
           - minor
           - major
+      # The ladder `cutver bump --channel` publishes on, as a closed choice: `alpha`, `beta` and `rc`
+      # append the channel and start its counter (`0.22.0` becomes `0.22.0-alpha.1`), and `stable`
+      # publishes the version itself, which is how `0.22.0-rc.1` is promoted to `0.22.0` (ADR-0005).
+      # Empty is the default and means "cut the version the level names", i.e. exactly what every
+      # dispatch before this input existed did; the empty option has to stay first so a dispatch
+      # nobody re-filled submits it rather than whichever channel happens to head the list.
+      channel:
+        description: "Prerelease channel (empty cuts the stable version)"
+        required: false
+        default: ""
+        type: choice
+        options:
+          - ""
+          - alpha
+          - beta
+          - rc
+          - stable
       dry_run:
         description: "Simulate the release without publishing or creating a release"
         required: false
@@ -132,6 +149,11 @@ jobs:
       # `--defer-publish` is what keeps this job harmless: the bump commit and its branch push are
       # the only writes it performs. The tag, the registry and the release wait for `publish`.
       #
+      # The channel is appended to the same array only when the dispatch names one. An empty channel
+      # contributes no argument at all — not an empty `--channel ""` — so a dispatch that sets none
+      # runs the byte-identical command it ran before the input existed, and the ladder is opt-in.
+      # An empty argument would instead fail at parse time, after the release-profile build.
+      #
       # The step owns the job outputs. `cutver bump` appends `released`, `deferred`, `version`, `tag`
       # and `commit` to `$GITHUB_OUTPUT` itself (phase 4A of #326), so no step after this one parses a
       # report file and the release result has one owner. `--dry-run` reports `released=false`, which
@@ -142,6 +164,9 @@ jobs:
           args=(--defer-publish)
           if [ "${{ inputs.dry_run }}" = "true" ]; then
             args+=(--dry-run)
+          fi
+          if [ -n "${{ inputs.channel }}" ]; then
+            args+=(--channel "${{ inputs.channel }}")
           fi
           cutver bump "${{ inputs.bump || 'auto' }}" "${args[@]}"
           # Fail closed. Every downstream job is gated on `released`, so an output that is missing —

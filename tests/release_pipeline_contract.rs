@@ -264,11 +264,11 @@ fn holds(test: &str, dispatch: &[(&str, &str)]) -> bool {
         let words = shell_words(reference, dispatch);
         return words.len() == 1 && !words[0].is_empty();
     }
-    if let Some(rest) = test.strip_prefix("[ ").and_then(|rest| rest.strip_suffix(" ]")) {
-        if let Some((reference, expected)) = rest.split_once(" = ") {
-            let words = shell_words(reference, dispatch);
-            return words.len() == 1 && words[0] == expected.trim().trim_matches('"');
-        }
+    if let Some(rest) = test.strip_prefix("[ ").and_then(|rest| rest.strip_suffix(" ]"))
+        && let Some((reference, expected)) = rest.split_once(" = ")
+    {
+        let words = shell_words(reference, dispatch);
+        return words.len() == 1 && words[0] == expected.trim().trim_matches('"');
     }
     panic!("the bump step tests `{test}`, a condition this reader does not model")
 }
@@ -665,7 +665,7 @@ fn a_dispatch_channel_reaches_the_bump_arguments() {
             vec!["bump", "minor", "--defer-publish", "--dry-run", "--channel", "alpha"],
         ),
     ] {
-        let arguments = bump_arguments(&step, &[("bump", "minor"), ("channel", "alpha"), ("dry_run", dry_run)]);
+        let arguments = bump_arguments(step, &[("bump", "minor"), ("channel", "alpha"), ("dry_run", dry_run)]);
         assert_eq!(
             arguments, expected,
             "a dispatch with `channel: alpha` and `dry_run: {dry_run}` must run `cutver bump` with \
@@ -691,7 +691,7 @@ fn an_empty_channel_keeps_todays_bump_arguments() {
         ("auto", "false", vec!["bump", "auto", "--defer-publish"]),
         ("minor", "true", vec!["bump", "minor", "--defer-publish", "--dry-run"]),
     ] {
-        let arguments = bump_arguments(&step, &[("bump", bump), ("channel", ""), ("dry_run", dry_run)]);
+        let arguments = bump_arguments(step, &[("bump", bump), ("channel", ""), ("dry_run", dry_run)]);
         assert_eq!(
             arguments, expected,
             "a dispatch with no channel must run exactly the argv it runs today, `{expected:?}`: the \

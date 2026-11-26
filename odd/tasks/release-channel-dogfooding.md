@@ -476,3 +476,33 @@ one sentence each, and none needed a trim.
 again: a `subagent_continue` prompt adds its own block to the original task's block, and the worker has to
 choose. Saying "replacement, not a union" is what kept both rounds correct; keep saying it, and read
 whichever block is labelled.
+
+**L16. T7 done: a prerelease image carries its own version and nothing else.** `.github/workflows/container.yml`
++ `tests/container_workflow_contract.rs`. Every rule in both promotions is gated on the event's own flag
+(`enable=${{ !github.event.release.prerelease }}`), and `{{version}}` / `{{version}}-plugins` stay
+unconditional, so a prerelease emits `0.22.0-alpha.1` (and `-plugins`) only. The trigger is untouched: the
+prerelease image is wanted.
+
+Three corrections the plan needed, all measured before any edit:
+- **`container.yml` already had a contract file** — `tests/container_workflow_contract.rs`, with
+  `container_tag_rules()` and the exact-rule-set `assert_eq!` convention. The plan pointed at
+  `tests/ci_workflow_contract.rs`, which its own header scopes to the ruleset contexts and the docs ceiling.
+  A pin belongs where the rules live.
+- **The `latest` sentence was not in `pipeline.md`**: it was in `docs/integrations/containers.md:11,14` and
+  `docs/guides/installation.md:62`. Both corrected in one clause each; neither page needed a trim
+  (126 and 91 of 200).
+- **The rule list was six, not four.** `type=sha` fires on every event, so gating only `major.minor`, `major`
+  and `latest` would still have handed a prerelease a `sha-<short>` tag. The maintainer's D3 says "everywhere",
+  so it is gated too; `type=ref,event.branch` stays untouched because a release event's ref is a tag and it
+  emits nothing either way.
+
+**The find worth keeping: operator precedence.** `latest` already had `(release event || main ref)`; adding
+the gate naively as `|| … && !prerelease` re-enables `latest` on a prerelease, because `&&` binds tighter than
+`||`. The rule is `(A || B) && gate`, pinned by a stable-tag test that has to model the parentheses explicitly
+when it strips the gate to compare against the pre-T7 list. That test caught the bug it was written to prevent.
+
+RED first (`left` the ungated six-rule list, `right` the gated one, 4 passed / 1 failed), GREEN 5/5, and a
+mutation inverted the gate in all four places and failed **both** T7 tests and nothing else. The absent-payload
+reasoning for `workflow_dispatch` and `main` pushes is written beside the rules, with its chain stated
+(absent property → null → falsy → `!null` is true) rather than asserted: a dispatch cannot be run from here,
+so that path is pinned in the contract and explained in a comment until T10 observes it.

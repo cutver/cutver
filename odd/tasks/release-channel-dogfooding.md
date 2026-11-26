@@ -49,7 +49,7 @@ them, and the first real prerelease is observed before anything downstream is si
   text is what makes the rest of this document plannable by someone who only reads #326.
 - **T2 — Decision batch, before any code.** (S3, S6) Four answers, each with a recommendation in
   `## Decisions`. If the maintainer accepts all four, T3 onward runs without another question.
-- **T3 — `channel` reaches the bump step.** (S1) `release.yml:4-20` declares only `bump` and `dry_run`;
+- **T3 — `channel` reaches the bump step.** *(done, L9)* (S1) `release.yml:4-20` declares only `bump` and `dry_run`;
   the call is hardcoded at `release.yml:146` with `args` built at `:141-145` (only `--defer-publish` /
   `--dry-run`). Add a `channel` choice input (empty = current behaviour, then `alpha|beta|rc|stable`) and
   append `--channel "$CHANNEL"` only when it is set, so an untouched dispatch is byte-identical to today.
@@ -260,3 +260,34 @@ runs without another question. What that acceptance obliges is worth restating o
 irreversible: the crate half now publishes on every channel, so the first alpha leaves a permanent
 `0.22.0-alpha.1` on crates.io that can be yanked and never deleted. It is the price of exercising the
 `publish-<n>` attestation path on the channel that is meant to prove the ladder.
+
+- **D7 — The first real run is `alpha.1`, then `rc.1`, then `0.22.0`; `beta` is skipped.** Accepted
+  2026-11-25 (see L9). The ladder's rungs are about the release *process*, not about how stable the code
+  feels: an alpha is the label that can absorb a pipeline defect, and an rc is a promise that the next
+  version is settled. With D4 publishing the crate, each rung is a permanent artifact, so the short ladder
+  is two prereleases rather than three.
+
+**L9. T3 merged into the branch, and the rung order decided.** Maintainer asked «Como todo está lo
+suficientemente estable, podemos lanzarla en rc, que dices?» and, on the answer that the label is not what
+makes a prerelease safe — the missing `--prerelease`/`--latest=false`, the floating tag, the container and
+the two package managers are T5-T8, none of them written — chose **D7**: `0.22.0-alpha.1` as the rehearsal,
+then `rc.1`, then `0.22.0`.
+
+T3 is done in `be14e67` and verified by the parent: `release.yml` declares a `channel` `choice` input whose
+first option is empty (so a dispatch nobody re-filled submits "no channel"), and the step appends
+`--channel "<value>"` only under `if [ -n ... ]`, so an untouched dispatch runs the byte-identical argv it
+ran before. `tests/release_pipeline_contract.rs` gained three tests plus a fail-closed argv reader that
+executes the step's own shell constructs and panics on any construct it does not model. RED observed first —
+`a_dispatch_channel_reaches_the_bump_arguments` failed with `left: ["bump", "minor", "--defer-publish"]`
+against `right: [..., "--channel", "alpha"]`, and the input pin panicked with "the dispatch must declare a
+`channel` input"; GREEN 31/31 with **zero deletions**, so no existing pin was edited or weakened. Two
+mutations prove the new pins have teeth: removing the guard fails the empty-channel test, and moving the
+channel branch after the call line fails the reach test. Parent re-ran the suite: 31 passed, 0 failed.
+
+**Citation map, because T3 moved the numbers the rest of this document quotes.** In
+`tests/release_pipeline_contract.rs` (now 1438 lines): the exact bump string `:184 → :384` and `:387 → :628`;
+`args=(--defer-publish)` `:381 → :622`; the `inputs.dry_run` pins `:249 → :449`; the `released=` grep
+`:332 → :573`; `WRITTEN` `:408 → :709`. In `release.yml` (now 1141 lines): the input map ends at `:32`, the
+`channel` block is `:15-32`, the guard `:168-170`, the call `:171`. T3's own citation `:141-145` was right for
+the `args` array but the call it qualifies is `:146`, outside that range. The plan's "1041 lines" for
+`release.yml` was already stale at 1116 before this change.

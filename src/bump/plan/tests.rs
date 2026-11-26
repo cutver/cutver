@@ -13,6 +13,7 @@ fn document() -> ReleasePlan {
         next_version: Version::new(0, 20, 0),
         tag: "v0.20.0".into(),
         floating_tag: Some("v0".into()),
+        floating_tag_skipped: None,
         commit: "abc1234".into(),
         branch: Some("main".into()),
         commit_message: "chore(release): v0.20.0".into(),
@@ -270,4 +271,88 @@ fn a_plugin_driven_configuration_is_refused_instead_of_dispatched() {
     let text = err.to_string();
     assert!(text.contains("strategy = \"plugin\""), "{text}");
     assert!(text.contains("cutver bump --dry-run"), "{text}");
+}
+
+/// T6 and ADR-0005's decision: a prerelease publishes exactly its own version, so the floating major
+/// tag is stable-only. The decision is one function because `src/bump/exec/publish.rs` answers it again
+/// for `cutver publish` — a separate process that never reads a plan — from the version it publishes.
+///
+/// The skip is carried, not dropped: the same value holds the line the tree prints, so a plan can never
+/// report a skip it did not decide (#326 T6).
+#[test]
+fn the_floating_major_tag_is_stable_only() {
+    use super::resolve::floating_tag;
+
+    let config = Config {
+        git: crate::config::Git {
+            floating_major_tag: true,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let version = |text: &str| text.parse::<Version>().expect("a semver version");
+
+    for prerelease in ["0.22.0-alpha.1", "0.22.0-beta.2", "0.22.0-rc.1", "0.22.0-nightly.3"] {
+        let floating = floating_tag(&config, &version(prerelease), false);
+        assert_eq!(
+            floating.tag, None,
+            "{prerelease} is a prerelease: `v0` must not follow it"
+        );
+        assert_eq!(
+            floating.skipped.as_deref(),
+            Some(format!(
+                "the floating major tag 'v0' is not moved: {prerelease} is a prerelease, and that tag is stable-only (ADR-0005)"
+            ).as_str()),
+            "the skip is reported with the tag, the version and the decision behind it"
+        );
+    }
+
+    let stable = floating_tag(&config, &version("0.22.0"), false);
+    assert_eq!(
+        stable.tag,
+        Some("v0".into()),
+        "a stable release still moves the floating major tag"
+    );
+    assert_eq!(stable.skipped, None, "a stable release has nothing to explain");
+}
+
+/// The two reasons the plan reported no floating tag before T6, unchanged — and, crucially, still
+/// unremarked: a no-op or a configuration that never asked for the tag is not a skip to explain.
+#[test]
+fn a_no_op_or_an_unconfigured_release_still_names_no_floating_tag() {
+    use super::resolve::floating_tag;
+
+    let armed = Config {
+        git: crate::config::Git {
+            floating_major_tag: true,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let disarmed = Config::default();
+
+    for (floating, why) in [
+        (
+            floating_tag(&armed, &Version::new(0, 22, 0), true),
+            "a no-op releases nothing",
+        ),
+        (
+            floating_tag(&disarmed, &Version::new(0, 22, 0), false),
+            "`floating_major_tag = false` asks for no tag",
+        ),
+        (
+            floating_tag(
+                &disarmed,
+                &Version::parse("0.22.0-alpha.1").expect("a semver version"),
+                false,
+            ),
+            "`floating_major_tag = false` asks for no tag on any channel",
+        ),
+    ] {
+        assert_eq!(floating.tag, None, "{why}, so no tag is moved");
+        assert_eq!(
+            floating.skipped, None,
+            "{why}, so there is no deliberate skip to report"
+        );
+    }
 }

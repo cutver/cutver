@@ -99,7 +99,7 @@ Arbitrary untracked files and unstaged edits outside declared manifests and the 
 1. Validate, before anything is written or pushed: the working tree is clean (`require_clean_tree`, with the file named by `--notes-file` exempt because it is the command's input rather than a change in the tree — `--notes-file -` reads the notes from standard input instead, which exempts nothing because nothing has to exist in the tree, and an empty stream is refused here), the tag is a valid ref, it equals the version the manifests declare at `HEAD`, `--commit` (when given) is `HEAD`, and no release tag exists locally or remotely.
 2. Create the annotated tag on `HEAD`.
 3. `git push origin refs/tags/<release tag>`, only when `[publish] push = true`.
-4. Move the floating major tag onto the release commit when `[git] floating_major_tag = true`, and force-push it when `[publish] push` is enabled too.
+4. Move the floating major tag onto the release commit when `[git] floating_major_tag = true` and the release is stable — a prerelease publishes exactly its own version and moves no floating tag (ADR-0005) — and force-push it when `[publish] push` is enabled too.
 5. Run `[publish].commands` in declaration order.
 6. Dispatch the `on_post_release` plugins, which is what creates the draft release.
 
@@ -117,7 +117,7 @@ Steps 2 to 6 are the code the single-process pipeline runs inline, in that order
 
 1. `git push origin refs/heads/<branch>`
 2. `git push origin refs/tags/<release tag>`
-3. `git push origin +refs/tags/<floating major tag>`, only when `[git] floating_major_tag = true`
+3. `git push origin +refs/tags/<floating major tag>`, only when `[git] floating_major_tag = true` and the release is stable
 
 No push carries `--tags`, and the floating-major-tag refspec is the only forced ref
 (`branch_push_args`, `tag_push_args` and `tag_force_push_args` in `src/git/ops.rs`). A batched
@@ -143,7 +143,7 @@ remote state after an abort is predictable:
 
 ## Floating Major Tags Mechanics
 
-When `floating_major_tag = true` is enabled in `[git]`:
+When `floating_major_tag = true` is enabled in `[git]`, on a stable release — a prerelease publishes exactly its own version and moves no floating tag (ADR-0005):
 
 1. **Tag Filtering**: Floating tags matching `^[vV]?[0-9]+$` are ignored during `git::latest_tag` queries. Commit distance and SemVer bumping always calculate against full release version tags rather than floating major tags.
 2. **Drift Immunity**: `cutver doctor --check-changelog` filters out floating major tags to avoid false changelog drift warnings.

@@ -32,6 +32,55 @@ impl super::ReleasePlan {
     }
 }
 
+/// What a release does about the floating major tag: the tag it moves, or the line saying why it
+/// deliberately moves none (#326 T6).
+///
+/// One value instead of two calls, so the report cannot disagree with the decision it explains. A
+/// deliberate skip is reported, never silently dropped: the tree prints a `Stable-only` section the way
+/// it prints a `No-op` one, because a line that simply disappears makes a reader infer the reason.
+pub(super) struct FloatingTag {
+    pub(super) tag: Option<String>,
+    /// `Some` only for the skip a reader has to be told about: a prerelease target on a configuration
+    /// that asked for the tag. The two reasons a release named no floating tag before T6 — a no-op and
+    /// `floating_major_tag = false` — still report nothing, exactly as they did.
+    pub(super) skipped: Option<String>,
+}
+
+/// The floating major tag this release moves, or the line that says why it moves none.
+///
+/// **Stable-only, and it is one rule with two decision points.** ADR-0005's decision states it whole: a
+/// prerelease publishes exactly its own version, and the floating major tag, container `latest`, the
+/// Homebrew tap and the Scoop bucket are stable-only. `uses: cutver/setup@v0` defaults to
+/// `version: latest`, so a `v0` that follows a prerelease hands an alpha to every consumer who asked
+/// for the default — the one hazard the rule exists for. This function is the plan's half of that
+/// decision and is deliberately a function rather than an inline expression, because
+/// `src/bump/exec/publish.rs` decides the same thing again for `cutver publish`, a separate process
+/// that never reads a plan, and the two must answer from the same rule: the version being released.
+///
+/// A no-op moves nothing, which is why the caller passes it in: a plan that releases nothing reports no
+/// tag either (#326 D1a).
+pub(super) fn floating_tag(config: &Config, next: &Version, no_op: bool) -> FloatingTag {
+    let named = git::tag_name(&config.git.tag_prefix, &next.major.to_string());
+    if no_op || !config.git.floating_major_tag {
+        return FloatingTag {
+            tag: None,
+            skipped: None,
+        };
+    }
+    if semver_bump::channel_of(next) == Channel::Stable.as_str() {
+        return FloatingTag {
+            tag: Some(named),
+            skipped: None,
+        };
+    }
+    FloatingTag {
+        tag: None,
+        skipped: Some(format!(
+            "the floating major tag '{named}' is not moved: {next} is a prerelease, and that tag is stable-only (ADR-0005)"
+        )),
+    }
+}
+
 /// The version the run cuts: the level (or the plugin) decides the base, and a channel the caller
 /// named decides what the workspace is on top of it (#326 S1, D1). A caller that named no channel
 /// keeps the version the level and the manifests already decided.

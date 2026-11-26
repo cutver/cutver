@@ -33,7 +33,11 @@ pub fn run_publish(config: &config::Config, request: PublishRequest) -> i32 {
             let left_alone = request
                 .resume
                 .then(|| left_alone_line(&summary.post_release_left_alone));
-            print_publish_summary(&summary, left_alone.as_deref());
+            // The floating major tag this release deliberately left alone, named where a reader looks for
+            // it. A skip that renders as a missing line is what phase 5's resume line exists to prevent
+            // (#326 D2, T6).
+            let floating_skipped = summary.floating_tag_skipped(config);
+            print_publish_summary(&summary, left_alone.as_deref(), floating_skipped.as_deref());
             crate::cli::ci::on_publish_success(&summary);
             0
         }
@@ -92,10 +96,21 @@ fn plan_header(summary: &PublishSummary, theme: &Theme, resume: Option<&str>) ->
 /// A resume adds the one section its evidence cannot show: which steps were repeated because
 /// repeating them is harmless, what that means for a tag, a push or a floating major tag that was
 /// already in place, and which `on_post_release` plugins it left alone (#326 D2).
-fn publish_sections(summary: &PublishSummary, theme: &Theme, resume: Option<&str>) -> Vec<(&'static str, Vec<String>)> {
+fn publish_sections(
+    summary: &PublishSummary,
+    theme: &Theme,
+    resume: Option<&str>,
+    floating_skipped: Option<&str>,
+) -> Vec<(&'static str, Vec<String>)> {
     let mut sections = vec![("Tag", vec![theme.accent(&summary.tag)])];
     if let Some(floating) = &summary.floating_tag {
         sections.push(("Floating tag", vec![theme.accent(floating)]));
+    }
+    // The other half of the same step, and the reason it is not a missing line: a release that
+    // deliberately left the floating major tag alone says so where it names the tag it moved
+    // (#326 T6, ADR-0005).
+    if let Some(skipped) = floating_skipped {
+        sections.push((tree::STABLE_ONLY, vec![skipped.to_string()]));
     }
     if let Some(command) = &summary.publish_push_command {
         let pushes = command.split(" && ").map(str::to_string).collect();
@@ -136,9 +151,14 @@ fn left_alone_line(left_alone: &[String]) -> String {
 }
 
 /// Renders the closing phase as a tree, using the same glyphs as the release plan.
-pub fn render_publish_plan(summary: &PublishSummary, theme: &Theme, resume: Option<&str>) -> String {
+pub fn render_publish_plan(
+    summary: &PublishSummary,
+    theme: &Theme,
+    resume: Option<&str>,
+    floating_skipped: Option<&str>,
+) -> String {
     let mut out = plan_header(summary, theme, resume);
-    let sections = publish_sections(summary, theme, resume);
+    let sections = publish_sections(summary, theme, resume, floating_skipped);
     let total = sections.len();
     for (index, (title, items)) in sections.iter().enumerate() {
         for line in tree::render_section_with_items(title, items, index + 1 == total) {
@@ -149,10 +169,10 @@ pub fn render_publish_plan(summary: &PublishSummary, theme: &Theme, resume: Opti
     out
 }
 
-pub fn print_publish_summary(summary: &PublishSummary, resume: Option<&str>) {
+pub fn print_publish_summary(summary: &PublishSummary, resume: Option<&str>, floating_skipped: Option<&str>) {
     let theme = Theme::stdout();
     if summary.dry_run {
         println!("{}\n", tree::render_simulation_banner(&theme));
     }
-    println!("{}", render_publish_plan(summary, &theme, resume));
+    println!("{}", render_publish_plan(summary, &theme, resume, floating_skipped));
 }

@@ -73,7 +73,7 @@ them, and the first real prerelease is observed before anything downstream is si
   (`WRITTEN: [released, deferred, version, tag, commit]`), which is the test that keeps the workflow from
   reading a key the tool never writes. No `--json` change beyond an additive key (phase 5's D3 stays
   intact: `plan --json` keeps `touched[]` as the transition's authority).
-- **T5 — A prerelease is never Latest, and the promotion says so itself.** (S6) The plan first claimed that
+- **T5 — A prerelease is never Latest, and the promotion says so itself.** (S6) *(done, L14)* The plan first claimed that
   "a published alpha would become Latest". **That premise is false, measured on 2026-11-25**, and T5 survives
   in a better shape. GitHub guarantees the property at the API: "The latest release is the most recent
   non-prerelease, non-draft release" and "Drafts and prereleases cannot be set as latest"
@@ -113,6 +113,14 @@ them, and the first real prerelease is observed before anything downstream is si
   deprecated shim for exactly one release and is removed in the next, and the four pages that describe the
   two builds (`docs/guides/installation.md` and the three others that name `cutver-plugins`) say one name
   and how to get the lean binary if that is what you want.
+
+- **T13 — Sweep the stale `release.yml` citations in the publish guide.** (S6) `docs/guides/plugin-github-publish.md`
+  cites `release.yml` at `:625-637`, `:639-659`, `:661-684`, `:686-713`, `:103-110`, `:116-122`, `:133-146`
+  and `:543-544`; measured on 2026-11-25, the step those first four describe is at `:728` and the file is
+  **1172** lines. The drift predates this branch (it came with the publish job's growth), and T5 corrected
+  only the promotion's own line because that is the surface T5 changed. Sweep the rest, and prefer a step
+  name over a line number where the prose allows it — a citation that names `Promote the draft release`
+  cannot rot the way `:686-713` did.
 
 - **T12 — winget, from nothing.** (S8) No file in this repository mentions winget: it is a new delivery
   surface, not a modification. Ship a single `cutver` package built from the plugins asset (portable zip),
@@ -401,3 +409,31 @@ outside this project:
 - Two pieces of the plan's own reasoning survive untouched: the `Where` citations for the promotion step and
   the two `GH_TOKEN:`/`TAG:` pins are still the constraints to respect, and `release.yml`'s line number has
   moved because T3 added the `channel` input — locate it by the `gh release edit "$TAG" --draft=false` string.
+
+**L14. T5 done: the promotion states its own rule.** `.github/workflows/release.yml` + `tests/release_pipeline_contract.rs`,
+33 pins green. The `version` job now exports `channel` the way it already exported `released`/`tag`/`commit`,
+and `Promote the draft release` branches on it: `stable` → `gh release edit "$TAG" --draft=false
+--prerelease=false --latest=true`; `alpha|beta|rc` → the same with `--prerelease --latest=false`; anything
+else → `::error` and `exit 1`, so an empty channel is a refusal rather than a guess. `--prerelease=false` and
+`--latest=false` are documented spellings for gh 2.105.0 (`gh release edit --help`), which is why the stable
+arm can state "not a prerelease" instead of relying on the draft's prior state.
+
+RED in three stages, all recorded by the worker: the prerelease arm asserted first failed against today's
+single command (`left: ["gh release edit \"$TAG\" --draft=false"]`); after adding only the job output, the
+step failed for not receiving `CHANNEL`; and the config pin was proven by adding `prerelease = true` to
+`cutver.toml`, watching it redden with its reason, and reverting to a byte-identical file. A mutation
+(`--latest=false` → `true` in the prerelease arm) fails the branch pin. No existing assertion was deleted:
+the old single-line `assert_eq!` now pins the *pair* of commands, so a third promotion, a `--title` or a
+body written from the workflow still fails.
+
+**Two findings the parent had to handle, and they are the point of this entry.**
+- **The guide described a promotion that no longer exists**, and it was outside the unit's surface:
+  `docs/guides/plugin-github-publish.md:86` said `gh release edit "$TAG" --draft=false` promotes. Fixed in the
+  same commit as T5, with both arms and the fail-closed default.
+- **That page's other `release.yml` citations were already stale before this branch** — it cites `:625-637`
+  for the step that is at `:728` today, an ~100-line drift that came with the publish job's growth, not with
+  T3/T5. Only the promotion's line was corrected here, because only that line was this unit's surface. The
+  sweep is **T13**, and its instruction is general: prefer a step name to a line number where the prose
+  allows it, because a citation that names `Promote the draft release` cannot rot.
+- Worth keeping: the worker disclosed that it ran two `gh release edit -R cutver/cutver` invocations with a
+  nonexistent tag to compare flag parsing. Both were `release not found` reads; no release was touched.

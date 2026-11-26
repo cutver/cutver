@@ -59,3 +59,11 @@ L8 (evidence, c1): `b2311b2` "feat(publish): answer on a machine surface with --
 - Delivery: PR #408, one PR as L3 asked, `type:feat`.
 - T9: issue **#409**, the attestation file's missing `schemaVersion`, filed separately per L4.
 - Residuals carried forward, named rather than buried: `primary_source` (`src/init/scaffold/config_gen.rs:180`) mirrors `deduce_current_source` at the document level and no test asserts they agree; `tests/e2e_init.rs` is `#![cfg(unix)]`, so its Linux half ran nowhere on this host and only the cross-platform suite covers those paths.
+
+## Closed
+
+- **Merged** 2026-11-26T16:45:34Z as squash commit `4222127` "feat(cli): give publish, attest and init a machine surface (#408)". The remote branch is deleted and `main` is clean.
+- Two CI cycles were red before green, and both were the same class of defect in tests this work added: an assertion compared a path the binary reports against its own spelling. `68b4c5b` canonicalized both sides of two comparisons (macOS `/private/var`, Windows `RUNNER~1`); `ab653c6` split `init`'s human summary at its first line, so the directory is compared as a directory while every byte after it is still a full golden. The reproduction that turned the first one into a defect instead of a mystery — a directory junction as the temp root — is recorded as `cutver/tests/temp-root-path-spelling`.
+- **#410** was filed for the `primary_source` duplication, so the residual above has an owner and acceptance criteria instead of only a sentence here.
+- **ADR-0006** carries a dated status note now: rule 4's prerequisite landed with this work, and the ADR stays `proposed` because the honesty pass and rules 1-2 are still unstarted.
+- Queue for the next session, in the order the evidence supports: **#409** (the attestation file a wrapper cannot version-detect), then **#410** (the duplicate loader rule), then ADR-0006's implementation. **#317** and the B1 product are unchanged by this work and are not verified here.

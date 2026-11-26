@@ -4,12 +4,18 @@
 **Date**: 2026-11-26
 **Owner**: repository maintainer
 **Review date**: 2027-11-26 (proposal; not yet committed by the maintainer)
+
+> **Status note, 2026-11-26**: rule 4's first prerequisite is met. [#404](https://github.com/cutver/cutver/issues/404)
+> landed as squash commit `4222127` (PR [#408](https://github.com/cutver/cutver/pull/408)): `publish`,
+> `attest` and `init` each answer with one object on one stream, and a refusal carries its class in the
+> envelope. The status stays `proposed` — the honesty pass, rule 1's scaffold and rule 2's mutators are
+> still unstarted, and `init --dry-run` does not exist.
 **Implementation**: not started. This record revises the draft circulated on 2026-11-26: it keeps
 progressive disclosure, moves the CI-file work out of the core, and puts the missing machine surface
 ([#404](https://github.com/cutver/cutver/issues/404)) before the new subcommands. The order is fixed by
 rule 4: #404 first, then the honesty pass, then rule 1's scaffold, then rule 2's mutators, then the
-adapter. `init` gains `--dry-run` and `--json` as part of rule 1 — it has neither today — so a user can
-see the plan before a file is written.
+adapter. `init` gains `--dry-run` as part of rule 1 — its `--json` landed ahead of it in
+[#408](https://github.com/cutver/cutver/pull/408) — so a user can see the plan before a file is written.
 
 ## Context
 
@@ -138,8 +144,9 @@ already recorded above.
 
 - Raised by: [#360](https://github.com/cutver/cutver/issues/360) — the generated `cutver.toml` neither
   covers the shipped surface nor delimits scope.
-- Blocked on: [#404](https://github.com/cutver/cutver/issues/404) — `publish`, `attest` and `init` have
-  no machine surface, which rule 4 requires before either phase ships.
+- Met on 2026-11-26: [#404](https://github.com/cutver/cutver/issues/404) — `publish`, `attest` and `init`
+  had no machine surface, which rule 4 requires before either phase ships. Landed as `4222127`
+  (PR [#408](https://github.com/cutver/cutver/pull/408)).
 - Depends on: [#317](https://github.com/cutver/cutver/issues/317) — what `[plugins.<name>.config]` is
   for, which rule 4 must settle before the surface can claim honesty.
 - Boundary: [`CONTRACT.md` §VII.1](../../CONTRACT.md), *What `cutver` May Become*.

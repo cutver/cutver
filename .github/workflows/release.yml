@@ -641,9 +641,56 @@ jobs:
           fi
           sh .github/scripts/release-smoke/run-plugins.sh "$1" "${{ needs.version.outputs.version }}"
 
+  # The gate channel, written where `cutver publish` reads it. The two verdicts say the smoke matrix
+  # ran for the release commit, and nothing else records that: without them the guarantee lives only
+  # in the `needs:` graph above, where a reordered job or a re-run of publish alone can skip it. The
+  # binary that attests is the linux artifact the smoke job already exercised, not a fresh compile.
+  attest:
+    name: Attest the release gates
+    needs: [version, smoke, smoke-plugins]
+    if: needs.version.outputs.released == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout the release commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.version.outputs.commit }}
+
+      - name: Download the smoke-tested binary
+        uses: actions/download-artifact@v5
+        with:
+          name: asset-linux-x86_64
+          path: ${{ runner.temp }}/asset
+
+      - name: Record the smoke verdicts
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/unpacked"
+          tar -xzf "$RUNNER_TEMP"/asset/*.tar.gz -C "$RUNNER_TEMP/unpacked"
+          bin="$(ls "$RUNNER_TEMP"/unpacked/cutver-*/cutver)"
+          run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          for gate in smoke smoke-plugins; do
+            "$bin" attest "$gate" --commit "$COMMIT" --conclusion success --run "$run_url"
+          done
+          ls -l .cutver/attestations
+        env:
+          COMMIT: ${{ needs.version.outputs.commit }}
+
+      - name: Upload the attestations
+        uses: actions/upload-artifact@v5
+        with:
+          name: attestations
+          path: .cutver/attestations
+          # `.cutver` is a hidden segment, and the action skips hidden paths by default: without
+          # this the upload finds nothing, `if-no-files-found` fails the job and no release runs.
+          include-hidden-files: true
+          if-no-files-found: error
+
   publish:
     name: Upload release assets
-    needs: [version, build, build-plugins, smoke, smoke-plugins]
+    needs: [version, build, build-plugins, smoke, smoke-plugins, attest]
     if: needs.version.outputs.released == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -724,6 +771,16 @@ jobs:
           # then streamed into `cutver publish`, so the guard is handed no path at all and
           # `[publish].commands` runs `cargo publish` over a tree that never held them (#306).
           path: ${{ runner.temp }}
+
+      # `[gates] require` makes `cutver publish` refuse without these files, so the publisher's
+      # runner has to hold them. They arrive as an artifact rather than from the checkout because an
+      # attestation is a machine record, not a source; the directory is exempt from the clean-tree
+      # guard, so landing it in the workspace does not dirty the tree `cutver publish` validates.
+      - name: Download the gate attestations
+        uses: actions/download-artifact@v5
+        with:
+          name: attestations
+          path: .cutver/attestations
 
       - name: Publish the release
         id: publish

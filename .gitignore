@@ -6,6 +6,10 @@
 !.pi/skills/
 
 
+# Machine-written verdicts, never sources: `cutver attest` creates this directory and `cutver
+# publish` reads it.
+.cutver/
+
 # Local drafts
 DISCORD_POST.md
 discord.md

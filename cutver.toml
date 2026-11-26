@@ -39,6 +39,12 @@ post_bump = "cargo check --workspace --features plugins"
 # the `[preflight]` budget for the same cold Extism and Wasmtime compile.
 default_timeout = 1200
 
+[gates]
+# `publish` refuses without these verdicts, and only the release workflow writes them: the smoke
+# matrix passed for the release commit. They live outside the workflow's `needs:` graph on purpose,
+# so reordering a job or re-running `publish` alone still cannot skip the smoke.
+require = ["smoke", "smoke-plugins"]
+
 [publish]
 # The root package only: `cutver-pdk` carries its own version, and bumping the CLI is not evidence
 # that its API changed.

@@ -261,11 +261,15 @@ irreversible: the crate half now publishes on every channel, so the first alpha 
 `0.22.0-alpha.1` on crates.io that can be yanked and never deleted. It is the price of exercising the
 `publish-<n>` attestation path on the channel that is meant to prove the ladder.
 
-- **D7 — The first real run is `alpha.1`, then `rc.1`, then `0.22.0`; `beta` is skipped.** Accepted
-  2026-11-25 (see L9). The ladder's rungs are about the release *process*, not about how stable the code
-  feels: an alpha is the label that can absorb a pipeline defect, and an rc is a promise that the next
-  version is settled. With D4 publishing the crate, each rung is a permanent artifact, so the short ladder
-  is two prereleases rather than three.
+- **D7 — The first real run is `0.22.0-alpha.1` and the ladder runs in full: `alpha.1 → beta.1 → rc.1 →
+  0.22.0`.** Accepted 2026-11-25, superseding the short ladder decided the same day (L10 records both). The
+  rungs are about the release *process*, and each is a **different transition** of the arithmetic phase 5
+  shipped: `alpha → beta` and `beta → rc` are the restart-on-another-channel case (the counter starts at 1
+  again), and `rc → 0.22.0` is promotion, which must not increment anything. Running the full ladder
+  observes all three on the real pipeline; the short one left the two restarts unproven. What it still does
+  **not** prove is the counter-only case (`alpha.1 → alpha.2`), which needs a second cut on the same
+  channel — a rung re-run would prove it, and T10's record should say whether it happened. Cost, per D4:
+  three permanent prerelease versions on crates.io, not two.
 
 **L9. T3 merged into the branch, and the rung order decided.** Maintainer asked «Como todo está lo
 suficientemente estable, podemos lanzarla en rc, que dices?» and, on the answer that the label is not what
@@ -291,3 +295,16 @@ channel branch after the call line fails the reach test. Parent re-ran the suite
 `channel` block is `:15-32`, the guard `:168-170`, the call `:171`. T3's own citation `:141-145` was right for
 the `args` array but the call it qualifies is `:146`, outside that range. The plan's "1041 lines" for
 `release.yml` was already stale at 1116 before this change.
+
+**L10. `beta` comes back: the ladder runs in full.** Maintainer, verbatim: «mejor no saltemos beta, hagamos
+la escalera completa, alpha, beta, rc y stable». This supersedes the short ladder accepted minutes earlier
+(D7, L9), and it is the better call for a reason the short one got wrong: the rungs are not three samples of
+the same behaviour, they are the three distinct transitions phase 5 claims to implement — restart on another
+channel twice (`alpha → beta`, `beta → rc`) and promotion without an increment (`rc → 0.22.0`). Skipping
+`beta` would have left the second restart, and promotion from a beta, unobserved on the real pipeline.
+
+No task changes: T10 was written for the full ladder (`0.22.0-alpha.1 → beta → rc → stable`, observed
+dispatch by dispatch). One thing to keep honest in T10's record: the **counter-only** case — two cuts on the
+same channel, `alpha.1 → alpha.2` — is not part of a ladder that visits each channel once, so it stays
+unproven on the real pipeline unless a rung is deliberately re-cut. The unit tests cover it; the pipeline
+record should say so rather than imply four transitions were watched.

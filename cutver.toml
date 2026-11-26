@@ -1,5 +1,6 @@
-# cutver's own release configuration — dogfooding.
-# Every future bump of this crate runs through this tool.
+# cutver's own release configuration — dogfooding: every bump of this crate runs through this tool.
+# A comment here says why this repository deviates from a default. What a key does lives in
+# docs/reference/configuration-tables.md, which is the contract and is maintained there.
 
 [project]
 name = "cutver"
@@ -9,13 +10,10 @@ path = "Cargo.toml"
 kind = "cargo-package"
 
 [preflight]
-# The plugin feature gates the WebAssembly driver, so the default build never
-# compiles or tests it. Cutting a release through this configuration without the
-# feature would ship the plugin contract without exercising it.
+# The default build never compiles the WebAssembly driver, so the gate must exercise the feature
+# the release will ship.
 tests = "cargo test --features plugins"
-# The feature pulls in the Extism and Wasmtime stack, which is the slowest thing
-# this gate compiles from a cold cache. The previous 600s budget was sized for a
-# build that never touched it.
+# Sized for that stack from a cold cache, which is the slowest thing this gate compiles.
 default_timeout = 1200
 
 [changelog]
@@ -32,43 +30,30 @@ require_branch = "main"
 floating_major_tag = true
 
 [hooks]
-# Runs in phase 1, before any manifest is touched: an unformatted tree must not become a
-# release commit. Cheap and deterministic, so it belongs here rather than in the slower gate.
+# Phase 1, before any manifest is touched: an unformatted tree must not become a release commit.
 pre_bump = "cargo fmt --all -- --check"
-# `--workspace` also compiles the `cutver-pdk` member, so a change that breaks the wire
-# contract fails this gate instead of shipping. That member is versioned independently and
-# published on its own schedule (`cargo publish -p cutver-pdk`); a CLI release never
-# republishes it, because its version tracks the wire contract and not the binary.
+# `--workspace` also compiles the `cutver-pdk` member, so a break in the wire contract fails here
+# instead of shipping. That member carries its own version and its own publication schedule.
 post_bump = "cargo check --workspace --features plugins"
+# Neither hook is killed without this key — an absent timeout means no bound at all — and 1200 is
+# the `[preflight]` budget for the same cold Extism and Wasmtime compile.
+default_timeout = 1200
 
 [publish]
-# Publishes the root package only. `cutver-pdk` is a separate crates.io package with its own
-# version, and bumping the CLI is not evidence that its API changed.
+# The root package only: `cutver-pdk` carries its own version, and bumping the CLI is not evidence
+# that its API changed.
 push = true
-# Publishing resumes here. v0.16.0 never reached the registry: publication was paused while the
-# GitHub path was proven, and by then the tag could no longer be published — `cargo publish`
-# resolves path dependencies against the registry, `^0.1.0` accepts `cutver-pdk` 0.1.1, and that
-# tag's source predates the `notes` field the newer pdk requires. `--no-verify` would have shipped
-# a crate that does not compile for its consumers, so the registry moves 0.15.0 → 0.17.0 and the
-# gap is permanent.
+# Publication was paused while the GitHub path was proven, so v0.16.0 was never published and the
+# gap 0.15.0 -> 0.17.0 is permanent. Never close it with `--no-verify`: it would ship a crate that
+# does not compile for its consumers.
 commands = ["cargo publish"]
 default_timeout = 300
 
-# Publishing the release itself, through the microkernel rather than a shell command.
-#
-# The dry-run rehearsal in this repository's release workflow exercises the plugin's
-# `on_pre_bump` (token validity and tag collision against the API) before the step that
-# replaces softprops/action-gh-release. `on_post_release` creates the release as a draft, so a
-# failed build cannot leave a public release without assets.
-#
-# A lean build cannot load this: `bump` fails closed with `PluginError::WasmNotSupported`. Run
-# the plugin-enabled variant (the `cutver-plugins-*` archive) when releasing.
 [plugins.github-publish]
+# A lean build cannot load this and fails closed with `WasmNotSupported`; release with the
+# `cutver-plugins-*` archive. 0.2.1 is valid from here on, because each release is cut by the
+# previously published binary.
 runtime = "wasm"
-# 0.2.1 publishes the entry Cutver renders, verbatim, and fails closed when the host sends
-# none. It is valid from here on: a release is cut by the previously published binary, and 0.17.0
-# is the first that carries `PostReleasePayload.notes`. v0.16.0 has no such field, which is why
-# 0.17.0 itself had to run with 0.1.2.
 source = "github-publish-0.2.1.wasm"
 hash = "0a38c934200f833a35cae3a53c03c403566f42f4abc58a744a7b2d8a09874a9b"
 capabilities = ["lifecycle.v1"]
@@ -77,18 +62,15 @@ events = ["on_pre_bump", "on_post_release"]
 [plugins.github-publish.permissions]
 network = ["api.github.com", "uploads.github.com"]
 env = ["GITHUB_TOKEN", "GITHUB_REPOSITORY"]
-# Grants the whole workspace tree, wider than the two files the plugin reads. Kept to match the
-# configuration cutver/sandbox validates rather than guessing at a narrower set.
+# Wider than the two files the plugin reads, kept to match the configuration cutver/sandbox validates.
 filesystem = ["."]
 
 [plugins.github-publish.config]
 repository = "cutver/cutver"
-# Required, and its default is false. Without it the plugin publishes a public, asset-less
-# release during the version job, before the binaries are built: the exact failure the draft
-# exists to prevent. The publish job uploads the assets and publishes it afterwards.
+# The plugin's default is false, and without it the plugin publishes a public, asset-less release
+# during the version job, before the binaries exist. Whether this table reaches the plugin at all is
+# unverified: the host does not deliver `[plugins.<name>.config]` (#317).
 draft = true
-# The plugin's default title is the bare tag (`v0.17.0`). Name the release for what it is.
 title_template = "cutver {version}"
-# Deliberately unset, so nobody "restores" them: `checksums` only covers assets the plugin
-# uploads itself (here the publish job uploads them with `gh release upload`), and
-# `generate_release_notes` would ask GitHub to write notes this repository renders itself.
+# `checksums` and `generate_release_notes` stay unset on purpose: they cover assets the publish job
+# uploads afterward with `gh release upload`, and notes this repository renders itself.

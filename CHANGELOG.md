@@ -3,6 +3,69 @@
 All notable changes to this project are documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com).
 
+## v0.22.0-alpha.1 — 2026-11-26
+
+> [!WARNING]
+> **Breaking changes**
+
+> - **plugin**: name the process child's directory, mark inert grants in [#368](https://github.com/cutver/cutver/pull/368) ([c3b7390](https://github.com/cutver/cutver/commit/c3b7390da41ace1ca28d8d1331ee9653fbf6322c)) by @Row0902
+>   > **Migration**: `PluginManager::from_config` and `from_config_with_lookup` gain
+a workspace-root parameter, and `ProcessDriver::new` takes the root as its second
+argument. Library consumers constructing either type must pass the workspace
+root; there is no root-less constructor left.
+
+### ✨ Features
+- **release**: let this repository cut its own prereleases, safely in [#399](https://github.com/cutver/cutver/pull/399) ([4779db7](https://github.com/cutver/cutver/commit/4779db73c34f9abce324ddd570c5956fe0354aa5)) by @Row0902
+- **publish**: resume a release on evidence, never on a guess ([661ce19](https://github.com/cutver/cutver/commit/661ce19285bbd07207a6410a62d33b5cd0bbb9a2)) by @Row0902
+- **semver**: promote a prerelease, and keep the level when the channel is stable ([0a7a3ac](https://github.com/cutver/cutver/commit/0a7a3acf58287597ca75787662df71e5fba6b686)) by @Row0902
+- **cli**: let bump and plan release on a prerelease channel ([9c86966](https://github.com/cutver/cutver/commit/9c869660a737b9ce005c89004bac3c9ba7d0c969)) by @Row0902
+- **cli**: let publish fill the CI channel the way bump and plan do in [#383](https://github.com/cutver/cutver/pull/383) ([1d1d220](https://github.com/cutver/cutver/commit/1d1d22002c28f721ae8c4151dd21d5cdc147220a)) by @Row0902
+- **cli**: forward a process plugin's stderr when --verbose is set in [#380](https://github.com/cutver/cutver/pull/380) ([988751a](https://github.com/cutver/cutver/commit/988751a0b724f15d165389392ca88899b51af2d5)) by @Row0902
+- **plugin**: version the invocation envelope so a mismatch is diagnosable in [#371](https://github.com/cutver/cutver/pull/371) ([96e4189](https://github.com/cutver/cutver/commit/96e4189e1984f048c857d42af40860c9e7365b3a)) by @Row0902
+- **plugin**: give a process plugin's child a named system environment baseline in [#370](https://github.com/cutver/cutver/pull/370) ([bfeebe1](https://github.com/cutver/cutver/commit/bfeebe162b1b28f9ce33d2df477f23bc98fdafd9)) by @Row0902
+
+### 🐛 Fixes
+- **publish**: pay phase 5's debts, starting with the advice a resume refuses in [#398](https://github.com/cutver/cutver/pull/398) ([8fec935](https://github.com/cutver/cutver/commit/8fec93511bca5d2da4627f9d91df4f1b1843c8ad)) by @Row0902
+- **test**: name the fixture's branch instead of inheriting the host's ([15a6f37](https://github.com/cutver/cutver/commit/15a6f3730849d27e5a7e0d637876e618b6a45309)) by @Row0902
+- **cli**: a no-op does not advertise a push it never makes ([8e5b29a](https://github.com/cutver/cutver/commit/8e5b29a3ab4e2ad951d2128ba0870b34ef2e6efd)) by @Row0902
+- **test**: give the six unix bump calls the channel T2 added ([b80282c](https://github.com/cutver/cutver/commit/b80282c26e2a5c8a0dacd1b25687555ff9516614)) by @Row0902
+- **cli**: keep bump's call shape inside clippy's seven arguments ([c1a92f2](https://github.com/cutver/cutver/commit/c1a92f2b3872a049919e16a9f20ad093b8cef77e)) by @Row0902
+- **proc**: end the plugin's process tree in one kernel call, not a walk in [#388](https://github.com/cutver/cutver/pull/388) ([a5ae78f](https://github.com/cutver/cutver/commit/a5ae78f3f293815be5f3c5f72293b3985aa5a385)) by @Row0902
+- **changelog**: let env() take the default this project publishes in [#385](https://github.com/cutver/cutver/pull/385) ([3a67b34](https://github.com/cutver/cutver/commit/3a67b34d2288de45637673f4c699a5c95d89e32b)) by @Row0902
+- **cli**: survive a busy external subcommand instead of flaking in [#379](https://github.com/cutver/cutver/pull/379) ([aab0a77](https://github.com/cutver/cutver/commit/aab0a7766291987ac33bb1fead24da7f6a7459c2)) by @Row0902
+- **plugin**: bound a plugin's answer so a stray print cannot exhaust memory in [#378](https://github.com/cutver/cutver/pull/378) ([3934da9](https://github.com/cutver/cutver/commit/3934da92b6f1dfa1d3928651f9eeb939881462e6)) by @Row0902
+- **plugin**: resolve environment grants at invocation, not while loading the configuration in [#366](https://github.com/cutver/cutver/pull/366) ([82d1843](https://github.com/cutver/cutver/commit/82d1843214973530ae8d12adac87077f579c9944)) by @Row0902
+- **cli**: report the grants doctor resolves, and stop reading failures as empty values in [#364](https://github.com/cutver/cutver/pull/364) ([22a409b](https://github.com/cutver/cutver/commit/22a409b5abb2ab565e2d06dcb834ee258f8bfa3a)) by @Row0902
+- **plugin**: one supervised spawn authority, and the process driver as its fourth caller in [#363](https://github.com/cutver/cutver/pull/363) ([5050258](https://github.com/cutver/cutver/commit/50502580556660b2129d683d0111657a972eb53a)) by @Row0902
+
+### 🔄 Refactoring
+- **plan,tree**: make room under the source ceiling for the channel ([eb87739](https://github.com/cutver/cutver/commit/eb877399d534c428dc68da7943324d0d3703df0b)) by @Row0902
+
+### 📚 Documentation
+- **adr**: record ADR-0005 as implemented on main ([fd0e439](https://github.com/cutver/cutver/commit/fd0e4392bfcb2d7a6ad7951d84eaf563966f1816)) by @Row0902
+- **odd**: close phase 5 with T5, T6 and the promotion run ([50c39cb](https://github.com/cutver/cutver/commit/50c39cbe54138eb7fd6de3233ad0fae1e1a820ca)) by @Row0902
+- **channel**: document the ladder, the promotion and the no-op ([cef59a5](https://github.com/cutver/cutver/commit/cef59a595fa2a80fded145be1ce2cba909bb8b4c)) by @Row0902
+- **odd**: record T4, D4-D6 and the third decomposition ([d46cf61](https://github.com/cutver/cutver/commit/d46cf61875dd545c8b208e6502a77945d6cb7d56)) by @Row0902
+- **odd**: record T3, D1a and the slice boundary the branch crossed ([4432cb9](https://github.com/cutver/cutver/commit/4432cb92244214298c4ee3fe3bc10c0e37b7b9ce)) by @Row0902
+- **odd**: record T2 as landed, and what the ceiling cost ([04953b0](https://github.com/cutver/cutver/commit/04953b057501786ecaa5bce5fc255e9f5e062156)) by @Row0902
+- **contributing**: drop the odd/tasks working-record rule in [#390](https://github.com/cutver/cutver/pull/390) ([fe0ff20](https://github.com/cutver/cutver/commit/fe0ff2010ac4df13bbe422ccaa74db1322dacf31)) by @Row0902
+- **odd**: plan phase 5 of #326 as the prerelease channel and resume in [#389](https://github.com/cutver/cutver/pull/389) ([28ca3fd](https://github.com/cutver/cutver/commit/28ca3fdb69b65f9ccdb6559d78a094094c81d6fa)) by @Row0902
+- **adr**: supersede ADR-0004, name the ladder a channel and qualify the CI one in [#386](https://github.com/cutver/cutver/pull/386) ([550dca9](https://github.com/cutver/cutver/commit/550dca99a24a5b22183e7bcea0e40e3addc02852)) by @Row0902
+- **adr**: name the prerelease ladder a stage, and leave "channel" alone in [#382](https://github.com/cutver/cutver/pull/382) ([5548c3a](https://github.com/cutver/cutver/commit/5548c3a5f5e8334e3645e342cebf093aaaf680a3)) by @Row0902
+- **plugin**: say what an author in another language must get right in [#376](https://github.com/cutver/cutver/pull/376) ([cccfe7a](https://github.com/cutver/cutver/commit/cccfe7a448aa43bf3fc85f8cece83ad301689f63)) by @Row0902
+- **maintenance**: open a security channel, and ask for the RED test in the checklist in [#374](https://github.com/cutver/cutver/pull/374) ([a0dd8c0](https://github.com/cutver/cutver/commit/a0dd8c0ea8d0c50e47cf4ea10baf3426f76b4590)) by @Row0902
+- **plugin**: document every capability's request and answer, field by field in [#373](https://github.com/cutver/cutver/pull/373) ([54ac613](https://github.com/cutver/cutver/commit/54ac6132ac4c12bc7f4a310bed1ce3875124e8d1)) by @Row0902
+- **tasks**: the plan for a process plugin written in any language in [#369](https://github.com/cutver/cutver/pull/369) ([ce2948c](https://github.com/cutver/cutver/commit/ce2948c8a6190c9e0044eab8299b7e7fc184f224)) by @Row0902
+- **audit**: make the audit's status block agree with the code again in [#365](https://github.com/cutver/cutver/pull/365) ([865c6b5](https://github.com/cutver/cutver/commit/865c6b5b10cb3c6c9086b7a5cd6dffe387167a3e)) by @Row0902
+
+### 🛠️ Maintenance
+- **gate**: compile without debug symbols and stop growing the tree by tens of gigabytes in [#387](https://github.com/cutver/cutver/pull/387) ([91c05d7](https://github.com/cutver/cutver/commit/91c05d7b39476a7295e887864c786401cda3a8ce)) by @Row0902
+- **plugin**: pin every request shape the host writes to a plugin's stdin in [#372](https://github.com/cutver/cutver/pull/372) ([ce8976b](https://github.com/cutver/cutver/commit/ce8976bef83ab64cf5a64fc312858e1b2e744f66)) by @Row0902
+
+### 👥 Contributors
+@Row0902
+
+[Compare v0.21.0...v0.22.0-alpha.1](https://github.com/cutver/cutver/compare/v0.21.0...v0.22.0-alpha.1)
 ## v0.21.0 — 2026-11-21
 
 > [!WARNING]

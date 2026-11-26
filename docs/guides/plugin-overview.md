@@ -8,9 +8,9 @@ This page starts from zero: no plugin written, none configured.
 
 ## Quick path: you only want to install one
 
-1. Use a plugin-enabled build: a `cutver-plugins-*` archive, the `:plugins` image, or
-   `cargo install cutver --features plugins`. A lean build hides `cutver plugin` and fails closed
-   with that instruction (`src/cli/runner/plugin.rs:50-67`).
+1. Install a build that links the runtime: `brew install Row0902/tap/cutver`, `scoop install cutver`,
+   the `:plugins` image and `cargo install cutver --features plugins` all include it. The lean asset
+   hides `cutver plugin` and fails closed with that instruction (`src/cli/runner/plugin.rs:50-67`).
 2. `cutver plugin add github-releases` resolves the registry entry, downloads the artifact, verifies
    its SHA-256, caches it, and appends the `[plugins.github-releases]` table to `cutver.toml`.
 3. `cutver plugin list` prints declared, installed and digest-matched state without loading anything.

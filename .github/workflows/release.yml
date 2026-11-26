@@ -855,8 +855,19 @@ jobs:
           CUTVER_APP_ID: ${{ secrets.CUTVER_APP_ID }}
           CUTVER_APP_PRIVATE_KEY: ${{ secrets.CUTVER_APP_PRIVATE_KEY }}
 
+      # D3/S8: the tap and the bucket are stable-only, so a prerelease publishes no formula and no
+      # manifest. A skipped step shows as "skipped" in the run with no cause attached, which reads
+      # exactly like a missing token or a forgotten step, so a prerelease says it here instead.
+      - name: Say the package-manager update was skipped
+        if: needs.version.outputs.channel != 'stable'
+        run: |
+          echo "::notice::${{ needs.version.outputs.tag }} is a ${{ needs.version.outputs.channel }} prerelease: the Homebrew tap and the Scoop bucket are stable-only, so neither Formula/cutver.rb nor bucket/cutver.json was updated."
+
       - name: Update Homebrew tap formula
-        if: steps.bot-token.outputs.token != '' || env.HOMEBREW_TAP_TOKEN != ''
+        # D3: the tap is stable-only. A prerelease publishes no formula at all, and the notice step
+        # above says so; the token guard stays beside the channel one so a missing secret still skips
+        # this step instead of failing the release.
+        if: needs.version.outputs.channel == 'stable' && (steps.bot-token.outputs.token != '' || env.HOMEBREW_TAP_TOKEN != '')
         env:
           DIST_TOKEN: ${{ steps.bot-token.outputs.token || secrets.HOMEBREW_TAP_TOKEN }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
@@ -864,14 +875,17 @@ jobs:
           TAG="${{ needs.version.outputs.tag }}"
           VERSION="${TAG#v}"
 
-          # Extract SHA-256 hashes generated in dist/SHA256SUMS
-          SHA_MACOS_ARM=$(grep "cutver-${VERSION}-macos-arm64.tar.gz" dist/SHA256SUMS | awk '{print $1}')
-          SHA_MACOS_INTEL=$(grep "cutver-${VERSION}-macos-x86_64.tar.gz" dist/SHA256SUMS | awk '{print $1}')
-          SHA_LINUX_INTEL=$(grep "cutver-${VERSION}-linux-musl-x86_64.tar.gz" dist/SHA256SUMS | awk '{print $1}')
-          SHA_LINUX_ARM=$(grep "cutver-${VERSION}-linux-musl-arm64.tar.gz" dist/SHA256SUMS | awk '{print $1}')
+          # S8: `cutver` installs the plugin-enabled build. A package manager is the "just make it
+          # work" channel, and asking a user to know what a WASM plugin is before choosing a formula
+          # was a support question invented here. The lean build keeps shipping as a release asset,
+          # measured and smoked exactly as before — it is simply not what a formula gives you.
+          SHA_PLUGIN_MACOS_ARM=$(grep "cutver-plugins-${VERSION}-macos-arm64.tar.gz" dist/SHA256SUMS | awk '{print $1}')
+          SHA_PLUGIN_MACOS_INTEL=$(grep "cutver-plugins-${VERSION}-macos-x86_64.tar.gz" dist/SHA256SUMS | awk '{print $1}')
+          SHA_PLUGIN_LINUX_INTEL=$(grep "cutver-plugins-${VERSION}-linux-musl-x86_64.tar.gz" dist/SHA256SUMS | awk '{print $1}')
+          SHA_PLUGIN_LINUX_ARM=$(grep "cutver-plugins-${VERSION}-linux-musl-arm64.tar.gz" dist/SHA256SUMS | awk '{print $1}')
 
-          if [ -z "$SHA_MACOS_ARM" ] || [ -z "$SHA_MACOS_INTEL" ] || [ -z "$SHA_LINUX_INTEL" ] || [ -z "$SHA_LINUX_ARM" ]; then
-            echo "::error::Failed to resolve all required SHA-256 sums for Homebrew formula"
+          if [ -z "$SHA_PLUGIN_MACOS_ARM" ] || [ -z "$SHA_PLUGIN_MACOS_INTEL" ] || [ -z "$SHA_PLUGIN_LINUX_INTEL" ] || [ -z "$SHA_PLUGIN_LINUX_ARM" ]; then
+            echo "::error::Failed to resolve all required SHA-256 sums for the Homebrew formula"
             exit 1
           fi
 
@@ -886,23 +900,23 @@ jobs:
 
             on_macos do
               on_arm do
-                url "https://github.com/cutver/cutver/releases/download/${TAG}/cutver-${VERSION}-macos-arm64.tar.gz"
-                sha256 "${SHA_MACOS_ARM}"
+                url "https://github.com/cutver/cutver/releases/download/${TAG}/cutver-plugins-${VERSION}-macos-arm64.tar.gz"
+                sha256 "${SHA_PLUGIN_MACOS_ARM}"
               end
               on_intel do
-                url "https://github.com/cutver/cutver/releases/download/${TAG}/cutver-${VERSION}-macos-x86_64.tar.gz"
-                sha256 "${SHA_MACOS_INTEL}"
+                url "https://github.com/cutver/cutver/releases/download/${TAG}/cutver-plugins-${VERSION}-macos-x86_64.tar.gz"
+                sha256 "${SHA_PLUGIN_MACOS_INTEL}"
               end
             end
 
             on_linux do
               on_intel do
-                url "https://github.com/cutver/cutver/releases/download/${TAG}/cutver-${VERSION}-linux-musl-x86_64.tar.gz"
-                sha256 "${SHA_LINUX_INTEL}"
+                url "https://github.com/cutver/cutver/releases/download/${TAG}/cutver-plugins-${VERSION}-linux-musl-x86_64.tar.gz"
+                sha256 "${SHA_PLUGIN_LINUX_INTEL}"
               end
               on_arm do
-                url "https://github.com/cutver/cutver/releases/download/${TAG}/cutver-${VERSION}-linux-musl-arm64.tar.gz"
-                sha256 "${SHA_LINUX_ARM}"
+                url "https://github.com/cutver/cutver/releases/download/${TAG}/cutver-plugins-${VERSION}-linux-musl-arm64.tar.gz"
+                sha256 "${SHA_PLUGIN_LINUX_ARM}"
               end
             end
 
@@ -933,7 +947,9 @@ jobs:
           fi
 
       - name: Update Homebrew tap plugin formula
-        if: steps.bot-token.outputs.token != '' || env.HOMEBREW_TAP_TOKEN != ''
+        # D3/S8: one release of grace for the old name, and it publishes on stable only like every
+        # other package-manager step.
+        if: needs.version.outputs.channel == 'stable' && (steps.bot-token.outputs.token != '' || env.HOMEBREW_TAP_TOKEN != '')
         env:
           DIST_TOKEN: ${{ steps.bot-token.outputs.token || secrets.HOMEBREW_TAP_TOKEN }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
@@ -960,6 +976,12 @@ jobs:
             desc "Cut a release. Bump SemVer. Every project, every language (plugin-enabled build)"
             homepage "https://github.com/cutver/cutver"
             license "MIT"
+
+            # S8/D8: this formula is a shim for exactly one release. `cutver` now installs this same
+            # plugin-enabled build, so all that is left here is the name a script may still say. The
+            # removal is a future change on purpose: a formula that vanished in the release that
+            # deprecated it would break `brew install` for everyone who had not read the changelog.
+            deprecate! date: "2026-12-01", because: "cutver installs the same plugin-enabled build; this shim is removed in the next release"
 
             on_macos do
               on_arm do
@@ -1011,7 +1033,8 @@ jobs:
           fi
 
       - name: Update Scoop bucket manifest
-        if: steps.bot-token.outputs.token != '' || env.HOMEBREW_TAP_TOKEN != ''
+        # D3: the bucket is stable-only, exactly like the tap above.
+        if: needs.version.outputs.channel == 'stable' && (steps.bot-token.outputs.token != '' || env.HOMEBREW_TAP_TOKEN != '')
         env:
           DIST_TOKEN: ${{ steps.bot-token.outputs.token || secrets.HOMEBREW_TAP_TOKEN }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
@@ -1019,11 +1042,12 @@ jobs:
           TAG="${{ needs.version.outputs.tag }}"
           VERSION="${TAG#v}"
 
-          # Extract Windows SHA-256 hashes generated in dist/SHA256SUMS
-          SHA_WIN_X64=$(grep "cutver-${VERSION}-windows-x86_64.zip" dist/SHA256SUMS | awk '{print $1}')
-          SHA_WIN_ARM=$(grep "cutver-${VERSION}-windows-arm64.zip" dist/SHA256SUMS | awk '{print $1}')
+          # S8: `scoop install cutver` installs the plugin-enabled build, the same choice the formula
+          # above made: one build per package manager, and it is the functional superset.
+          SHA_PLUGIN_WIN_X64=$(grep "cutver-plugins-${VERSION}-windows-x86_64.zip" dist/SHA256SUMS | awk '{print $1}')
+          SHA_PLUGIN_WIN_ARM=$(grep "cutver-plugins-${VERSION}-windows-arm64.zip" dist/SHA256SUMS | awk '{print $1}')
 
-          if [ -z "$SHA_WIN_X64" ] || [ -z "$SHA_WIN_ARM" ]; then
+          if [ -z "$SHA_PLUGIN_WIN_X64" ] || [ -z "$SHA_PLUGIN_WIN_ARM" ]; then
             echo "::error::Failed to resolve all required Windows SHA-256 sums for Scoop manifest"
             exit 1
           fi
@@ -1040,24 +1064,24 @@ jobs:
           data['version'] = '${VERSION}'
           data['architecture'] = {
               '64bit': {
-                  'url': 'https://github.com/cutver/cutver/releases/download/${TAG}/cutver-${VERSION}-windows-x86_64.zip',
-                  'hash': '${SHA_WIN_X64}',
-                  'extract_dir': 'cutver-${VERSION}-windows-x86_64'
+                  'url': 'https://github.com/cutver/cutver/releases/download/${TAG}/cutver-plugins-${VERSION}-windows-x86_64.zip',
+                  'hash': '${SHA_PLUGIN_WIN_X64}',
+                  'extract_dir': 'cutver-plugins-${VERSION}-windows-x86_64'
               },
               'arm64': {
-                  'url': 'https://github.com/cutver/cutver/releases/download/${TAG}/cutver-${VERSION}-windows-arm64.zip',
-                  'hash': '${SHA_WIN_ARM}',
-                  'extract_dir': 'cutver-${VERSION}-windows-arm64'
+                  'url': 'https://github.com/cutver/cutver/releases/download/${TAG}/cutver-plugins-${VERSION}-windows-arm64.zip',
+                  'hash': '${SHA_PLUGIN_WIN_ARM}',
+                  'extract_dir': 'cutver-plugins-${VERSION}-windows-arm64'
               }
           }
           data['autoupdate']['architecture'] = {
               '64bit': {
-                  'url': 'https://github.com/cutver/cutver/releases/download/v\$version/cutver-\$version-windows-x86_64.zip',
-                  'extract_dir': 'cutver-\$version-windows-x86_64'
+                  'url': 'https://github.com/cutver/cutver/releases/download/v\$version/cutver-plugins-\$version-windows-x86_64.zip',
+                  'extract_dir': 'cutver-plugins-\$version-windows-x86_64'
               },
               'arm64': {
-                  'url': 'https://github.com/cutver/cutver/releases/download/v\$version/cutver-\$version-windows-arm64.zip',
-                  'extract_dir': 'cutver-\$version-windows-arm64'
+                  'url': 'https://github.com/cutver/cutver/releases/download/v\$version/cutver-plugins-\$version-windows-arm64.zip',
+                  'extract_dir': 'cutver-plugins-\$version-windows-arm64'
               }
           }
 
@@ -1079,7 +1103,8 @@ jobs:
           fi
 
       - name: Generate Scoop bucket plugin manifest
-        if: steps.bot-token.outputs.token != '' || env.HOMEBREW_TAP_TOKEN != ''
+        # D3/S8: the deprecated shim, stable-only like the other three.
+        if: needs.version.outputs.channel == 'stable' && (steps.bot-token.outputs.token != '' || env.HOMEBREW_TAP_TOKEN != '')
         env:
           DIST_TOKEN: ${{ steps.bot-token.outputs.token || secrets.HOMEBREW_TAP_TOKEN }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
@@ -1107,7 +1132,7 @@ jobs:
               'description': 'Cut a release. Bump SemVer. Every project, every language. (Plugin-enabled build)',
               'homepage': 'https://github.com/cutver/cutver',
               'license': 'MIT',
-              'notes': 'Plugin-enabled build. Install either this or cutver, not both. If both were installed, run: scoop reset cutver-plugins',
+              'notes': 'Deprecated: this shim is removed in the next release. `scoop install cutver` now installs this same plugin-enabled build; uninstall this one and install cutver instead.',
               'architecture': {
                   '64bit': {
                       'url': 'https://github.com/cutver/cutver/releases/download/${TAG}/cutver-plugins-${VERSION}-windows-x86_64.zip',

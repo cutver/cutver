@@ -1162,6 +1162,217 @@ fn the_promotion_publishes_by_channel() {
     );
 }
 
+/// The guard every package-manager step carries: the channel `cutver bump` reported decides, and a
+/// missing token still skips the step instead of failing it.
+const STABLE_ONLY_PACKAGING: &str = "if: needs.version.outputs.channel == 'stable' && (steps.bot-token.outputs.token != '' || env.HOMEBREW_TAP_TOKEN != '')";
+
+/// The four steps that write to a tap or a bucket, each with the `git clone` that proves it is one.
+const PACKAGE_MANAGER_STEPS: [(&str, &str); 4] = [
+    ("Update Homebrew tap formula", "homebrew-tap.git\" tap\n"),
+    ("Update Homebrew tap plugin formula", "homebrew-tap.git\" tap-plugins\n"),
+    ("Update Scoop bucket manifest", "scoop-bucket.git\" scoop\n"),
+    (
+        "Generate Scoop bucket plugin manifest",
+        "scoop-bucket.git\" scoop-plugins\n",
+    ),
+];
+
+/// D3/S8: the tap and the bucket are stable-only, and a prerelease says it skipped them. A
+/// prerelease published as the tap's `version` hands `brew install cutver` an alpha nobody asked for.
+/// The skip is announced because a step GitHub skips shows as "skipped" with no cause, which reads
+/// like a missing token.
+#[test]
+fn the_package_manager_steps_publish_only_on_a_stable_channel() {
+    let workflow = repo_text(".github/workflows/release.yml");
+    let publish = job(&workflow, "publish");
+
+    // A fifth `git clone` added without a gate is the regression no per-step assertion can see.
+    let clones = publish.matches("git clone \"https://x-access-token:").count();
+    assert_eq!(
+        clones, 4,
+        "the publish job pushes to exactly four tap/bucket clones, found {clones}: a new surface has \
+         to be gated like the other four"
+    );
+
+    for (name, clone) in PACKAGE_MANAGER_STEPS {
+        let step = step_containing(publish, name);
+        assert!(
+            step.contains(clone),
+            "`{name}` must still be the step that clones `{clone}`: {step}"
+        );
+        let guard = step
+            .lines()
+            .find(|line| line.trim_start().starts_with("if: "))
+            .unwrap_or_else(|| panic!("`{name}` must gate itself on the reported channel: {step}"));
+        assert_eq!(
+            guard.trim(),
+            STABLE_ONLY_PACKAGING,
+            "`{name}` must run only on the channel `cutver bump` reported, and still skip with no token"
+        );
+    }
+
+    let notice = step_containing(publish, "Say the package-manager update was skipped");
+    assert!(
+        notice.contains("if: needs.version.outputs.channel != 'stable'"),
+        "the skip is announced on every channel but stable, from the same reported value: {notice}"
+    );
+    let message = run_script(notice);
+    for expected in ["::notice::", "Homebrew", "Scoop"] {
+        assert!(
+            message.contains(expected),
+            "the skip must surface as an `::notice::` naming Homebrew and Scoop and the file each \
+             left alone, so a prerelease reads as a decision: {message}"
+        );
+    }
+}
+
+/// S8: one build per package manager, and it is the plugin-enabled one.
+///
+/// `cutver` installed the lean archive, which asked a user to know what a WASM plugin is before
+/// choosing a formula. The plugin build is a superset and its sums are already computed in the same
+/// step, so nothing new is measured; the binary name, the conflict and the assertion stay.
+#[test]
+fn the_plain_package_installs_the_plugin_enabled_build() {
+    let workflow = repo_text(".github/workflows/release.yml");
+    let publish = job(&workflow, "publish");
+
+    let brew = run_script(step_containing(publish, "git add Formula/cutver.rb"));
+    let (mut urls, mut sums) = (Vec::new(), Vec::new());
+    for line in brew.lines().map(str::trim) {
+        if line.starts_with("url \"") {
+            urls.push(line);
+        } else if line.starts_with("sha256 \"") {
+            sums.push(line);
+        }
+    }
+    let targets = [
+        "cutver-plugins-${VERSION}-macos-arm64.tar.gz",
+        "cutver-plugins-${VERSION}-macos-x86_64.tar.gz",
+        "cutver-plugins-${VERSION}-linux-musl-x86_64.tar.gz",
+        "cutver-plugins-${VERSION}-linux-musl-arm64.tar.gz",
+    ];
+    assert_eq!(urls.len(), targets.len(), "one url per target: {urls:?}");
+    for (url, target) in urls.iter().zip(targets) {
+        assert!(
+            url.contains(target),
+            "`cutver` must install the plugin archive `{target}`, or a package-manager user gets \
+             a binary that cannot run `cutver plugin`: {url}"
+        );
+    }
+    assert_eq!(sums.len(), targets.len(), "one digest per target: {sums:?}");
+    for sum in &sums {
+        assert!(
+            sum.contains("${SHA_PLUGIN_"),
+            "the digest must be the plugin archive's own sum; a lean one beside a plugin url fails \
+             `brew install`: {sum}"
+        );
+    }
+    assert!(
+        brew.matches("grep \"cutver-plugins-${VERSION}-").count() == 4,
+        "the sums come from the `cutver-plugins-` lines of SHA256SUMS: {brew}"
+    );
+    for kept in [
+        "bin.install \"cutver\"",
+        "conflicts_with \"cutver-plugins\"",
+        "assert_match \"cutver #{version}\"",
+    ] {
+        assert!(
+            brew.contains(kept),
+            "the formula must keep `{kept}`: the asset changed, not the package"
+        );
+    }
+
+    let scoop = run_script(step_containing(publish, "git add bucket/cutver.json"));
+    let urls: Vec<&str> = scoop
+        .lines()
+        .filter(|line| line.contains("'url': ") && line.contains("download/${TAG}/"))
+        .collect();
+    assert_eq!(urls.len(), 2, "one url per architecture: {urls:?}");
+    for (url, arch) in urls.iter().zip(["x86_64", "arm64"]) {
+        assert!(
+            url.contains(&format!("cutver-plugins-${{VERSION}}-windows-{arch}.zip")),
+            "`scoop install cutver` must install the plugin-enabled archive: {url}"
+        );
+    }
+    // `autoupdate` names the archive for a version it has not seen (`\$version`), so the release's
+    // own directories are the ones with `${VERSION}` in them.
+    let extracts: Vec<&str> = scoop
+        .lines()
+        .filter(|line| line.contains("'extract_dir': ") && line.contains("${VERSION}"))
+        .collect();
+    assert_eq!(extracts.len(), 2, "one extract_dir per architecture: {extracts:?}");
+    for extract in extracts {
+        assert!(
+            extract.contains("cutver-plugins-${VERSION}-windows-"),
+            "`extract_dir` is what points at the unpacked plugin archive: {extract}"
+        );
+    }
+}
+
+/// `cutver-plugins` is a shim for one release: same archive, same conflict, and it says what
+/// replaces it in each manager's own vocabulary — Homebrew `deprecate!` with a date and a reason
+/// naming `cutver`, Scoop a `notes` entry.
+#[test]
+fn the_deprecated_shim_still_resolves_and_names_what_replaces_it() {
+    let workflow = repo_text(".github/workflows/release.yml");
+    let publish = job(&workflow, "publish");
+
+    let brew = run_script(step_containing(publish, "git add Formula/cutver-plugins.rb"));
+    assert!(
+        brew.contains("class CutverPlugins < Formula"),
+        "the shim keeps its own class so `brew install cutver-plugins` still resolves: {brew}"
+    );
+    assert!(
+        brew.matches("cutver-plugins-${VERSION}-").count() >= 4,
+        "the shim must still install the same asset it always did: {brew}"
+    );
+    let deprecation = brew
+        .lines()
+        .map(str::trim)
+        .find(|line| line.starts_with("deprecate!"))
+        .unwrap_or_else(|| {
+            panic!(
+                "the shim must say it is going away in Homebrew's own vocabulary — `deprecate!` — \
+                 or a formula removed without it reads as a broken tap: {brew}"
+            )
+        });
+    let date = deprecation
+        .split("date: \"")
+        .nth(1)
+        .and_then(|rest| rest.split('"').next());
+    assert!(
+        date.is_some_and(|date| date.len() == 10 && date.as_bytes()[4] == b'-' && date.as_bytes()[7] == b'-'),
+        "`deprecate!` must carry an ISO date, the only form `brew` reads: {deprecation}"
+    );
+    assert!(
+        deprecation
+            .split("because: ")
+            .nth(1)
+            .is_some_and(|reason| reason.contains("cutver")),
+        "the reason must point at `cutver`, which installs the same build: {deprecation}"
+    );
+    assert!(
+        brew.contains("conflicts_with \"cutver\""),
+        "both packages install the `cutver` binary, so the shim keeps the conflict: {brew}"
+    );
+
+    let scoop = run_script(step_containing(publish, "git add bucket/cutver-plugins.json"));
+    let notes = scoop
+        .lines()
+        .map(str::trim)
+        .find(|line| line.starts_with("'notes':"))
+        .unwrap_or_else(|| panic!("the Scoop shim must carry a `notes` entry: {scoop}"));
+    assert!(
+        notes.contains("cutver") && notes.to_lowercase().contains("deprecat"),
+        "the Scoop notes are the only place Scoop prints, so they must say deprecated and name \
+         `cutver`: {notes}"
+    );
+    assert!(
+        scoop.contains("'bin': 'cutver.exe'"),
+        "the shim keeps installing the `cutver` binary, which is why it conflicts: {scoop}"
+    );
+}
+
 /// S1/S3: the render step prefers a hand-written notes file for the tag being released and keeps the
 /// template render as its fallback, in the same step.
 ///

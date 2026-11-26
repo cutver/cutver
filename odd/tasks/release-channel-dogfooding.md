@@ -506,3 +506,36 @@ mutation inverted the gate in all four places and failed **both** T7 tests and n
 reasoning for `workflow_dispatch` and `main` pushes is written beside the rules, with its chain stated
 (absent property → null → falsy → `!null` is true) rather than asserted: a dispatch cannot be run from here,
 so that path is pinned in the contract and explained in a comment until T10 observes it.
+
+**L17. T8 done: one package per manager, stable-only, with the shim.** 403 lines — at the slice boundary and
+under it, so no split. The four package-manager steps now run only on `channel == 'stable'`, and a new
+`Say the package-manager update was skipped` step announces the skip on `alpha|beta|rc` and on an empty
+channel, because four bare "skipped" steps read as an oversight rather than a rule. `Formula/cutver.rb` and
+`bucket/cutver.json` install the `cutver-plugins-*` archives with the plugin sums the step already computed,
+keeping the binary name, `conflicts_with` and the version assertion; the plugin formula and the plugin
+manifest keep their identity, gain `deprecate!` (Homebrew, `release.yml:984`) and a deprecation `notes`
+(Scoop, `:1135`), and disappear in the next release. RED first in three pins, GREEN 36/36 with **zero
+deletions**, and a mutation proved the shim pin has teeth (deleting `deprecate!` failed only that test; the
+workflow was restored byte-identically).
+
+**Unknown 3 is moot, and that is the interesting part**: the plan asked how the tap derives `version` from a
+prerelease tarball name. A stable gate means a prerelease never reaches the tap or the bucket, so there is
+nothing to derive. Recorded instead of researched.
+
+**The README was the page nobody assigned.** It still taught `scoop install cutver-plugins` and
+`brew install Row0902/tap/cutver-plugins` on the front page, and it was outside the unit's surfaces. Fixed by
+the parent in the same commit: one package, the lean build described as a release asset, and one line saying
+`cutver-plugins` resolves for one more release. `docs/reference/plugins.md` was at 200/200 and the rewrite
+took it to 202, so three lines were trimmed in the same commit (a re-wrapped lead, a repeated image prefix,
+and a redundant clause) — final 199/200.
+
+**Three risks left standing, named rather than hidden.**
+- Homebrew's `deprecate! date:, because:` with a free-text reason is unverified against the tap's Homebrew —
+  no `brew` command was allowed. If it rejects that form the failure is an audit complaint, not a broken
+  install, and the fallback is a reason symbol plus `replacement: "cutver"`.
+- The deprecation date is hard-coded to `2026-12-01`; if the release slips past it the date reads as past
+  rather than planned. One string.
+- `bucket/cutver.json` is read and rewritten, never recreated, so a `description` or `notes` field the bucket
+  holds survives — if it says "lean build" there, this repository cannot see or fix it from here.
+- Still unmeasured, as L11 asked: the size a package-manager install grows by. The numbers live in a release
+  run's job summary, so T10 is where they get read.

@@ -70,6 +70,26 @@ has to fill it in. Those lines belong in a `text`-tagged fence, where they are n
 claim: `text` is checked to contain a metavariable, so it cannot quietly become the place real examples go to
 avoid the parser.
 
+## Writing
+
+Prose here is read by people who did not write the code, so it is written for them:
+
+- **Name the actor and the action before the mechanism.** "The plugin drivers now need the project folder"
+  says more than "gain a workspace-root parameter".
+- **Explain a term once, where it appears**, in the reader's words. An attestation is "a recorded
+  authorization"; the moving major tag is explained by what it does to `uses: cutver/setup@v0`, not by its
+  name.
+- **One idea per sentence.** A semicolon holding two claims is a sentence to split.
+- **Numbers instead of adjectives**: `1.3 MB against 5.0 MB`, never "much smaller"; "fifteen seconds",
+  never "fast".
+- **Translate the concept, never the identifier.** `latest`, `--channel` and command names stay verbatim in
+  any language, because a reader who translates them cannot find them in the guide.
+- **Clarity is not softening.** The limit, the residual and the case that cannot be recovered are stated as
+  plainly as the gain. A rewrite that drops a caveat is a regression.
+
+The same register covers release notes, pull-request bodies and anything copied out of the repository into a
+chat: a summary first, and no markdown once it leaves these files.
+
 ## Commits
 
 Conventional Commits, `type(scope): subject`, with the types the pull-request labels also use: `feat`, `fix`,

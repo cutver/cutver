@@ -17,9 +17,18 @@ use cutver::plugin::{PluginConfig, PluginName};
 
 const PLUGIN: &str = "github-publish";
 /// Every job id in the file, in declaration order.
-const JOBS: [&str; 6] = ["version", "build", "build-plugins", "smoke", "smoke-plugins", "publish"];
-/// The jobs whose green result the publish job waits on: the bump, both builds and both smokes.
-const VERIFIED_BEFORE_PUBLISHING: [&str; 5] = ["version", "build", "build-plugins", "smoke", "smoke-plugins"];
+const JOBS: [&str; 7] = [
+    "version",
+    "build",
+    "build-plugins",
+    "smoke",
+    "smoke-plugins",
+    "attest",
+    "publish",
+];
+/// The jobs whose green result the publish job waits on: the bump, both builds, both smokes and the
+/// job that records those smokes as gate attestations.
+const VERIFIED_BEFORE_PUBLISHING: [&str; 6] = ["version", "build", "build-plugins", "smoke", "smoke-plugins", "attest"];
 
 fn repo_text(relative: &str) -> String {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(relative);

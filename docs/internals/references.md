@@ -18,6 +18,7 @@ Detailed guides and specifications are partitioned into focused modular document
 | **Contributing** | [The Local Gate & Source Line Budget](local-gate.md) | The one command that mirrors CI locally, and the ratchet that keeps `src/` under 400 lines |
 | **Machine output** | [Machine Contract](machine-contract.md) | `schemaVersion`, the surface index, exit codes, and the error envelope |
 | **Machine surfaces** | [Command Surfaces](machine-contract-surfaces.md) | The CI output channel, `doctor --json`, and `plan --json` as data |
+| **Release tail surfaces** | [Release Tail](machine-contract-release-tail.md) | `publish --json`, `attest --json` and `init --json` as data |
 
 ---
 

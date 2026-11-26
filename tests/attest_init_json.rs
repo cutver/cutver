@@ -133,19 +133,36 @@ fn assert_surface(document: &str, surface: &str, keys: &[&str]) -> Value {
     parsed
 }
 
-/// S3: the object names the record `attest` just wrote, including the file, and the flag changes the
-/// channel and never the bytes of the file.
 /// The path a comparison can hold.
 ///
 /// One file has more than one honest spelling: macOS reaches `/var/...` through the `/private/var`
 /// symlink, and a Windows runner reaches its temp directory through the 8.3 short name (`RUNNER~1`
 /// for `runneradmin`). A raw `Path` comparison then fails on a path nobody disagrees about, so both
 /// sides are canonicalized and the assertion is about the file, never about its spelling.
+///
+/// The Windows verbatim prefix `fs::canonicalize` returns is stripped, because `\\?\` is a
+/// difference of form and not of file: every surface prints the ordinary `C:\...` spelling, and this
+/// is the same strip the binary itself applies to the root it canonicalizes
+/// (`src/config/discovery.rs`, `strip_verbatim_prefix`), so both sides are held in the product's own
+/// spelling instead of in the API's.
 fn resolved(path: impl AsRef<Path>) -> PathBuf {
     let path = path.as_ref();
-    std::fs::canonicalize(path).unwrap_or_else(|err| panic!("the path must exist, {} failed: {err}", path.display()))
+    let canonical = std::fs::canonicalize(path)
+        .unwrap_or_else(|err| panic!("the path must exist, {} failed: {err}", path.display()));
+    let Some(rest) = canonical.to_string_lossy().strip_prefix(r"\\?\").map(str::to_string) else {
+        return canonical;
+    };
+    // `\\?\UNC\server\share` is the verbatim form of `\\server\share`; the `UNC\` tag is part
+    // of the prefix, not of the path. `get` rather than a slice keeps a non-ASCII path from
+    // panicking on a char boundary.
+    match rest.get(..4) {
+        Some(tag) if tag.eq_ignore_ascii_case("UNC\\") => PathBuf::from(format!(r"\\{}", &rest[4..])),
+        _ => PathBuf::from(rest),
+    }
 }
 
+/// S3: the object names the record `attest` just wrote, including the file, and the flag changes the
+/// channel and never the bytes of the file.
 #[test]
 fn attest_with_the_flag_prints_the_record_it_wrote_and_the_path_publish_reads() {
     let guard = FixtureGuard::new("attest-json");
@@ -459,6 +476,25 @@ fn without_the_flag_attest_prints_the_one_line_it_always_printed() {
     );
 }
 
+/// The bytes `init`'s summary opens with, before the directory it names.
+const SUMMARY_HEAD: &str = "✔ Initialized cutver configuration in ";
+
+/// The directory `init`'s summary names and the bytes after its first line.
+///
+/// The first line names a directory, and which spelling of that directory a caller holds is not part
+/// of the contract — macOS reaches `/var/...` through `/private/var`, so the binary reports a
+/// spelling the fixture never wrote. The path is therefore compared as a path (`resolved`), while
+/// every other byte of the summary, which this feature never touched, is compared as a byte.
+fn split_named_dir(summary: &str) -> (&str, &str) {
+    let (headline, body) = summary.split_once('\n').unwrap_or_else(|| {
+        panic!("`init`'s summary opens with the line naming the directory it initialized: {summary:?}")
+    });
+    let named = headline.strip_prefix(SUMMARY_HEAD).unwrap_or_else(|| {
+        panic!("the first line still names the directory it initialized, in the bytes `{SUMMARY_HEAD}`: {headline:?}")
+    });
+    (named, body)
+}
+
 /// S4, S6: the same for `init`'s fresh summary, which names the directory it initialized.
 #[test]
 fn without_the_flag_init_prints_the_summary_it_always_printed() {
@@ -469,8 +505,16 @@ fn without_the_flag_init_prints_the_summary_it_always_printed() {
     let out = init(fixture, &[]);
 
     assert_eq!(out.status.code(), Some(0), "stderr:\n{}", stderr_of(&out));
+    let printed = stdout_of(&out);
+    let (named, body) = split_named_dir(&printed);
+    assert_eq!(
+        resolved(named),
+        resolved(&fixture.dir),
+        "the first line names the directory `init` initialized — compared as a directory, because a \
+         directory has more than one honest spelling and the spelling was never part of this \
+         contract, while the line itself is unchanged: {printed:?}"
+    );
     let expected = [
-        format!("✔ Initialized cutver configuration in {}", fixture.dir.display()),
         String::new(),
         "Discovered manifests:".to_string(),
         "  ✔ package.json (json: version) [primary source of truth]".to_string(),
@@ -491,9 +535,8 @@ fn without_the_flag_init_prints_the_summary_it_always_printed() {
     .join("\n")
         + "\n";
     assert_eq!(
-        stdout_of(&out),
-        expected,
-        "the human path is byte-for-byte the summary it was"
+        body, expected,
+        "the human path is byte-for-byte the summary it was, from the line after the directory on"
     );
 }
 

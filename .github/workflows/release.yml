@@ -52,6 +52,9 @@ jobs:
       released: ${{ steps.cutver.outputs.released }}
       version: ${{ steps.cutver.outputs.version }}
       commit: ${{ steps.cutver.outputs.commit }}
+      # The channel the run produced, reported by `cutver bump` itself. The publish job's promotion
+      # reads it to state the release state explicitly instead of re-deriving it from the tag.
+      channel: ${{ steps.cutver.outputs.channel }}
       # The render step owns this path, so the value is a constant: the action output that used to
       # carry it went away with the action.
       notes: RELEASE_NOTES.md
@@ -787,6 +790,7 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.release-token.outputs.token || secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.version.outputs.tag }}
+          CHANNEL: ${{ needs.version.outputs.channel }}
         run: |
           state=$(gh release view "$TAG" --json isDraft --jq 'if .isDraft then "draft" else "published" end')
           case "$state" in
@@ -809,7 +813,34 @@ jobs:
           # entry Cutver rendered (fed by `--notes-file` on `cutver publish`) and the title
           # `title_template` asked for. Passing either again gave the release a second owner — that
           # is how `title_template` once came out dead.
-          gh release edit "$TAG" --draft=false
+          #
+          # The channel decides the state, and both states are stated explicitly. GitHub enforces half
+          # of it by itself: "the latest release is the most recent non-prerelease, non-draft
+          # release", and a prerelease cannot be set as latest. What it does not enforce is that this
+          # draft is *marked*: it arrives marked only because the plugin derives the flag from the
+          # version it was handed (`github-publish` 0.2.1, `post_release.rs`), and nothing here pins
+          # that derivation. So the stable arm asks for Latest with a cleared prerelease mark, and the
+          # prerelease arm asks to stay marked and to never be Latest — which is what keeps
+          # `0.22.0-alpha.1` out of the slot `uses: cutver/setup@v0` resolves with `version: latest`.
+          #
+          # Both spellings are `gh release edit`'s documented boolean forms (`gh release edit --help`
+          # accepts `--draft[=true|false]`, `--prerelease[=true|false]`, `--latest[=true|false]`), so
+          # `--prerelease=false` is a value rather than a missing flag.
+          #
+          # An unknown channel fails closed. `cutver bump` always reports one, so an empty value means
+          # the tool wrote none: guessing Latest from here is how an alpha becomes the default install.
+          case "$CHANNEL" in
+            stable)
+              gh release edit "$TAG" --draft=false --prerelease=false --latest=true
+              ;;
+            alpha|beta|rc)
+              gh release edit "$TAG" --draft=false --prerelease --latest=false
+              ;;
+            *)
+              echo "::error::Refusing to promote $TAG: cutver bump reported channel '$CHANNEL', which decides no release state. Expected stable, alpha, beta or rc."
+              exit 1
+              ;;
+          esac
           gh release view "$TAG" --json isDraft,tagName --jq 'if .isDraft then error("release is still a draft after publishing") else "published \(.tagName)" end'
 
       - name: Generate distribution bot token

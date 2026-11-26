@@ -83,8 +83,11 @@ Inside `publish`, in this order (`tests/release_pipeline_contract.rs:253-293`):
 2. The asset artifacts are downloaded, summed and signed (`release.yml:639-659`).
 3. The release state is read, and `gh release upload "$TAG" dist/* --clobber` fills the draft
    (`release.yml:661-684`).
-4. `gh release edit "$TAG" --draft=false` promotes it, and a second read proves it is no longer a draft
-   (`release.yml:686-713`).
+4. The promotion publishes by the channel `cutver bump` reported: `stable` runs
+   `gh release edit "$TAG" --draft=false --prerelease=false --latest=true`, `alpha|beta|rc` runs the same
+   with `--prerelease --latest=false`, and any other value fails closed instead of guessing — so a
+   prerelease can never take the repository's Latest slot. A second read proves it is no longer a draft
+   (`release.yml:789-844`).
 
 ### What the workflow deliberately does not repeat
 

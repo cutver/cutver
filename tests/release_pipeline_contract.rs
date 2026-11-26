@@ -273,6 +273,14 @@ fn holds(test: &str, dispatch: &[(&str, &str)]) -> bool {
     panic!("the bump step tests `{test}`, a condition this reader does not model")
 }
 
+/// The two promotion commands, one per channel, exactly as the pipeline runs them.
+///
+/// Written out in full rather than assembled from flags: the two lines ask for opposite states, and
+/// a `--prerelease` that landed in the stable arm, or a `--latest=true` in the prerelease one, would
+/// still satisfy any substring check on the step.
+const PROMOTE_STABLE: &str = "gh release edit \"$TAG\" --draft=false --prerelease=false --latest=true";
+const PROMOTE_PRERELEASE: &str = "gh release edit \"$TAG\" --draft=false --prerelease --latest=false";
+
 /// The `cutver bump` invocation exactly as the pipeline runs it today.
 ///
 /// Byte-identical is the requirement for a dispatch that sets no channel: the channel is appended to
@@ -420,6 +428,32 @@ fn plugin_creates_the_release_as_a_draft() {
             .and_then(|value| value.as_str())
             .is_some(),
         "the plugin needs `config.repository` to address the API"
+    );
+}
+
+/// S6: `[plugins.github-publish.config]` must not declare `prerelease`.
+///
+/// GitHub's own rule is the protection: "The latest release is the most recent non-prerelease,
+/// non-draft release" and "Drafts and prereleases cannot be set as latest". The plugin leans on it by
+/// deriving the mark from the version it is handed
+/// (`plugins/github-publish/src/post_release.rs:78-80`, `config.prerelease.unwrap_or_else(||
+/// is_prerelease(&payload.version))`), so this key is the one thing that cancels the derivation while
+/// the repository never has to set anything. Unset is not "false": unset is "let the version decide".
+/// `prerelease = false` would make the draft for `0.22.0-alpha.1` a non-prerelease release, and a
+/// non-prerelease release is exactly what can take the repository's Latest slot — the slot
+/// `uses: cutver/setup@v0` resolves with its `version: latest` default. `prerelease = true` would go
+/// the other way and mark every stable release as a prerelease, which no `--latest=true` can undo.
+#[test]
+fn the_publish_plugin_config_declares_no_prerelease_key() {
+    let plugin = declared_plugin();
+    let plugin_config = plugin.config.expect("the publish plugin needs a config table");
+    assert!(
+        !plugin_config.contains_key("prerelease"),
+        "`[plugins.github-publish.config]` must not declare `prerelease`: leaving it unset is what \
+         makes the plugin derive the mark from the released version, so `0.22.0-alpha.1` is created \
+         as a prerelease. Setting it false would let an alpha take the repository's Latest slot, \
+         because only a release *marked* prerelease is protected from it, and `version: latest` is \
+         what `uses: cutver/setup@v0` installs by default"
     );
 }
 
@@ -818,9 +852,7 @@ fn the_tag_the_crate_and_the_draft_are_published_after_verification() {
     let upload = publish
         .find("gh release upload \"$TAG\" dist/* --clobber")
         .expect("upload step");
-    let promote = publish
-        .find("gh release edit \"$TAG\" --draft=false")
-        .expect("promotion step");
+    let promote = publish.find(PROMOTE_STABLE).expect("promotion step");
     assert!(
         closing < assets && assets < upload && upload < promote,
         "`cutver publish` creates the tag and the crate, the assets land in its draft, and only then \
@@ -992,13 +1024,141 @@ fn release_notes_artifact_is_kept_but_does_not_feed_the_promotion() {
         version.contains("cutver changelog latest --template .github/templates/cutver/RELEASE.md > RELEASE_NOTES.md"),
         "the version job must render the notes from the template cutver.toml names"
     );
-    let promote_at = workflow
-        .find("gh release edit \"$TAG\" --draft=false")
-        .expect("the promotion step");
-    let promotion = workflow[promote_at..].split('\n').next().unwrap_or_default();
+    // The promotion is exactly the two channel commands, and nothing else: a `--title` or a
+    // `--notes-file` here gives the release a second author, and any third `gh release edit` in this
+    // job is a promotion nobody reviewed.
+    let publish_job = job(&workflow, "publish");
+    let promotions: Vec<&str> = publish_job
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with("gh release edit \"$TAG\""))
+        .collect();
     assert_eq!(
-        promotion, "gh release edit \"$TAG\" --draft=false",
-        "the promotion must only publish the draft: a `--title` or a body there overrides the plugin"
+        promotions,
+        vec![PROMOTE_STABLE, PROMOTE_PRERELEASE],
+        "the promotion must be exactly `{PROMOTE_STABLE}` for a stable cut and \
+         `{PROMOTE_PRERELEASE}` for a prerelease: a `--title`, a body or a fourth flag there \
+         overrides the plugin that authored the release"
+    );
+}
+
+/// The arms of the promotion's `case "$CHANNEL" in … esac`, as `(patterns, commands)`.
+///
+/// The promotion does not build an argv array, so the branch that picks the command *is* the
+/// contract: both command literals sit in the same step, and a `contains` on either cannot tell the
+/// stable arm from the prerelease one. Reading the arms is what a swapped or duplicated pattern
+/// fails. A construct this reader does not model stops the test rather than being skipped.
+fn channel_arms(step: &str) -> Vec<(String, Vec<String>)> {
+    const HEAD: &str = "case \"$CHANNEL\" in";
+    let script = run_script(step);
+    let start = script
+        .find(HEAD)
+        .unwrap_or_else(|| panic!("the promotion must pick its command from the reported channel: {script}"))
+        + HEAD.len();
+    let mut arms: Vec<(String, Vec<String>)> = Vec::new();
+    for line in script[start..].lines().map(str::trim) {
+        if line == "esac" {
+            return arms;
+        }
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if let Some(patterns) = line.strip_suffix(')') {
+            arms.push((patterns.to_string(), Vec::new()));
+            continue;
+        }
+        if line == ";;" {
+            continue;
+        }
+        let arm = arms
+            .last_mut()
+            .unwrap_or_else(|| panic!("`{line}` runs outside any channel arm of the promotion: {script}"));
+        arm.1.push(line.to_string());
+    }
+    panic!("the channel `case` must close with `esac`: {script}")
+}
+
+/// S6: the promotion states the release state the channel asks for, and the publish job can only do
+/// that because the bump step reports the channel.
+///
+/// GitHub cannot make a prerelease Latest — "the latest release is the most recent non-prerelease,
+/// non-draft release" — but the draft arrives already marked prerelease only because the plugin
+/// derives that flag from the version it is handed
+/// (`plugins/github-publish/src/post_release.rs:78-80`). Two things nothing in this repository pins
+/// then decide whether an alpha takes the Latest slot `uses: cutver/setup@v0` resolves:
+/// `version: latest` defaults to it, and the mark is the only thing GitHub refuses to override.
+/// Passing both flags here removes the first dependency; `the_publish_plugin_config_declares_no_prerelease_key`
+/// removes the second. A stable cut asks for Latest explicitly and clears a prerelease mark an
+/// earlier run could have left; a prerelease asks to stay marked and to never be Latest.
+#[test]
+fn the_promotion_publishes_by_channel() {
+    let workflow = repo_text(".github/workflows/release.yml");
+    let version = job(&workflow, "version");
+    let publish = job(&workflow, "publish");
+
+    // The channel travels exactly like `released`, `tag` and `commit`: an output of the step that
+    // ran `cutver bump`, declared on the `version` job and read as `needs.version.outputs.*`.
+    let channel = declared_outputs(version)
+        .into_iter()
+        .find(|(key, _)| key == "channel")
+        .map(|(_, value)| value)
+        .unwrap_or_else(|| {
+            panic!(
+                "the version job must declare a `channel` output: `cutver bump` reports the channel \
+                 the run produced, and without the output the publish job cannot know whether the \
+                 release it promotes is Latest or a prerelease — `needs.version.outputs.channel` \
+                 then renders empty for every run"
+            )
+        });
+    assert_eq!(
+        channel, "${{ steps.cutver.outputs.channel }}",
+        "the `channel` output must read the step that ran `cutver bump`: that step owns the release \
+         result, so a value taken from anywhere else is empty and the promotion fails closed on \
+         every stable release"
+    );
+
+    let step = step_containing(publish, "gh release edit \"$TAG\"");
+    assert!(
+        step.contains("CHANNEL: ${{ needs.version.outputs.channel }}"),
+        "the promotion step must receive the reported channel as CHANNEL, the same way it receives \
+         TAG: the command it runs is decided by the channel, and a step that has to re-derive it from \
+         the tag string is the coupling this pin exists to prevent: {step}"
+    );
+
+    let arms = channel_arms(step);
+    assert_eq!(
+        arms.len(),
+        3,
+        "the promotion must declare exactly three channel arms — stable, the prerelease ladder, and \
+         a fail-closed default: {arms:?}"
+    );
+    assert_eq!(
+        arms[0],
+        ("stable".to_string(), vec![PROMOTE_STABLE.to_string()]),
+        "a stable release must be published as a non-prerelease Latest: `--prerelease=false` clears a \
+         mark an earlier run could have left and `--latest=true` sets the slot explicitly, instead of \
+         leaving both to whichever release GitHub happened to consider most recent"
+    );
+    assert_eq!(
+        arms[1],
+        ("alpha|beta|rc".to_string(), vec![PROMOTE_PRERELEASE.to_string()]),
+        "every channel `cutver bump --channel` accepts must publish as a marked prerelease that is \
+         never Latest, or `0.22.0-alpha.1` takes the slot `uses: cutver/setup@v0` with `version: \
+         latest` installs by default"
+    );
+    assert_eq!(arms[2].0, "*", "the last arm must be the catch-all: {arms:?}");
+    let default_arm = &arms[2].1;
+    assert!(
+        default_arm.iter().any(|line| line.contains("exit 1")),
+        "an unknown channel must fail the job, not fall through to a published release: a step that \
+         continues here promotes a release whose state nobody decided: {default_arm:?}"
+    );
+    assert!(
+        default_arm
+            .iter()
+            .any(|line| line.contains("::error::Refusing to promote")),
+        "the catch-all must fail with an `::error::` line naming the release, the way the draft guard \
+         above does: a bare exit surfaces as a step failure with no cause: {default_arm:?}"
     );
 }
 

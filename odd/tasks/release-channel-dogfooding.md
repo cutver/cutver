@@ -73,16 +73,22 @@ them, and the first real prerelease is observed before anything downstream is si
   (`WRITTEN: [released, deferred, version, tag, commit]`), which is the test that keeps the workflow from
   reading a key the tool never writes. No `--json` change beyond an additive key (phase 5's D3 stays
   intact: `plan --json` keeps `touched[]` as the transition's authority).
-- **T5 — A prerelease never becomes the repository's Latest.** (S6) The promotion step is
-  `gh release edit "$TAG" --draft=false` (`release.yml:787`) with no `--prerelease` and no `--latest=false`,
-  and the draft itself is created without a flag (`cutver.toml:86-91`). A published alpha would become
-  Latest, and `cutver/setup`'s default `version: latest` (`docs/integrations/github-actions.md:17,20`)
-  would install the alpha for every consumer — the exact failure this task exists to prevent. Pinned by
-  `tests/release_pipeline_contract.rs:679-697` (an `assert_eq!` on that exact string) and constrained by
-  `:658-671` (exactly two `GH_TOKEN:` and two `TAG:` lines). Resolve the unknown first: whether the pinned
-  `github-publish-0.2.1.wasm` (`cutver.toml:66-94`) accepts a prerelease/latest parameter at all; if it does
-  not, the draft is created by the plugin and corrected by the workflow, and that correction is a named line
-  in the test.
+- **T5 — A prerelease is never Latest, and the promotion says so itself.** (S6) The plan first claimed that
+  "a published alpha would become Latest". **That premise is false, measured on 2026-11-25**, and T5 survives
+  in a better shape. GitHub guarantees the property at the API: "The latest release is the most recent
+  non-prerelease, non-draft release" and "Drafts and prereleases cannot be set as latest"
+  (`docs.github.com/en/rest/releases/releases`). And the plugin already marks the draft from the version:
+  `plugins/github-publish/src/post_release.rs:78-80` reads
+  `config.prerelease.unwrap_or_else(\|\| is_prerelease(&payload.version))`, pinned by the plugin's own
+  `automatically_marks_prerelease` test at `:322-339`. What remains is a **coupling**, not a certainty: the
+  property holds only while nobody sets `prerelease = false` under `[plugins.github-publish.config]` in
+  `cutver.toml` and while the plugin keeps deriving the flag. T5 makes the guarantee independent of both —
+  the promotion step passes the channel explicitly (`--draft=false --prerelease=false --latest=true` for
+  stable, `--draft=false --prerelease --latest=false` otherwise), the contract test pins that exact line and
+  the branch that chooses it, and a test asserts that `cutver.toml` declares no `prerelease` key, with the
+  reason in the failure message. Constraints to respect: exactly two `GH_TOKEN:` and two `TAG:` lines, and
+  the existing `assert_eq!` on the promotion string.
+
 - **T6 — The floating major tag does not follow a prerelease.** (S6) `cutver.toml:22` sets
   `floating_major_tag = true`, `src/bump/plan.rs:301` decides it with no channel condition, and
   `src/bump/plan/resolve.rs:54-56` force-moves `v0`. On `0.22.0-alpha.1` that re-points `v0` at a version
@@ -373,3 +379,25 @@ Two judgment calls worth keeping:
 My handoff carried a defect worth naming: the continue prompt contained two `## Allowed edit surfaces`
 blocks, a stale 4-path copy trailing the 8-path replacement. The worker read the replacement (correctly) and
 reported the ambiguity instead of guessing quietly. One list, one block, next time.
+
+**L13. Unknown 2 resolved, and T5's premise with it.** Measured on 2026-11-25 against `cutver/plugins`
+(`main`) through the API, without reading the sibling clone at `d:/development/workspaces/plugins`, which is
+outside this project:
+
+- **The plugin accepts the parameter, and defaults better than the plan assumed.**
+  `plugins/github-publish/src/post_release.rs:78-80` sets `prerelease` from
+  `config.prerelease.unwrap_or_else(|| is_prerelease(&payload.version))`, so the draft for
+  `0.22.0-alpha.1` is created **already marked prerelease** from the payload's version, with no config and
+  no workflow flag. Its own test `automatically_marks_prerelease` (`:322-339`) pins that. `config.rs:178`
+  also lets `GITHUB_PUBLISH_DRAFT` override `draft`, an environment variable this repository does not set.
+- **GitHub cannot make a prerelease Latest**, so the failure the plan feared cannot happen while the release
+  is marked: "The latest release is the most recent non-prerelease, non-draft release, sorted by the
+  created_at attribute" and "Drafts and prereleases cannot be set as latest"
+  (`docs.github.com/en/rest/releases/releases`). The `cutver/setup` `version: latest` hazard is real only for
+  a release that is *not* prereleased.
+- **So T5 is not "stop the alpha becoming Latest"; it is "stop depending on two things nobody here pins"**:
+  the plugin's auto-derivation, and the absence of `prerelease = false` in `cutver.toml`. The explicit
+  `--prerelease`/`--latest` flags and the config pin cost three lines and remove both dependencies.
+- Two pieces of the plan's own reasoning survive untouched: the `Where` citations for the promotion step and
+  the two `GH_TOKEN:`/`TAG:` pins are still the constraints to respect, and `release.yml`'s line number has
+  moved because T3 added the `channel` input — locate it by the `gh release edit "$TAG" --draft=false` string.

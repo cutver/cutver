@@ -49,3 +49,13 @@ L5 (explorer evidence, mwxnpsay-1-1mc8): `src/cli/args/commands.rs` is 380 lines
 L6 (architect decision, recorded here): the flag and its object land in the same commit, per command, so no commit ships a `--json` that prints nothing — that is the decorative-declaration defect #300 already named. Consequence: T1 is not its own commit; c1 is publish (T2-T4), c2 is attest plus init (T5-T6), c3 pins the shapes (T7), c4 documents them (T8). Publishing and the other two cannot be built in parallel: both touch `src/cli/args/commands.rs` and `src/cli/machine.rs`.
 L7 (architect decision): doc line ceilings bind this work — `docs/reference/cli.md` is 199/200 and `docs/internals/machine-contract-surfaces.md` is 199/200 under `every_document_stays_under_the_line_ceiling` (`tests/ci_workflow_contract.rs:301`, `CONTRACT.md:140`), while `docs/internals/machine-contract.md` is 112/200. So the three contract rows go where the room is, and any cli.md sentence this change adds is paid for.
 L8 (evidence, c1): `b2311b2` "feat(publish): answer on a machine surface with --json", 13 files, +782/−63 (478 of those insertions are `tests/publish_json.rs`, 50 the feature doc). Verified: `cargo test --locked --workspace` with `GITHUB_ACTIONS=true` and both sinks writable — the whole suite green except `cli_reference_parity`, which named the missing `cutver publish --json` documentation; that row landed in this commit and the four documentation suites then went green. `cargo test --locked --lib` 557 passed. clippy `-D warnings` clean. `docs/reference/cli.md` is now at 200/200, exactly at the ceiling, which is why the two remaining rows need room made for them in c2.
+
+## Commits and closure
+
+- c1 `b2311b2` — T2-T4, `publish --json`.
+- c2 `13e4589` — T5-T6, `attest --json` and `init --json`, plus the reference rows and the `release-resume.md` decomposition the page ceiling forced.
+- c3 `53213fa` — T7, the three baselines and the refusal assertion in `tests/schema_compat.rs`.
+- c4 `592b01e` — T8, the three `## Surfaces` rows, the repaired paragraphs, `machine-contract-release-tail.md`, and `CONTRACT.md:229`.
+- Delivery: PR #408, one PR as L3 asked, `type:feat`.
+- T9: issue **#409**, the attestation file's missing `schemaVersion`, filed separately per L4.
+- Residuals carried forward, named rather than buried: `primary_source` (`src/init/scaffold/config_gen.rs:180`) mirrors `deduce_current_source` at the document level and no test asserts they agree; `tests/e2e_init.rs` is `#![cfg(unix)]`, so its Linux half ran nowhere on this host and only the cross-platform suite covers those paths.

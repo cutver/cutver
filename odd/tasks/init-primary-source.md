@@ -23,7 +23,7 @@ GitHub issue **#410** (`type:refactor`). One equivalence test, one divergence it
 - **T1** — the document copy skips template sinks when it falls back to the first manifest, and refuses none of the cases the loader refuses only because the config does not load. Covers D2, S1. — done: `declared_entries` (the unchanged enumeration) plus a single pass over the entries matched **by position**, so two entries declaring one path cannot hide each other; `declared_manifests` untouched (D3).
 - **T2** — the equivalence test: for each fixture that loads, both sides name the same manifest; the sink-first fixture fails before T1 and passes after. The doc comment names the change it catches. Covers S1, S2. — done: `init_update_and_the_loader_name_the_same_primary_source`, five fixtures, both answers canonicalized before comparing; plus `update_does_not_append_a_template_sink_the_document_already_declares` as the D3 guard.
 - **T3** — `docs/internals/machine-contract-release-tail.md`'s `primary` bullet currently describes `--update` as "an entry flagged `primary = true`, otherwise the first declared", omitting the `[version] current_source` step that the code applies first. State the whole order once. — done.
-- **T4** — gate, commit, PR. — see L5.
+- **T4** — gate, commit, PR. — done: commit `35f99e0`, PR #413, squash-merged to `main` as **`617303b`**.
 
 ## Log
 
@@ -36,3 +36,5 @@ GitHub issue **#410** (`type:refactor`). One equivalence test, one divergence it
 **L4** (RED, observed by the worker before T1, on the sink-first fixture): `init --update` reports `"src/version.ts"` while the loader uses `"…/scaffold-agree-sink-first-6840-4/Cargo.toml"` — the other four fixtures already agreed, so the divergence is exactly the one D2 names. GREEN after T1: `init::scaffold::tests` 11 passed, `config::validation::tests` 13 passed, `attest_init_json` 9 passed.
 
 **L5** (differential, the D3 evidence). The worker built the base commit `c21138f` through `git archive` in a scratch directory and compared `init --update` and `init --update --json` on four fixtures: human stdout and exit code identical, written `cutver.toml` identical, and the only difference is the intended one — sink-first with nothing named, `"primary":"src/version.ts"` → `"primary":"Cargo.toml"`. A throwaway experiment that made `declared_manifests` skip sinks made the D3 guard fail with a duplicated `package.json` entry, so the guard discriminates.
+
+**L6** (delivery, 2026-11-26). `sh scripts/check.sh` → `gate: PASS (9 passed, 0 failed, 1 not run here)`, the not-run step being the cross-target `clippy` this Windows host cannot run. PR **#413** (`type:refactor`) green on every leg, squash-merged as **`617303b`**; branch deleted. The deferred index's #410 row moved to "Closed and re-verified" with this sha.

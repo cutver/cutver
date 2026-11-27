@@ -178,9 +178,9 @@ pub fn update_existing_config(
     Ok((new_manifests, primary_source(&updated)))
 }
 
-/// Every declared manifest's path and whether it is flagged `primary = true`, in declaration order,
-/// in both spellings the loader accepts: an array of tables and an array of inline tables.
-fn declared_manifests(doc: &toml_edit::DocumentMut) -> Vec<(String, bool)> {
+/// Every declared manifest as a table, in declaration order, in both spellings the loader accepts: an
+/// array of tables (`[[manifest]]`) and an array of inline tables (`manifest = [{ … }]`).
+fn declared_entries(doc: &toml_edit::DocumentMut) -> Vec<&dyn TableLike> {
     let Some(item) = doc.get("manifest") else {
         return Vec::new();
     };
@@ -196,6 +196,11 @@ fn declared_manifests(doc: &toml_edit::DocumentMut) -> Vec<(String, bool)> {
         );
     }
     entries
+}
+
+/// Every declared manifest's path and whether it is flagged `primary = true`, in declaration order.
+fn declared_manifests(doc: &toml_edit::DocumentMut) -> Vec<(String, bool)> {
+    declared_entries(doc)
         .into_iter()
         .filter_map(|entry| {
             let path = entry.get("path")?.as_str()?.to_string();
@@ -205,13 +210,24 @@ fn declared_manifests(doc: &toml_edit::DocumentMut) -> Vec<(String, bool)> {
         .collect()
 }
 
+/// The one kind that is a version sink: `ManifestKind::Template` is the only variant
+/// `#[serde(tag = "kind", rename_all = "kebab-case")]` spells `template` (`src/config/types.rs`), so
+/// this string is the whole sink set.
+const TEMPLATE_SINK_KIND: &str = "template";
+
 /// The primary source of truth an existing document declares, read from the document itself.
 ///
 /// `init --update` must not start failing because a configuration it was asked to append to does not
 /// load, so this mirrors `deduce_current_source` (`src/config/validation.rs:13`) at the document
 /// level, in its order: `[version] current_source` (or its deprecated alias `source`), then the
-/// manifest flagged `primary = true`, then the first declared manifest.
-fn primary_source(doc: &toml_edit::DocumentMut) -> Option<String> {
+/// manifest flagged `primary = true`, then the first declared manifest that is not a template sink
+/// (`src/config/validation.rs:33-39`) — a sink generates its target from the version instead of
+/// holding one, so it can never supply it (#410 D2).
+///
+/// A configuration that does not load still gets an answer rather than a refusal: the loader's own
+/// refusals — more than one `primary = true`, a `current_source` contradicting it, every entry a sink,
+/// no entries at all — are exactly the cases where `--update` must still report something.
+pub(super) fn primary_source(doc: &toml_edit::DocumentMut) -> Option<String> {
     let declared = doc
         .get("version")
         .and_then(|version| version.get("current_source").or_else(|| version.get("source")))
@@ -220,10 +236,22 @@ fn primary_source(doc: &toml_edit::DocumentMut) -> Option<String> {
     if let Some(path) = declared {
         return Some(path.to_string());
     }
-    let manifests = declared_manifests(doc);
-    manifests
+    // Read here instead of in `declared_manifests`: that reader answers which paths `--update` must
+    // not append, and a sink it skipped would be appended again on every run (#410 D3). One pass over
+    // the entries, matched by position rather than by path: two entries may declare the same path, and
+    // a sink declared first must not hide the manifest declared under the same path after it.
+    let entries: Vec<(&str, bool, bool)> = declared_entries(doc)
+        .into_iter()
+        .filter_map(|entry| {
+            let path = entry.get("path")?.as_str()?;
+            let primary = entry.get("primary").and_then(|primary| primary.as_bool()) == Some(true);
+            let sink = entry.get("kind").and_then(|kind| kind.as_str()) == Some(TEMPLATE_SINK_KIND);
+            Some((path, primary, sink))
+        })
+        .collect();
+    entries
         .iter()
-        .find(|(_, primary)| *primary)
-        .or_else(|| manifests.first())
-        .map(|(path, _)| path.clone())
+        .find(|(_, primary, _)| *primary)
+        .or_else(|| entries.iter().find(|(_, _, sink)| !sink))
+        .map(|(path, _, _)| (*path).to_string())
 }

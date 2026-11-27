@@ -128,9 +128,14 @@ keys, in order:
   and `pyproject`. That is not the human summary's `json: version`, which names a field. A consumer
   maps `kind` to the file it has to edit.
 - `primary` — the path of the manifest the configuration makes its source of truth: on a fresh scaffold
-  the first one detected, and on `--update` the one the existing document already declares (an entry
-  flagged `primary = true`, otherwise the first declared). It is `null` when nothing was detected. A
-  consumer reads the version from one file instead of guessing which one the release uses.
+  the first one detected, and on `--update` what the existing document declares, read in this order:
+  `[version] current_source` (or its deprecated alias `source`), then the manifest flagged
+  `primary = true`, then the first declared manifest that is not a template sink — a manifest of
+  `kind = "template"` generates its target from a template instead of holding a version, so it can
+  never be the source. It is the order the configuration loader applies (`src/config/validation.rs`),
+  and a test proves the document reading and the loader name the same manifest
+  (`src/init/scaffold/tests.rs`). It is `null` when nothing was detected. A consumer reads the version
+  from one file instead of guessing which one the release uses.
 - `files_written` — the files this run wrote, relative to the target directory with forward slashes:
   the configuration, plus `CHANGELOG.md` when it did not exist, and the release template
   (`.github/templates/cutver/RELEASE.md`, `src/init/scaffold/templates.rs:17`) when it is missing or

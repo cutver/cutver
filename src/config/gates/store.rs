@@ -13,11 +13,17 @@ use thiserror::Error;
 use super::name::{Conclusion, GateName};
 use super::table::is_exemptible;
 use crate::atomic::write_atomic;
+use crate::cli::json::Versioned;
 use crate::config::types::Config;
 use crate::git::CommitSha;
 
 /// One recorded verdict, exactly as the file spells it. Key order is the file's contract: the
 /// document is written from this struct, never from a map.
+///
+/// The file opens with `schemaVersion`, which comes from the envelope and not from a field here: the
+/// version is one number in one place ([`Versioned`]), and a field would be a second copy free to
+/// drift from the surfaces that print the same record. A file written before the key existed has
+/// none and still reads — see [`read`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Attestation {
     /// What was verified.
@@ -123,6 +129,11 @@ pub fn record(
 }
 
 /// Writes one document into the gate channel, one file per gate, atomically.
+///
+/// The file is the versioned record, not the bare struct: it opens with the `schemaVersion` every
+/// machine surface carries, so a consumer reading the channel can tell a shape it knows from one it
+/// does not. The envelope adds the key and nothing else — the record's own keys keep their order, and
+/// the version it writes is the one `attest --json` prints.
 fn write(config: &Config, gate: &GateName, path: &Path, attestation: &Attestation) -> Result<(), AttestError> {
     let directory = dir(config);
     let failure = |source: io::Error| AttestError::Write {
@@ -132,7 +143,8 @@ fn write(config: &Config, gate: &GateName, path: &Path, attestation: &Attestatio
         source,
     };
     fs::create_dir_all(&directory).map_err(failure)?;
-    let mut bytes = serde_json::to_vec(attestation).map_err(|error| failure(io::Error::other(error.to_string())))?;
+    let mut bytes = serde_json::to_vec(&Versioned::new(attestation))
+        .map_err(|error| failure(io::Error::other(error.to_string())))?;
     bytes.push(b'\n');
     write_atomic(path, &bytes).map_err(|source| failure(io::Error::other(source.to_string())))
 }
@@ -141,6 +153,11 @@ fn write(config: &Config, gate: &GateName, path: &Path, attestation: &Attestatio
 /// same gate. Anything else — a missing file, a truncated document, a file that names another gate —
 /// is "no attestation", never an error: a forged or damaged file must not crash a release, and it
 /// cannot vouch for anything either.
+///
+/// A file with no `schemaVersion` is read too: the key was added after records already existed, so its
+/// absence means the legacy shape — the record as it was written before the version — and refusing it
+/// would turn a verdict that did vouch for the commit into "no attestation". The version is the
+/// consumer's key, not a gate the reader fails closed on.
 pub fn read(config: &Config, gate: &GateName) -> Option<Attestation> {
     let text = fs::read_to_string(path_of(config, gate)).ok()?;
     let attestation: Attestation = serde_json::from_str(&text).ok()?;

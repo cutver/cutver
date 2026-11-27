@@ -222,6 +222,68 @@ fn attest_with_the_flag_prints_the_record_it_wrote_and_the_path_publish_reads() 
     );
 }
 
+/// S2, S4: every file the channel holds opens with `schemaVersion`, whichever directory `[gates] dir`
+/// names — so a future writer cannot add a shape without one — and the version in the file is the one
+/// `--json` printed, so the object and the file cannot disagree about it.
+#[test]
+fn every_file_in_the_gates_directory_opens_with_the_schema_version() {
+    const GATES_DIR: &str = "gate-files";
+    let guard = FixtureGuard::new("attest-json-gates-dir");
+    let fixture = guard.fixture();
+    fixture.write(
+        "cutver.toml",
+        &format!("{ATTEST_TOML}\n[gates]\ndir = \"{GATES_DIR}\"\n"),
+    );
+    fixture.write("package.json", PACKAGE_JSON);
+
+    let mut printed_versions = BTreeSet::new();
+    for gate in ["ci", "smoke"] {
+        let out = attest(fixture, &[gate, "--commit", SHA, "--conclusion", "success", "--json"]);
+        assert_eq!(out.status.code(), Some(0), "stderr:\n{}", stderr_of(&out));
+        let document = stdout_of(&out);
+        let parsed = assert_surface(&document, "`cutver attest --json`", &ATTEST_KEYS);
+        printed_versions.insert(parsed["schemaVersion"].as_u64().expect("`schemaVersion` is an integer"));
+    }
+    assert_eq!(
+        printed_versions.len(),
+        1,
+        "every surface carries one version, found {printed_versions:?}"
+    );
+    let version = printed_versions.into_iter().next().expect("one version");
+
+    let directory = fixture.dir.join(GATES_DIR);
+    let mut files: Vec<PathBuf> = std::fs::read_dir(&directory)
+        .expect("the configured gates directory exists")
+        .map(|entry| entry.expect("a directory entry is readable").path())
+        .filter(|path| path.extension().is_some_and(|extension| extension == "json"))
+        .collect();
+    files.sort();
+    assert_eq!(files.len(), 2, "one file per gate, found {files:?}");
+
+    for file in &files {
+        let raw = std::fs::read_to_string(file).expect("the record is readable");
+        assert!(
+            raw.starts_with(&format!(r#"{{"schemaVersion":{version},"#)),
+            "every file in the gates directory opens with the version the object printed, as its \
+             first key: {} holds {raw}",
+            file.display()
+        );
+        let parsed: Value = serde_json::from_str(&raw).expect("the record parses");
+        assert_eq!(
+            parsed["schemaVersion"],
+            version,
+            "the file and the object agree about the version: {}",
+            file.display()
+        );
+        assert_eq!(
+            parsed["commit"],
+            SHA,
+            "{} still holds the record it was given",
+            file.display()
+        );
+    }
+}
+
 /// S3, S9: a refusal writes one envelope on **stderr** with the `attest` class in it, adds nothing to
 /// stdout, and records nothing.
 #[test]

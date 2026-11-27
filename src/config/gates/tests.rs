@@ -38,9 +38,9 @@ fn a_recorded_verdict_round_trips_through_the_store() {
     let raw = fs::read_to_string(path_of(&config, &gate)).expect("the file exists");
     assert!(
         raw.starts_with(&format!(
-            r#"{{"gate":"ci","commit":"{commit}","conclusion":"failure","verified_at":""#
+            r#"{{"schemaVersion":1,"gate":"ci","commit":"{commit}","conclusion":"failure","verified_at":""#
         )),
-        "key order is the file's contract: {raw}"
+        "key order is the file's contract, and the version opens it: {raw}"
     );
     let read_back = read(&config, &gate).expect("it reads back");
     assert_eq!(read_back, recorded.attestation);
@@ -55,6 +55,32 @@ fn a_recorded_verdict_round_trips_through_the_store() {
         crate::changelog::format_date(std::time::SystemTime::now()).len() == read_back.verified_at.len(),
         "`when` is written in the changelog's own date format"
     );
+}
+
+/// #409 D1: a file written before the version key existed carries no `schemaVersion`, and it still
+/// reads as the attestation it holds. The reader is total on purpose, so this change must not turn a
+/// recorded verdict into "no attestation" — that would make `publish --require-gate` fail closed on a
+/// gate that did vouch for the commit.
+#[test]
+fn a_file_written_before_the_version_key_still_reads() {
+    let (_tmp, config) = workspace("legacy", DEFAULT_DIR);
+    let gate = GateName::parse("ci").expect("a gate name");
+    let commit = "4f2ac1b1c6c7d2d3e4f5a6b7c8d9e0f1a2b3c4d5";
+    let path = path_of(&config, &gate);
+    fs::create_dir_all(path.parent().expect("the gates directory is inside the workspace"))
+        .expect("the gates directory is created");
+    fs::write(
+        &path,
+        format!(r#"{{"gate":"ci","commit":"{commit}","conclusion":"failure","verified_at":"2026-11-26"}}"#),
+    )
+    .expect("the legacy file is written");
+
+    let read_back = read(&config, &gate).expect("the legacy shape is still an attestation");
+
+    assert_eq!(read_back.commit, commit);
+    assert!(read_back.covers(commit), "it answers for the commit it names");
+    assert_eq!(read_back.conclusion, Conclusion::Failure);
+    assert_eq!(read_back.run, None, "a legacy file names no run");
 }
 
 /// S8: the commit is parsed before anything is written, so a tag or a short form cannot be recorded.

@@ -82,6 +82,33 @@ The shape is `AttestJson` (`src/cli/runner/dispatch.rs:245`); the keys, in order
   workspace root it already knows — to archive or upload the file — instead of re-deriving the
   directory from the configuration.
 
+### The file the record lands in
+
+The file is the same record, versioned. It opens with `schemaVersion` as its first key, carrying the
+integer `--json` printed, so the object and the file cannot disagree about the version. The keys that
+follow keep the order above, with two differences that come from what the file is:
+
+- `path` is absent, because it is the location of the file and cannot sit inside the file's own bytes.
+- `run` is absent when the gate named none, where the printed object spells it `null`: the file omits a
+  key it has no value for.
+
+```json
+{"schemaVersion":1,"gate":"ci","commit":"0123456789abcdef0123456789abcdef01234567","conclusion":"success","verified_at":"2026-11-26"}
+```
+
+A file with no `schemaVersion` predates the key, or came from another tool. It is the legacy shape and
+it still reads as the attestation it holds. The reader is total on purpose
+(`src/config/gates/store.rs`): a file that does not parse counts as no attestation, and
+`publish --require-gate` refuses a gate it has no attestation for (`src/bump/exec/guard.rs`). Refusing
+a file only because the key is missing would accordingly disable a gate that had vouched for the
+commit, which is why the absence of the key is not an error.
+
+A test enumerates a configured `[gates] dir` and asserts that each `.json` file there opens with the
+key (`tests/attest_init_json.rs`, `every_file_in_the_gates_directory_opens_with_the_schema_version`), so
+a writer that stopped adding it fails the suite. It covers the writers that exist: a new command
+writing elsewhere in that directory, a file that is not `.json`, or a subdirectory would not be
+examined.
+
 ## `cutver init --json`
 
 What the scaffold found and wrote. A fresh run and `--update` answer with the same three keys, so an

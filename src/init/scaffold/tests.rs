@@ -209,6 +209,161 @@ fn new_contributors_is_enabled_only_for_the_builtin_renderer() {
     );
 }
 
+/// D3 (#410): the sink awareness belongs to the primary-source fallback alone. `declared_manifests`
+/// decides which discovered manifests `--update` must not append, so a sink that discovery finds —
+/// here `package.json`, generated from a template — is still an already-declared path and must not be
+/// appended a second time as a json manifest.
+#[test]
+fn update_does_not_append_a_template_sink_the_document_already_declares() {
+    let td = TestDir::new("scaffold-sink-noop");
+    let initial_cfg = r#"[[manifest]]
+path = "package.json"
+kind = "template"
+template = "package.jinja"
+
+[[manifest]]
+path = "Cargo.toml"
+kind = "cargo-package"
+"#;
+    td.write("cutver.toml", initial_cfg);
+    td.write("Cargo.toml", "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n");
+    td.write("package.json", r#"{"name": "demo", "version": "0.1.0"}"#);
+    td.write("package.jinja", "{}\n");
+
+    run_init(Some(td.path.clone()), true, false, false, false).unwrap();
+    assert_eq!(
+        td.read("cutver.toml"),
+        initial_cfg,
+        "the sink is declared already, so appending it again would declare the path twice"
+    );
+}
+
+/// Both answers reduced to one spelling. `load` resolves `current_source` against the root
+/// (`src/config/discovery.rs:27`), so the loader names an absolute path while the document names the
+/// spelling it declares; comparing those two strings would pass or fail for the wrong reason.
+fn resolved_manifest(root: &std::path::Path, path: &str) -> PathBuf {
+    fs::canonicalize(root.join(path)).unwrap_or_else(|e| panic!("the fixture declares `{path}`, which must exist: {e}"))
+}
+
+/// The document's answer for `fixture`, after asserting it is the manifest the loader uses.
+fn both_sides_agree(fixture: &str, cutver_toml: &str) -> String {
+    let td = TestDir::new(fixture);
+    td.write("Cargo.toml", "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n");
+    td.write("package.json", r#"{"name": "demo", "version": "0.1.0"}"#);
+    td.write("src/version.ts", "export const version = '0.1.0';\n");
+    td.write("cutver.toml", cutver_toml);
+
+    let config = crate::config::load(td.path.join("cutver.toml"))
+        .expect("only a configuration that loads is part of the agreeing set");
+    let document: toml_edit::DocumentMut = cutver_toml.parse().expect("the fixture is valid TOML");
+    let from_document = config_gen::primary_source(&document).expect("the fixture declares a manifest");
+
+    assert_eq!(
+        resolved_manifest(&td.path, &from_document),
+        resolved_manifest(&td.path, &config.version.current_source),
+        "`init --update` reports {from_document:?} for the {fixture} fixture, but the loader uses {:?}",
+        config.version.current_source
+    );
+    from_document
+}
+
+/// S1/S2 (#410): the `primary` `init --update` reports and the source the loader actually uses are two
+/// copies of one ordering rule — `[version] current_source` (or its deprecated alias `source`), then
+/// the manifest flagged `primary = true`, then the first manifest that is not a template sink — and
+/// they must name the same manifest for every configuration that loads.
+///
+/// This test catches that rule moving on one side only, in either direction: if `primary_source`
+/// (`config_gen.rs`) or `deduce_current_source` (`src/config/validation.rs`) changes its order, which
+/// of the two `[[manifest]]` spellings it reads, or whether it skips `kind = "template"` sinks,
+/// exactly the fixture covering that step disagrees and the assertion names both answers.
+///
+/// A configuration the loader refuses is outside the agreeing set by construction, so it stays the
+/// document's business: more than one `primary = true`, a `[version] current_source` that contradicts
+/// the flagged manifest, a list where every entry is a sink, and an empty list. `load` errors on each
+/// of them, so there is no loader answer to agree with.
+#[test]
+fn init_update_and_the_loader_name_the_same_primary_source() {
+    // `[[manifest]]` array of tables: an explicit `current_source` beats the first declared manifest.
+    let declared = both_sides_agree(
+        "scaffold-agree-aot",
+        r#"[version]
+current_source = "package.json"
+
+[[manifest]]
+path = "Cargo.toml"
+kind = "cargo-package"
+
+[[manifest]]
+path = "package.json"
+kind = "json"
+field = "version"
+"#,
+    );
+    assert_eq!(declared, "package.json");
+
+    // The same list in the other accepted spelling, an array of inline tables, with no `[version]`
+    // table at all: both sides fall back to the first declared manifest.
+    let declared = both_sides_agree(
+        "scaffold-agree-inline",
+        r#"manifest = [
+  { path = "Cargo.toml", kind = "cargo-package" },
+  { path = "package.json", kind = "json", field = "version" },
+]
+"#,
+    );
+    assert_eq!(declared, "Cargo.toml");
+
+    // The deprecated `[version] source` alias selects the same manifest `current_source` would.
+    let declared = both_sides_agree(
+        "scaffold-agree-alias",
+        r#"[version]
+source = "package.json"
+
+[[manifest]]
+path = "Cargo.toml"
+kind = "cargo-package"
+
+[[manifest]]
+path = "package.json"
+kind = "json"
+field = "version"
+"#,
+    );
+    assert_eq!(declared, "package.json");
+
+    // `primary = true` on a manifest that is not declared first wins over declaration order.
+    let declared = both_sides_agree(
+        "scaffold-agree-primary",
+        r#"[[manifest]]
+path = "package.json"
+kind = "json"
+field = "version"
+
+[[manifest]]
+path = "Cargo.toml"
+kind = "cargo-package"
+primary = true
+"#,
+    );
+    assert_eq!(declared, "Cargo.toml");
+
+    // The divergence #410 reports: a template sink is declared first and nothing names a source. The
+    // loader skips the sink, so the document must skip it too instead of reporting a primary the
+    // loader would never use.
+    let declared = both_sides_agree(
+        "scaffold-agree-sink-first",
+        r#"[[manifest]]
+path = "src/version.ts"
+kind = "template"
+
+[[manifest]]
+path = "Cargo.toml"
+kind = "cargo-package"
+"#,
+    );
+    assert_eq!(declared, "Cargo.toml");
+}
+
 /// The freshness rule applied to a command's own output: the first-run page sends the reader to
 /// `plan` and then to a two-phase release, so `cutver init` may not still recommend the single-command
 /// dry run. Without this, the page and the CLI drift apart silently and the more authoritative of the

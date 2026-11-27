@@ -77,8 +77,8 @@ Prose here is read by people who did not write the code, so it is written for th
 - **Name the actor and the action before the mechanism.** "The plugin drivers now need the project folder"
   says more than "gain a workspace-root parameter".
 - **Explain a term once, where it appears**, in the reader's words. An attestation is "a recorded
-  authorization"; the moving major tag is explained by what it does to `uses: cutver/setup@v0`, not by its
-  name.
+  authorization"; the moving major tag is explained by what it does to a `uses:` line that names `@v0`, not
+  by its name.
 - **One idea per sentence.** A semicolon holding two claims is a sentence to split.
 - **Numbers instead of adjectives**: `1.3 MB against 5.0 MB`, never "much smaller"; "fifteen seconds",
   never "fast".

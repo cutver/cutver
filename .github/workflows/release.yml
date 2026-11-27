@@ -878,7 +878,7 @@ jobs:
           # version it was handed (`github-publish` 0.2.1, `post_release.rs`), and nothing here pins
           # that derivation. So the stable arm asks for Latest with a cleared prerelease mark, and the
           # prerelease arm asks to stay marked and to never be Latest — which is what keeps
-          # `0.22.0-alpha.1` out of the slot `uses: cutver/setup@v0` resolves with `version: latest`.
+          # `0.22.0-alpha.1` out of the slot `uses: cutver/setup@v1` resolves with `version: latest`.
           #
           # Both spellings are `gh release edit`'s documented boolean forms (`gh release edit --help`
           # accepts `--draft[=true|false]`, `--prerelease[=true|false]`, `--latest[=true|false]`), so

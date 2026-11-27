@@ -12,7 +12,7 @@
 
 ## Open
 
-All seven are tracked as issues in the core repository, which is where they will actually be picked up.
+All six are tracked as issues in the core repository, which is where they will actually be picked up.
 This table is the index: the issue holds the full evidence and acceptance criteria, and this file
 holds the reason each was deferred rather than fixed in place.
 
@@ -23,10 +23,9 @@ holds the reason each was deferred rather than fixed in place.
 | [#162](https://github.com/cutver/cutver/issues/162) | Layering inversion: `use crate::cli::BumpLevel;` in `src/bump/exec/pipeline.rs:12` and `src/bump/tests.rs:2`. | Recorded in "Not in scope" in [Contract Compliance Hardening](contract-compliance-hardening.md). Same class as the defect that unit fixed, but resolving it moves a clap-derived enum across the boundary — a separate refactor with its own risk. |
 | [#163](https://github.com/cutver/cutver/issues/163) | `cutver plugin schema` (layer 3): emit JSON Schema from the PDK types for polyglot plugin authors. | Planned future work, not a defect. See WU-D in [Plugin PDK Extraction](plugin-pdk-extraction.md). Layer 2 made it cheap: the contract now lives in a published crate of the core, so the CLI can emit it. |
 | [#164](https://github.com/cutver/cutver/issues/164) | Public plugin authoring guide for third parties. | Premature until a plugin is actually released and the registry entry exists; writing it now would document an unreleased flow. |
-| [#409](https://github.com/cutver/cutver/issues/409) | The attestation file `cutver attest` writes opens with no `schemaVersion`, although `CONTRACT.md:229` counts "the attestation files" in the policy. Reads are deliberately total, so "no attestation" and "an attestation in a shape I do not know" are indistinguishable — and both refuse a release. | Split out of [#404](https://github.com/cutver/cutver/issues/404) by decision: it changes the on-disk format that `publish` reads through a total parse, and a format change that fails open in the reader is a different risk to review than adding an object over the record. |
 | [#410](https://github.com/cutver/cutver/issues/410) | `primary_source` (`src/init/scaffold/config_gen.rs`) reproduces the ordering of `deduce_current_source` (`src/config/validation.rs:13`) at document level, and no test proves the two agree. If the loader's order moves, `init --json`'s `primary` silently becomes a lie. | Deferred out of [#404](https://github.com/cutver/cutver/issues/404): it arrived inside a function whose job was to fill one field of a new report, and a second copy of a loader rule is its own risk class. |
 
-Among these, the next two to pick up are **#409** (the reader of a file nobody can version-detect) and **#410** (a duplicate that no test ties down). Both are small, both are inside the repository, and both carry their acceptance criteria in the issue.
+Among these, the next one to pick up is **#410** (a duplicate that no test ties down): it is small, inside the repository, and carries its acceptance criteria in the issue.
 
 ---
 
@@ -48,6 +47,15 @@ These are decisions, not work items, which is why they are not on the active pla
 
 ## Closed and re-verified
 
+- **[#409](https://github.com/cutver/cutver/issues/409)** — the attestation file `cutver attest` wrote opened with no
+  `schemaVersion`. Closed by **PR [#412](https://github.com/cutver/cutver/pull/412)**, squash commit **`c21138f`**
+  (2026-11-26): the record is written through the same `Versioned` envelope as every printed surface, so the file opens
+  with `{"schemaVersion":1,`, and the version comes from `SCHEMA_VERSION` instead of a second copy of the number.
+  `Attestation` gained no field, so the files already on disk keep reading; that policy is stated on the reader, in
+  `CONTRACT.md` Pillar VII.2 and on the release-tail page, and `tests/e2e_gates.rs`'
+  `a_legacy_attestation_without_the_version_key_still_satisfies_the_gate` publishes a release from a hand-written
+  legacy record. One thing the issue left open was decided rather than written away: the reader ignores the key's
+  *value*, so a file claiming `schemaVersion: 99` still reads as the current shape.
 - **[#159](https://github.com/cutver/cutver/issues/159)** — `references.md` was 419 lines against the 200 ceiling.
   Closed as completed on 2026-11-12 and **re-verified on 2026-11-19**: `references.md` is 115 lines (inside the
   100-150 target, not merely under the ceiling), `design.md` is 139, and every relative link in the file resolves.

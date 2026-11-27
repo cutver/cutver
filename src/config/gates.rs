@@ -5,11 +5,16 @@
 //! which conclusion*, and *when*. `cutver attest` writes one, `cutver publish --require-gate` reads
 //! it before the first irreversible step, and `cutver plan --json` reports it as data.
 //!
-//! The store is one JSON object per gate, in the directory `[gates] dir` names:
+//! The store is one JSON object per gate, in the directory `[gates] dir` names. The object opens with
+//! the `schemaVersion` every machine surface carries, and the record's own keys follow in the order
+//! they are written:
 //!
 //! ```json
-//! {"gate":"ci","commit":"<40 hex>","conclusion":"success","verified_at":"2026-11-19"}
+//! {"schemaVersion":1,"gate":"ci","commit":"<40 hex>","conclusion":"success","verified_at":"2026-11-19"}
 //! ```
+//!
+//! A file written before the version key existed has none, and [`read`] still reads it: the absence
+//! means the legacy shape, not a record to refuse.
 //!
 //! **Attestations are data, not trust (S12).** `cutver` records and reads them; it signs nothing,
 //! verifies no signature and talks to no network, so an attestation is exactly as trustworthy as the

@@ -168,7 +168,7 @@ fn attest_records_the_gate_commit_conclusion_and_day() {
 
     let raw = fixture.read(".cutver/attestations/ci.json");
     // Key order is read from the rendered bytes: `serde_json::Value` sorts keys and would hide it.
-    let prefix = format!(r#"{{"gate":"ci","commit":"{head}","conclusion":"success","verified_at":""#);
+    let prefix = format!(r#"{{"schemaVersion":1,"gate":"ci","commit":"{head}","conclusion":"success","verified_at":""#);
     assert!(raw.starts_with(&prefix), "{raw}");
     let recorded: Value = serde_json::from_str(raw.trim()).expect("the attestation is one JSON object");
     assert_eq!(recorded["gate"], "ci");
@@ -376,6 +376,28 @@ fn a_satisfied_gate_lets_the_release_publish() {
     attest_ok(fixture, "security", &head, "success");
 
     let out = publish(fixture, &head, &["--require-gate", "ci", "--require-gate", "security"]);
+
+    assert!(out.status.success(), "stderr:\n{}", stderr_of(&out));
+    assert_eq!(rev(&fixture.dir, "v1.3.0^{commit}"), head, "the release was tagged");
+    assert_eq!(rev(&remote.dir, "refs/tags/v1.3.0^{commit}"), head);
+    assert_eq!(fixture.read("published.txt").trim(), "published 1.3.0");
+}
+
+/// S3, D1: a record written before `schemaVersion` existed still satisfies the gate. This is the half
+/// that matters: the reader is total, so adding the key cannot turn a verdict that did vouch for the
+/// commit into "no attestation" and disable a gate that had passed.
+#[test]
+fn a_legacy_attestation_without_the_version_key_still_satisfies_the_gate() {
+    let (guard, remote) = prepared_repo("gates-legacy", "");
+    let fixture = guard.fixture();
+    let head = prepare(fixture);
+    // Hand-written on purpose: no `cutver` of this version can produce the legacy shape any more.
+    fixture.write(
+        ".cutver/attestations/ci.json",
+        &format!(r#"{{"gate":"ci","commit":"{head}","conclusion":"success","verified_at":"2026-11-26"}}"#),
+    );
+
+    let out = publish(fixture, &head, &["--require-gate", "ci"]);
 
     assert!(out.status.success(), "stderr:\n{}", stderr_of(&out));
     assert_eq!(rev(&fixture.dir, "v1.3.0^{commit}"), head, "the release was tagged");

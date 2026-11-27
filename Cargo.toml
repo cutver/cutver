@@ -1,6 +1,6 @@
 [package]
 name = "cutver"
-version = "0.22.0-alpha.1"
+version = "0.22.0-beta.1"
 edition = "2024"
 rust-version = "1.99.0"
 authors = ["Row0902"]

@@ -3,6 +3,34 @@
 All notable changes to this project are documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com).
 
+## v0.22.0-beta.1 — 2026-11-27
+
+### ✨ Features
+- **gates**: open the attestation file with schemaVersion in [#412](https://github.com/cutver/cutver/pull/412) ([c21138f](https://github.com/cutver/cutver/commit/c21138f6958afc6055659bcdfd5a5b4b48cd0108)) by @Row0902
+- **cli**: give publish, attest and init a machine surface in [#408](https://github.com/cutver/cutver/pull/408) ([4222127](https://github.com/cutver/cutver/commit/42221273b4e6a6497305892f9f9995e066e038d1)) by @Row0902
+
+### 🔄 Refactoring
+- **init**: pin the primary source against the loader with a test in [#413](https://github.com/cutver/cutver/pull/413) ([617303b](https://github.com/cutver/cutver/commit/617303ba25c42d1834ef896202956135a75d68df)) by @Row0902
+
+### 📚 Documentation
+- **releases**: record the beta.1 dispatch and declare it compatible in [#416](https://github.com/cutver/cutver/pull/416) ([7e721a3](https://github.com/cutver/cutver/commit/7e721a36ef747490e439841081dcd13beec2d76d)) by @Row0902
+- **releases**: write the notes for v0.22.0-beta.1 in [#415](https://github.com/cutver/cutver/pull/415) ([b68ab0d](https://github.com/cutver/cutver/commit/b68ab0d7e34bea4bf5b9f8078e6e974a1edf0aa5)) by @Row0902
+- **odd**: close the deferred rows #409, #410 and the four the index forgot in [#414](https://github.com/cutver/cutver/pull/414) ([ddbfaf8](https://github.com/cutver/cutver/commit/ddbfaf8b20e97ed6c3dcd95c20241d25c25b0ad7)) by @Row0902
+- **odd**: close #404's handoff and file what it leaves behind in [#411](https://github.com/cutver/cutver/pull/411) ([7e9ace6](https://github.com/cutver/cutver/commit/7e9ace6a2ce770cf23903ea43e4935b73c6ff35f)) by @Row0902
+- **adr**: propose progressive onboarding, with the CI file out of the core in [#407](https://github.com/cutver/cutver/pull/407) ([5748d5a](https://github.com/cutver/cutver/commit/5748d5a0b03c9a8c55e816af8215331af755ad24)) by @Row0902
+- **releases**: link what the 0.22.0-alpha.1 notes point at in [#403](https://github.com/cutver/cutver/pull/403) ([2dcca4d](https://github.com/cutver/cutver/commit/2dcca4d69214aae59dfe8932e7287fe0a7bd7b33)) by @Row0902
+- write in the plainly comprehensible register, as a rule in [#402](https://github.com/cutver/cutver/pull/402) ([fbcc496](https://github.com/cutver/cutver/commit/fbcc49694054b42246bf5f01fb610e7aef87d233)) by @Row0902
+- **releases**: say the 0.22.0-alpha.1 notes in plainer English in [#401](https://github.com/cutver/cutver/pull/401) ([6ca156a](https://github.com/cutver/cutver/commit/6ca156a6914d1c5c5de826aa682dbd9c40ee3ffc)) by @Row0902
+- **releases**: write the notes for v0.22.0-alpha.1 in [#400](https://github.com/cutver/cutver/pull/400) ([690c2c3](https://github.com/cutver/cutver/commit/690c2c30eb4bc3e92ba43138679baab2dc5fe461)) by @Row0902
+
+### 🛠️ Maintenance
+- **release**: attest the smoke verdicts before publishing in [#406](https://github.com/cutver/cutver/pull/406) ([5f61d1e](https://github.com/cutver/cutver/commit/5f61d1e8d52214bae2ae84067785046fadb2fa34)) by @Row0902
+- **release**: bound the release hooks and cut the config's comments in [#405](https://github.com/cutver/cutver/pull/405) ([918fe25](https://github.com/cutver/cutver/commit/918fe2548aeeb7bd29512136e2985e5585106c88)) by @Row0902
+
+### 👥 Contributors
+@Row0902
+
+[Compare v0.22.0-alpha.1...v0.22.0-beta.1](https://github.com/cutver/cutver/compare/v0.22.0-alpha.1...v0.22.0-beta.1)
 ## v0.22.0-alpha.1 — 2026-11-26
 
 > [!WARNING]

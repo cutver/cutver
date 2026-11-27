@@ -12,20 +12,18 @@
 
 ## Open
 
-All six are tracked as issues in the core repository, which is where they will actually be picked up.
-This table is the index: the issue holds the full evidence and acceptance criteria, and this file
-holds the reason each was deferred rather than fixed in place.
+Each finding here is tracked as an issue in the core repository, which is where it will actually be
+picked up. This table is the index: the issue holds the full evidence and acceptance criteria, and this
+file holds the reason it was deferred rather than fixed in place.
+
+Four former rows stayed in this table for two weeks after their issues closed. They are recorded under
+**Closed before this index caught up** below, with the pull request that closed each.
 
 | Issue | Finding | Why it was deferred |
 | --- | --- | --- |
-| [#160](https://github.com/cutver/cutver/issues/160) | No blank line between the `# Changelog` header and the newly inserted version heading. | Pre-existing cosmetic defect in the changelog prepend path. The control experiment against `format = "keep-a-changelog"` is what attributes it correctly; without that, the plugin would have taken the blame. |
-| [#161](https://github.com/cutver/cutver/issues/161) | `src/plugin/manager.rs` production portion is **381 lines**, above the Pillar V.4 target of 300 and past the 350 mark where decomposition becomes mandatory. | Recorded as finding 7 in [Contract Compliance Hardening](contract-compliance-hardening.md). Inside the 400 hard ceiling, so a target miss rather than a breach — an earlier reading of "1038 lines" wrongly counted the test module. |
-| [#162](https://github.com/cutver/cutver/issues/162) | Layering inversion: `use crate::cli::BumpLevel;` in `src/bump/exec/pipeline.rs:12` and `src/bump/tests.rs:2`. | Recorded in "Not in scope" in [Contract Compliance Hardening](contract-compliance-hardening.md). Same class as the defect that unit fixed, but resolving it moves a clap-derived enum across the boundary — a separate refactor with its own risk. |
 | [#163](https://github.com/cutver/cutver/issues/163) | `cutver plugin schema` (layer 3): emit JSON Schema from the PDK types for polyglot plugin authors. | Planned future work, not a defect. See WU-D in [Plugin PDK Extraction](plugin-pdk-extraction.md). Layer 2 made it cheap: the contract now lives in a published crate of the core, so the CLI can emit it. |
-| [#164](https://github.com/cutver/cutver/issues/164) | Public plugin authoring guide for third parties. | Premature until a plugin is actually released and the registry entry exists; writing it now would document an unreleased flow. |
-| [#410](https://github.com/cutver/cutver/issues/410) | `primary_source` (`src/init/scaffold/config_gen.rs`) reproduces the ordering of `deduce_current_source` (`src/config/validation.rs:13`) at document level, and no test proves the two agree. If the loader's order moves, `init --json`'s `primary` silently becomes a lie. | Deferred out of [#404](https://github.com/cutver/cutver/issues/404): it arrived inside a function whose job was to fill one field of a new report, and a second copy of a loader rule is its own risk class. |
 
-Among these, the next one to pick up is **#410** (a duplicate that no test ties down): it is small, inside the repository, and carries its acceptance criteria in the issue.
+So no deferred **defect** is open: what is left is one planned capability, and nothing in this repository blocks it.
 
 ---
 
@@ -45,7 +43,33 @@ These are decisions, not work items, which is why they are not on the active pla
 
 ---
 
+## Closed before this index caught up
+
+Four rows sat in the Open table for two weeks after their issues closed. Each closure below is recorded
+from the issue and from the pull request that closed it; the fixes were **not** re-verified here, and
+each row's evidence lives in its issue.
+
+| Issue | Closed | By |
+| --- | --- | --- |
+| [#160](https://github.com/cutver/cutver/issues/160) — no blank line between the `# Changelog` header and the new version heading | 2026-11-12 | [#216](https://github.com/cutver/cutver/pull/216) |
+| [#161](https://github.com/cutver/cutver/issues/161) — `src/plugin/manager.rs` production portion above the Pillar V.4 target | 2026-11-11 | [#210](https://github.com/cutver/cutver/pull/210) |
+| [#162](https://github.com/cutver/cutver/issues/162) — layering inversion: `crate::cli::BumpLevel` in the domain layer | 2026-11-12 | [#217](https://github.com/cutver/cutver/pull/217) |
+| [#164](https://github.com/cutver/cutver/issues/164) — public plugin authoring guide | 2026-11-12 | [#225](https://github.com/cutver/cutver/pull/225) |
+
+---
+
 ## Closed and re-verified
+
+- **[#410](https://github.com/cutver/cutver/issues/410)** — `primary_source` reproduced the loader's ordering at
+  document level with no test tying the two together. Closed by **PR
+  [#413](https://github.com/cutver/cutver/pull/413)**, squash commit **`617303b`** (2026-11-26): an
+  equivalence test loads each fixture through the crate's own loader and requires both answers to name
+  the same manifest — both `[[manifest]]` spellings, the deprecated `[version] source` alias, and
+  `primary = true` on a manifest declared later. It also exposed a divergence on a configuration that
+  *loads*, a template sink declared first, which the document reading reported as the primary and the
+  loader skips; that value now matches the loader. The `--update` append path is untouched, pinned by
+  its own test. Recorded in `odd/tasks/init-primary-source.md`, including the third copy of the rule
+  (`Config::primary_manifest`) left out of scope.
 
 - **[#409](https://github.com/cutver/cutver/issues/409)** — the attestation file `cutver attest` wrote opened with no
   `schemaVersion`. Closed by **PR [#412](https://github.com/cutver/cutver/pull/412)**, squash commit **`c21138f`**
